@@ -1,0 +1,27 @@
+# --- Secrets ---
+.env
+*.token
+*.secret
+.claude/settings.local.json
+
+# --- MCP config (may embed endpoints/config; keep out of git) ---
+.mcp.json
+
+# --- Local state store (contains personal task data) ---
+state/*.db
+state/*.db-journal
+state/*.db-wal
+state/*.db-shm
+state/*.sqlite
+state/*.sqlite3
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- OS / editor cruft ---
+Thumbs.db
+Desktop.ini
+.DS_Store
