@@ -257,6 +257,11 @@ own brainstorm/spec before being built.
       on that person's list.
 - [ ] **Home maintenance agent** — same shape as the lawn & garden agent, but indoor: HVAC
       filters, smoke detector batteries, gutter cleaning, on a recurring cadence + calendar.
+- [ ] **Kids memory keeper** — quickly send a message (e.g. a transcribed voice note from
+      your phone) about a day-to-day moment with one or both kids, and have it captured as a
+      dated memory snapshot: saved locally to work with (search, recall, maybe compile into a
+      yearbook/journal later), and backed up to Google Drive so it's never at risk of being
+      lost. Needs the Google Drive MCP connector authorized first.
 
 ### Someday / needs more refinement
 
