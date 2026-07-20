@@ -12,7 +12,19 @@
       "mcp__todoist__update-tasks",
       "mcp__todoist__complete-tasks",
       "mcp__todoist__add-projects",
-      "mcp__plugin_telegram_telegram__reply"
+      "mcp__plugin_telegram_telegram__reply",
+      "mcp__claude_ai_Google_Calendar__list_calendars",
+      "mcp__claude_ai_Google_Calendar__list_events",
+      "mcp__claude_ai_Google_Calendar__create_event",
+      "mcp__claude_ai_Google_Calendar__update_event",
+      "mcp__claude_ai_Google_Calendar__delete_event",
+      "Bash(python scripts/recipes_store.py *)",
+      "Bash(cd \"C:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/recipes_store.py *)",
+      "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/recipes_store.py *)",
+      "Bash(cd \"C:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/state_store.py query *)",
+      "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/state_store.py query *)",
+      "Bash(cd \"C:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/state_store.py write *)",
+      "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/state_store.py write *)"
     ]
   }
 }

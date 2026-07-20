@@ -33,6 +33,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = REPO_ROOT / "state" / "agent_results.db"
 SCHEMA_PATH = REPO_ROOT / "state" / "schema.sql"
 
+# Task/summary text can contain non-ASCII characters; force UTF-8 on stdout/stderr so
+# this never crashes on Windows' default console codepage, regardless of caller env.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8")
+
 
 def _connect() -> sqlite3.Connection:
     """Open the DB, creating it from schema.sql if it doesn't exist yet."""

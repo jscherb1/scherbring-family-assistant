@@ -20,10 +20,12 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | Path | Purpose |
 |------|---------|
 | `.claude/agents/todoist.md` | Todoist subagent (scoped to Todoist MCP + the state store) |
+| `.claude/agents/meal-planner.md` | Meal-planner subagent (recipe library, Google Calendar, Todoist Shopping List) |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results` |
+| `state/schema.sql` | SQLite schema for `agent_results` and `recipes` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
-| `scripts/state_store.py` | Zero-dep CLI the subagent calls to write/read results |
+| `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
+| `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
 | `.env.example` | Env template (no real secrets needed for Phase 1) |
 
 > **Location matters:** this project lives **outside** OneDrive on purpose. The personal

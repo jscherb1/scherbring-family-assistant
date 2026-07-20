@@ -13,3 +13,27 @@ CREATE TABLE IF NOT EXISTS agent_results (
 
 CREATE INDEX IF NOT EXISTS idx_agent_results_agent_created
     ON agent_results (agent, created_at DESC);
+
+-- Recipe library for the meal-planner subagent. Seeded once from recipes.json,
+-- then grown over time as new AI-generated meals are approved.
+CREATE TABLE IF NOT EXISTS recipes (
+    id               TEXT PRIMARY KEY,
+    title            TEXT NOT NULL,
+    description      TEXT,
+    ingredients_json TEXT NOT NULL,   -- [{"text":..., "include_in_shopping_list":bool}]
+    steps_json       TEXT NOT NULL,   -- ["step 1", "step 2", ...]
+    tags_json        TEXT,            -- ["Crockpot", "Kid Friendly", ...]
+    protein_type     TEXT,            -- "chicken" | "vegetarian" | "salmon" | null
+    meal_type        TEXT,            -- "dinner" | "breakfast" | "misc" | ...
+    prep_time_min    INTEGER,
+    cook_time_min    INTEGER,
+    total_time_min   INTEGER,
+    servings         INTEGER,
+    source_url       TEXT,
+    notes            TEXT,
+    last_cooked_at   TEXT,             -- ISO date, updated when a planned meal is approved
+    rating           INTEGER,          -- latest sentiment from user feedback; null = none yet
+    feedback_json    TEXT              -- [{"date":"YYYY-MM-DD","comment":"...","rating":N}]
+);
+
+CREATE INDEX IF NOT EXISTS idx_recipes_meal_type ON recipes (meal_type);
