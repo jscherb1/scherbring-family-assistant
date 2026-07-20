@@ -26,6 +26,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
+| `scripts/start_orchestrator.ps1` | Idempotent launcher — skips if already running, restarts on exit |
+| `scripts/orchestrator_status.ps1` | Read-only check for whether the orchestrator is running |
+| `scripts/register_orchestrator_task.ps1` | One-time setup for the auto-start-at-logon Scheduled Task |
 | `.env.example` | Env template (no real secrets needed for Phase 1) |
 
 > **Location matters:** this project lives **outside** OneDrive on purpose. The personal
@@ -83,14 +86,43 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 
 ## Launch (the orchestrator)
 
-From the project root:
+Preferred: run the idempotent launcher — it checks whether an instance is already
+running before starting a new one, and restarts it automatically if it ever exits:
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\start_orchestrator.ps1
+```
+
+Or run the raw command directly (no idempotency/restart):
 
 ```
 claude --channels plugin:telegram@claude-plugins-official
 ```
 
-Leave this session running; it's the live orchestrator. Message your bot from Telegram.
-(For always-on, run it in a persistent terminal window — Phase 2 will add scheduling.)
+Leave the session running; it's the live orchestrator. Message your bot from Telegram.
+
+## Always-on: auto-start at logon + status check
+
+One-time setup — registers a Scheduled Task (`PersonalAssistantOrchestrator`) that
+starts the orchestrator automatically whenever you log into Windows, in a minimized
+window, and restarts it if it crashes:
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\register_orchestrator_task.ps1
+```
+
+- The task runs only while you're logged on (no Windows password stored) — it keeps
+  going through a locked screen, but stops if you sign out or restart without logging
+  back in.
+- Minimize the window rather than closing it; closing the window stops the assistant.
+- To check whether it's currently running (e.g. before manually starting another copy
+  and accidentally double-polling Telegram):
+  ```
+  powershell -ExecutionPolicy Bypass -File scripts\orchestrator_status.ps1
+  ```
+- To re-register the task later (e.g. after moving the repo), just re-run
+  `register_orchestrator_task.ps1` — it replaces the existing task.
+- To remove it: `Unregister-ScheduledTask -TaskName PersonalAssistantOrchestrator`.
 
 ## State store CLI (reference)
 
