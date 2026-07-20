@@ -187,3 +187,22 @@ own brainstorm/spec before being built.
       is reachable from Google Chat too.
 - [ ] **Grocery list from pantry/fridge photos** — snap a picture of what's on hand and
       generate the grocery list from what's actually missing.
+- [ ] **Smart home agent** — the Home Assistant MCP server is already connected but unused
+      (lights, climate, media). Combine with the calendar for routines like "goodnight" or
+      "leaving for school."
+- [ ] **Email triage / inbox digest** — the Gmail MCP server is also already connected but
+      unused. A daily/weekly digest of what needs action (school notices, bills, appointment
+      confirmations), same proactive shape as the heartbeat skill above.
+- [ ] **Birthday/gift-reminder agent** — the Todoist subagent already keeps per-person Gift
+      Ideas sub-lists; a proactive nudge ahead of a birthday/anniversary using what's already
+      on that person's list.
+- [ ] **Home maintenance agent** — same shape as the lawn & garden agent, but indoor: HVAC
+      filters, smoke detector batteries, gutter cleaning, on a recurring cadence + calendar.
+
+### Someday / needs more refinement
+
+Lower priority, idea-only — not enough shape yet to even brainstorm.
+
+- Trip/travel planning (packing lists, itineraries tied to the calendar)
+- Family "newsletter" recap — a personal weekly digest, possibly reusing the existing
+  `/newsletter` skill's pattern (currently built for technical/business newsletters)
