@@ -1,9 +1,13 @@
 {
-  "_comment": "Copy to .mcp.json (gitignored). Official Todoist MCP: hosted HTTP + OAuth. No token stored here; OAuth sign-in happens in-browser on first tool use. Do NOT also run `claude mcp add todoist ...` if this file exists — duplicate entries cause OAuth sign-in loops.",
+  "_comment": "Copy to .mcp.json (gitignored). Official Todoist MCP: hosted HTTP + OAuth. No token stored here; OAuth sign-in happens in-browser on first tool use. Do NOT also run `claude mcp add todoist ...` if this file exists — duplicate entries cause OAuth sign-in loops. `scheduler` is a local one-way channel server (scripts/scheduler_channel/) that delivers due scheduled-task prompts into the orchestrator session — run `bun install` in that folder once before first use.",
   "mcpServers": {
     "todoist": {
       "type": "http",
       "url": "https://ai.todoist.net/mcp"
+    },
+    "scheduler": {
+      "command": "bun",
+      "args": ["./scripts/scheduler_channel/scheduler_channel.ts"]
     }
   }
 }
