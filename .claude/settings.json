@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__todoist__search",
+      "mcp__todoist__find-projects",
+      "mcp__todoist__find-tasks",
+      "mcp__todoist__find-tasks-by-date",
+      "mcp__todoist__get-overview",
+      "Bash(python scripts/state_store.py query *)",
+      "Bash(python scripts/state_store.py write *)",
+      "mcp__todoist__add-tasks",
+      "mcp__todoist__update-tasks",
+      "mcp__todoist__complete-tasks",
+      "mcp__todoist__add-projects",
+      "mcp__plugin_telegram_telegram__reply"
+    ]
+  }
+}
