@@ -18,9 +18,13 @@ longer than the 2-minute interval. Run this once:
 $TaskName = "PersonalAssistantSchedulerPoller"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $PollScript = Join-Path $RepoRoot "scripts\run_scheduler_poll.ps1"
+$HiddenLauncher = Join-Path $RepoRoot "scripts\run_scheduler_poll_hidden.vbs"
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PollScript`""
+# Routed through wscript.exe + a .vbs launcher rather than calling powershell.exe
+# directly: `-WindowStyle Hidden` alone still flashes a console window briefly under
+# Task Scheduler (Windows allocates the console before PowerShell applies the flag).
+# See run_scheduler_poll_hidden.vbs for details.
+$action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$HiddenLauncher`""
 
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 2) `
