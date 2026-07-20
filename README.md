@@ -157,23 +157,24 @@ One-time setup:
    ```
    powershell -ExecutionPolicy Bypass -File scripts\register_scheduler_poller_task.ps1
    ```
-3. **Verify the channel loads without hanging on restart** — this is the one real risk
-   with this design: Claude Code's dev-channel warning dialog (required because a
-   custom channel isn't on the research-preview allowlist) is documented to appear the
-   first time `--dangerously-load-development-channels` is used, but it's not
-   documented whether that's one-time-per-project or every launch. Since the
-   orchestrator restarts unattended (crash, logon), a dialog that reappeared every
-   launch would hang it forever. **Before relying on this**, manually launch the
-   orchestrator twice in a row (exit, relaunch) and confirm the dialog does not
-   reappear on the second launch:
+3. **Known limitation — confirmed, not just a risk:** Claude Code's dev-channel warning
+   dialog (required because a custom channel isn't on the research-preview allowlist)
+   **reappears on every single launch**, not just the first. This means
+   `start_orchestrator.ps1`'s unattended restart (crash, logon) currently **cannot**
+   auto-recover — every start/restart needs someone to manually click through the
+   dialog. Until this is addressed, treat the orchestrator as **manual-start only**:
    ```
    powershell -ExecutionPolicy Bypass -File scripts\start_orchestrator.ps1
-   # Ctrl+C or close the window, then run it again:
-   powershell -ExecutionPolicy Bypass -File scripts\start_orchestrator.ps1
    ```
-   If the dialog *does* reappear every launch, this design isn't viable unattended —
-   see the fallback noted in the design spec (self-arming a session-scoped `CronCreate`
-   poll loop from inside the orchestrator instead of a custom channel).
+   **TODO (follow-up, not yet done):** if the manual-start requirement becomes
+   annoying in practice, switch to the fallback already scoped in the design spec:
+   drop the custom local channel entirely and have the orchestrator self-arm a
+   session-scoped `CronCreate` poll loop on startup (via a `SessionStart` hook) that
+   polls `scripts/scheduler_store.py due` directly and acts on it in-session, instead
+   of a separate Windows-Task-driven poller pushing into a channel. Trade-off: the
+   poll loop only runs while the orchestrator session is alive (already true today
+   either way) and needs to re-arm itself within Claude Code's 7-day recurring-task
+   expiry.
 4. **Seed the daily heartbeat task** (optional but recommended) — reviews recent run
    history and posts a digest only if something is overdue or failed. Needs your
    Telegram `chat_id` (visible in the orchestrator's transcript from any message
