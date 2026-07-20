@@ -21,6 +21,12 @@ __pycache__/
 .venv/
 venv/
 
+# --- Scheduler poller logs ---
+state/logs/
+
+# --- Bun (installed by `bun install` in scripts/scheduler_channel/; bun.lock IS committed) ---
+scripts/scheduler_channel/node_modules/
+
 # --- OS / editor cruft ---
 Thumbs.db
 Desktop.ini
