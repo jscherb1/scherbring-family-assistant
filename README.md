@@ -158,3 +158,32 @@ Also confirm:
 
 Cron/Task Scheduler, custom webhook channel, email delivery, subagents beyond Todoist,
 containerization, Remote Control, notification-formatting skills.
+
+## Backlog / Future Ideas
+
+Not scheduled, not designed — just captured so they don't get lost. Each would get its
+own brainstorm/spec before being built.
+
+- [ ] **Scheduled requests to the orchestrator** — cron/Task Scheduler jobs that proactively
+      ask the orchestrator for something on a schedule, e.g. a Sunday-morning meal plan, a
+      weekly family summary.
+- [ ] **Lawn & garden agent** — regular checks for spot-spraying weeds, a fertilizer
+      schedule, spring/fall + regular pruning/trimming, combined with weather and the
+      family calendar to actually get tasks scheduled.
+- [ ] **Personal finance agent** — needs a Monarch Money MCP server (all financial data is
+      aggregated there). The official server is currently paused; look into unofficial/
+      community alternatives.
+- [ ] **Heartbeat skill** — wakes up periodically to check what's going on: which scheduled
+      tasks/events have run, which haven't, and whether anything else needs attention.
+- [ ] **Shopping cart builder** — build (not place) orders at Hy-Vee and/or Target, comparing
+      price across stores, and remembering which specific variant of a regular item ("milk")
+      to add. Stops short of checkout — a human reviews and places the order. Note: Hy-Vee
+      auth has been difficult in the past.
+- [ ] **Weather reminders** — proactive nudges ahead of incoming weather (shovel snow, bring
+      in cushions, etc.).
+- [ ] **Shopping assistant (deal-watching)** — watches for deals on non-urgent wanted items
+      across stores, Craigslist, Facebook Marketplace, etc.
+- [ ] **Google Chat bridge** — a second chat channel (alongside Telegram) so the assistant
+      is reachable from Google Chat too.
+- [ ] **Grocery list from pantry/fridge photos** — snap a picture of what's on hand and
+      generate the grocery list from what's actually missing.
