@@ -26,7 +26,7 @@ Write-Host "Starting personal-assistant orchestrator from $RepoRoot"
 Write-Host "Minimize this window to keep it running in the background; closing it stops the assistant."
 
 while ($true) {
-    claude --channels plugin:telegram@claude-plugins-official
+    claude --channels plugin:telegram@claude-plugins-official --dangerously-load-development-channels server:scheduler
     Write-Host ""
     Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"
     Start-Sleep -Seconds 10

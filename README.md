@@ -21,11 +21,17 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 |------|---------|
 | `.claude/agents/todoist.md` | Todoist subagent (scoped to Todoist MCP + the state store) |
 | `.claude/agents/meal-planner.md` | Meal-planner subagent (recipe library, Google Calendar, Todoist Shopping List) |
-| `.mcp.json` | Project MCP config (Todoist HTTP/OAuth). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results` and `recipes` |
+| `.claude/agents/scheduler.md` | Scheduler subagent — creates/lists/pauses/deletes proactive scheduled tasks |
+| `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `scheduler` channel). Gitignored. See `.mcp.json.example`. |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
+| `scripts/scheduler_store.py` | Zero-dep CLI for the scheduled-tasks registry (add/list/enable/disable/delete/due/log-run) |
+| `scripts/scheduler_channel/` | Local one-way MCP channel (Bun) that delivers due tasks into the orchestrator's session |
+| `scripts/scheduler_poll.py` | Poller driver — finds due tasks and POSTs them to the scheduler channel |
+| `scripts/run_scheduler_poll.ps1` | Wrapper the poller Scheduled Task invokes; logs to `state/logs/` |
+| `scripts/register_scheduler_poller_task.ps1` | One-time setup for the poller's Scheduled Task (fires every ~2 min) |
 | `scripts/start_orchestrator.ps1` | Idempotent launcher — skips if already running, restarts on exit |
 | `scripts/orchestrator_status.ps1` | Read-only check for whether the orchestrator is running |
 | `scripts/register_orchestrator_task.ps1` | One-time setup for the auto-start-at-logon Scheduled Task |
@@ -83,6 +89,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
   state store).
 - SQLite state store + `state_store.py` CLI (verified: write/query round-trip works).
 - `.gitignore` covering `.env`, tokens, `.mcp.json`, `settings.local.json`, and the DB.
+- Scheduled-tasks feature (registry, poller, local channel, `scheduler` subagent) —
+  see the dedicated **Scheduled tasks** setup section below for the one-time steps
+  this one *does* need.
 
 ## Launch (the orchestrator)
 
@@ -124,6 +133,59 @@ powershell -ExecutionPolicy Bypass -File scripts\register_orchestrator_task.ps1
   `register_orchestrator_task.ps1` — it replaces the existing task.
 - To remove it: `Unregister-ScheduledTask -TaskName PersonalAssistantOrchestrator`.
 
+## Scheduled tasks (proactive, recurring prompts)
+
+Lets you ask the orchestrator to do something on a schedule — "every Sunday at 9am,
+plan next week's dinners and post it" — and have the result posted into this same
+Telegram chat, clearly marked `📅 Scheduled: <name>` so it's never mistaken for a
+reply to something you said. Architecture: a shared Windows Scheduled Task polls a
+SQLite registry every ~2 minutes and, for anything due, pushes it into the
+already-running orchestrator session via a small local one-way MCP channel
+(`scripts/scheduler_channel/`) — the orchestrator then does the work and replies using
+the Telegram connection it already holds. Adding a **new** scheduled task afterward is
+just a conversation with the `scheduler` subagent (or a row in the registry) — it never
+touches Windows Task Scheduler again.
+
+One-time setup:
+
+1. **Install the channel server's dependency** (once):
+   ```
+   cd scripts\scheduler_channel
+   bun install
+   ```
+2. **Register the poller's Scheduled Task**:
+   ```
+   powershell -ExecutionPolicy Bypass -File scripts\register_scheduler_poller_task.ps1
+   ```
+3. **Verify the channel loads without hanging on restart** — this is the one real risk
+   with this design: Claude Code's dev-channel warning dialog (required because a
+   custom channel isn't on the research-preview allowlist) is documented to appear the
+   first time `--dangerously-load-development-channels` is used, but it's not
+   documented whether that's one-time-per-project or every launch. Since the
+   orchestrator restarts unattended (crash, logon), a dialog that reappeared every
+   launch would hang it forever. **Before relying on this**, manually launch the
+   orchestrator twice in a row (exit, relaunch) and confirm the dialog does not
+   reappear on the second launch:
+   ```
+   powershell -ExecutionPolicy Bypass -File scripts\start_orchestrator.ps1
+   # Ctrl+C or close the window, then run it again:
+   powershell -ExecutionPolicy Bypass -File scripts\start_orchestrator.ps1
+   ```
+   If the dialog *does* reappear every launch, this design isn't viable unattended —
+   see the fallback noted in the design spec (self-arming a session-scoped `CronCreate`
+   poll loop from inside the orchestrator instead of a custom channel).
+4. **Seed the daily heartbeat task** (optional but recommended) — reviews recent run
+   history and posts a digest only if something is overdue or failed. Needs your
+   Telegram `chat_id` (visible in the orchestrator's transcript from any message
+   you've sent it, or ask it "what's my chat_id"):
+   ```
+   python scripts/scheduler_store.py add --name "daily-heartbeat" \
+     --prompt "Review scripts/scheduler_store.py runs from the last 24 hours for any status of dispatch_failed or failed, or any enabled task with no run in the last 24 hours that should have fired. If everything is healthy, reply nothing. Otherwise post a short digest of what needs attention." \
+     --cron "0 8 * * *" --target-chat-id "<your chat_id>"
+   ```
+5. Try it: message the bot "every day at [a couple minutes from now], say hello" and
+   confirm the scheduled reply arrives prefixed `📅 Scheduled:`.
+
 ## State store CLI (reference)
 
 ```
@@ -156,25 +218,21 @@ Also confirm:
 
 ## Out of scope for Phase 1
 
-Cron/Task Scheduler, custom webhook channel, email delivery, subagents beyond Todoist,
-containerization, Remote Control, notification-formatting skills.
+Email delivery, subagents beyond Todoist, containerization, Remote Control,
+notification-formatting skills. (Cron/Task Scheduler and a custom local channel were
+originally listed here too — both are now built; see **Scheduled tasks** above.)
 
 ## Backlog / Future Ideas
 
 Not scheduled, not designed — just captured so they don't get lost. Each would get its
 own brainstorm/spec before being built.
 
-- [ ] **Scheduled requests to the orchestrator** — cron/Task Scheduler jobs that proactively
-      ask the orchestrator for something on a schedule, e.g. a Sunday-morning meal plan, a
-      weekly family summary.
 - [ ] **Lawn & garden agent** — regular checks for spot-spraying weeds, a fertilizer
       schedule, spring/fall + regular pruning/trimming, combined with weather and the
       family calendar to actually get tasks scheduled.
 - [ ] **Personal finance agent** — needs a Monarch Money MCP server (all financial data is
       aggregated there). The official server is currently paused; look into unofficial/
       community alternatives.
-- [ ] **Heartbeat skill** — wakes up periodically to check what's going on: which scheduled
-      tasks/events have run, which haven't, and whether anything else needs attention.
 - [ ] **Shopping cart builder** — build (not place) orders at Hy-Vee and/or Target, comparing
       price across stores, and remembering which specific variant of a regular item ("milk")
       to add. Stops short of checkout — a human reviews and places the order. Note: Hy-Vee
