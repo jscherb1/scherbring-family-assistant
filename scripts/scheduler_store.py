@@ -59,22 +59,25 @@ def _connect() -> sqlite3.Connection:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Despite the name (kept for call-site compatibility), this returns the machine's
+    # local wall-clock time, not UTC. Cron expressions are written by users/agents in
+    # local time ("13:17" means 1:17 PM here), and the Windows Scheduled Task that
+    # drives the poller also fires on local time - so every timestamp this module
+    # stores or compares must live in that same local wall-clock frame, or "due"
+    # matching silently drifts by the system's UTC offset.
+    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _parse_iso(value: str) -> datetime:
-    # Accept the "...Z" form this module writes, and a plain naive form for tests.
+    # Naive local wall-clock timestamps only - see _utc_now_iso.
     v = value.strip()
     if v.endswith("Z"):
-        return datetime.strptime(v, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    dt = datetime.fromisoformat(v)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+        v = v[:-1]
+    return datetime.fromisoformat(v).replace(tzinfo=None)
 
 
 def _fmt_iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return dt.replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 # --------------------------------------------------------------------------------
@@ -297,7 +300,7 @@ def cmd_delete(args: argparse.Namespace) -> int:
 
 
 def cmd_due(args: argparse.Namespace) -> int:
-    now = _parse_iso(args.now) if args.now else datetime.now(timezone.utc)
+    now = _parse_iso(args.now) if args.now else datetime.now()
     conn = _connect()
     try:
         rows = conn.execute("SELECT * FROM scheduled_tasks WHERE enabled = 1").fetchall()

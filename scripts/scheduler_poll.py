@@ -24,7 +24,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -94,7 +94,7 @@ def main() -> int:
         _run_store("mark-dispatched", "--id", task_id, "--run-at", run_at)
         _run_store(
             "log-run", "--task-id", task_id, "--run-at", run_at,
-            "--dispatched-at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "--dispatched-at", datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "--status", "dispatched",
         )
         print(f"dispatched {name!r} for {run_at}")
