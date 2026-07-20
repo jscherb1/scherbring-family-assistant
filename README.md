@@ -47,14 +47,29 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
    - Verify: `claude mcp list` should show `todoist` connected.
    - Use a Todoist **test project** if you want to avoid touching your real lists — the
      subagent can create and complete tasks.
-5. **Telegram channel** (in an interactive `claude` session, from the project root):
+5. **Install Bun** — the Telegram channel's MCP server runs on **Bun** (not Node). Without
+   it the channel silently never starts. Install and reopen your terminal:
+   ```powershell
+   powershell -c "irm bun.sh/install.ps1 | iex"
+   ```
+   Verify: `bun --version`.
+6. **Telegram channel** — configure the bot (any `claude` session, persists to
+   `~/.claude/channels/telegram/.env`):
    ```
    /plugin install telegram@claude-plugins-official
    /telegram:configure <bot-token>
-   /telegram:access policy allowlist      # lock down BEFORE leaving pairing mode
    ```
-   Add only your numeric user ID to the allowlist. **Do not leave open pairing mode.**
-   > Telegram channels are a Claude Code research-preview feature; confirm exact command
+   Then **launch with the channel** (Step "Launch" below), and **pair your account** —
+   this is the step that actually adds you to the allowlist:
+   ```
+   # 1. From Telegram, send any message to your bot → it replies with a pairing code.
+   # 2. In the running Claude Code session:
+   /telegram:access pair <code>
+   # 3. Optionally lock down so only paired users get through:
+   /telegram:access policy allowlist
+   ```
+   > `policy allowlist` alone does NOT add you — you must `pair` first, or every message
+   > is silently dropped. Telegram channels are a research-preview feature; confirm command
    > names against the live docs: https://code.claude.com/docs/en/channels.md
 
 ### B. Already built (in this repo — no action needed)
