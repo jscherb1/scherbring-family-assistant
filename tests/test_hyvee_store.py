@@ -45,5 +45,20 @@ class TestHistory(unittest.TestCase):
         self.assertEqual(top["last_order_date"], "2026-07-19")
         self.assertEqual(top["upc"], "00123")
 
+class TestPrefs(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); self.tmp.close(); self.db = self.tmp.name
+    def tearDown(self): os.unlink(self.db)
+    def test_set_get_upsert(self):
+        run(["prefs", "set", "--item", "milk", "--preferred-product-id", "4160380",
+             "--product-name", "Kemps Whole Milk", "--confidence", "0.8"], self.db)
+        got = run(["prefs", "get", "--item", "milk"], self.db)
+        self.assertEqual(got["preferred_product_id"], "4160380")
+        self.assertAlmostEqual(got["confidence"], 0.8)
+        run(["prefs", "set", "--item", "milk", "--confidence", "0.9"], self.db)  # upsert keeps product
+        got = run(["prefs", "get", "--item", "milk"], self.db)
+        self.assertEqual(got["preferred_product_id"], "4160380")
+        self.assertAlmostEqual(got["confidence"], 0.9)
+
 if __name__ == "__main__":
     unittest.main()
