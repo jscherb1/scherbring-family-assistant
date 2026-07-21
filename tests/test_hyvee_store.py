@@ -21,5 +21,29 @@ class TestSchema(unittest.TestCase):
         out = run(["prefs", "list"], self.db)
         self.assertEqual(out, [])
 
+class TestHistory(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); self.tmp.close()
+        self.db = self.tmp.name
+        self.j = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w");
+        json.dump({"purchaseGroups": [{"title": "July 2026", "purchaseCards": [
+            {"purchaseId": "o1", "date": "2026-07-19", "summary": "$5 - picked up",
+             "items": [{"image": {"url": "https://cdn/products/00123/CF/x.jpg", "altText": "Kemps Whole Milk"}}]},
+            {"purchaseId": "o2", "date": "2026-06-10", "summary": "$5", "items": [
+             {"image": {"url": "https://cdn/products/00123/CF/x.jpg", "altText": "Kemps Whole Milk"}}]}]}]},
+            self.j); self.j.close()
+    def tearDown(self):
+        os.unlink(self.db); os.unlink(self.j.name)
+    def test_ingest_and_stats(self):
+        res = run(["history", "ingest", "--json", self.j.name], self.db)
+        self.assertEqual(res["inserted"], 2)
+        run(["history", "ingest", "--json", self.j.name], self.db)  # idempotent
+        stats = run(["history", "stats", "--item", "milk"], self.db)
+        top = stats[0]
+        self.assertEqual(top["product_name"], "Kemps Whole Milk")
+        self.assertEqual(top["times"], 2)
+        self.assertEqual(top["last_order_date"], "2026-07-19")
+        self.assertEqual(top["upc"], "00123")
+
 if __name__ == "__main__":
     unittest.main()
