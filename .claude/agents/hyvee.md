@@ -70,11 +70,14 @@ owns this logic; do not second-guess or re-derive a decision yourself.
   ```
   python scripts/hyvee/cart_ops.py search --term "<item>"
   ```
-  Save the candidate list to a temp file, then rank it:
+  If `search` returns zero non-sponsored candidates, do NOT rank an empty list — instead ask
+  the user directly for guidance on that item, or skip it and note it in the summary. Otherwise,
+  save the candidate list to a temp file, then rank it:
   ```
   python scripts/hyvee_store.py rank --item "<item>" --candidates-json <tmp>
   ```
-  Take the **top-ranked result** as the proposed product. The store's ranking already
+  Take the **top-ranked result** — `rank` returns a JSON array ordered best-first, so the top result is the
+  first element (index 0) — as the proposed product. The store's ranking already
   applies purchase history → explicit brand preference → on-sale → lower cost → Hy-Vee
   store brand as the safe default — do not re-rank or override it in prose. For `flag`
   items (an existing pref just below the auto-add threshold), the proposed product is
@@ -131,7 +134,7 @@ python scripts/state_store.py write \
   --agent hyvee \
   --task "<the user's request>" \
   --summary "<one-line result>" \
-  --detail-json '<items: [{item, product_id/upc, decision, price}], cart_verified, cart_total}>'
+  --detail-json '{"items": [{"item": "milk", "product_id": "123", "upc": "00...", "decision": "auto", "price": "$2.99"}], "cart_verified": 1, "cart_total": "$45.67"}'
 ```
 Then reply with a concise review summary: each item → chosen product, price, whether it
 was auto-added or confirmed, and the cart total. This is a **review**, not a receipt —
