@@ -70,3 +70,39 @@ CREATE TABLE IF NOT EXISTS scheduled_task_runs (
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task_run
     ON scheduled_task_runs (task_id, run_at DESC);
+
+-- Kids memory keeper: quick memories/anecdotes about the kids, captured locally
+-- and mirrored to per-child Google Drive subfolders (scripts/kid_memories_store.py)
+-- for long-term archival. A memory about both kids is one row tagged with both
+-- children, but is duplicated into each child's Drive subfolder on sync.
+CREATE TABLE IF NOT EXISTS kid_memories (
+    id                    TEXT PRIMARY KEY,      -- uuid4
+    created_at            TEXT NOT NULL,         -- ISO-8601 local wall-clock when this was LOGGED, e.g. 2026-07-20T14:30:12
+    memory_date           TEXT NOT NULL,         -- ISO date (YYYY-MM-DD) the memory actually HAPPENED; defaults to created_at's date if not told otherwise
+    memory_date_precision TEXT NOT NULL DEFAULT 'exact', -- 'exact' | 'approximate' (vague timeframe like "last spring")
+    children_json    TEXT NOT NULL,         -- ["Ruth"] | ["Claire"] | ["Ruth","Claire"]
+    raw_text         TEXT NOT NULL,         -- verbatim as originally told - NEVER edited after insert
+    memory_text      TEXT NOT NULL,         -- working copy; starts equal to raw_text, may be refined later
+    source           TEXT NOT NULL,         -- 'telegram' | 'direct'
+    tags_json        TEXT,                  -- free-form tags, e.g. ["funny","bedtime"]
+    media_type       TEXT NOT NULL DEFAULT 'text',  -- future: 'photo' | 'audio'
+    drive_files_json TEXT,                  -- {"Ruth": {"file_id":..., "path":...}, ...}
+    drive_status     TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'synced' | 'failed'
+    metadata_json    TEXT                   -- open-ended catch-all for future fields
+);
+
+CREATE INDEX IF NOT EXISTS idx_kid_memories_created ON kid_memories (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kid_memories_memory_date ON kid_memories (memory_date DESC);
+
+-- Learned trigger phrasing feedback for the kids-memory subagent: phrases that
+-- correctly (or incorrectly) signaled a kid-specific memory, so recognition of
+-- natural-language anecdotes vs. false positives improves over time.
+CREATE TABLE IF NOT EXISTS kid_memory_triggers (
+    id          INTEGER PRIMARY KEY,
+    phrase      TEXT NOT NULL,
+    kind        TEXT NOT NULL,          -- 'positive' | 'false_positive'
+    created_at  TEXT NOT NULL,
+    note        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kid_memory_triggers_kind ON kid_memory_triggers (kind);

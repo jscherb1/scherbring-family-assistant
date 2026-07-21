@@ -22,8 +22,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/todoist.md` | Todoist subagent (scoped to Todoist MCP + the state store) |
 | `.claude/agents/meal-planner.md` | Meal-planner subagent (recipe library, Google Calendar, Todoist Shopping List) |
 | `.claude/agents/scheduler.md` | Scheduler subagent — creates/lists/pauses/deletes proactive scheduled tasks |
+| `.claude/agents/kids-memory.md` | Kids-memory subagent — captures memories about the kids locally + to Google Drive |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `scheduler` channel). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
@@ -35,6 +36,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/start_orchestrator.ps1` | Idempotent launcher — skips if already running, restarts on exit |
 | `scripts/orchestrator_status.ps1` | Read-only check for whether the orchestrator is running |
 | `scripts/register_orchestrator_task.ps1` | One-time setup for the auto-start-at-logon Scheduled Task |
+| `scripts/kid_memories_store.py` | Zero-dep CLI for kid memories (add/update/get/list/mark-drive-synced/mark-drive-failed/add-trigger/triggers) |
 | `.env.example` | Env template (no real secrets needed for Phase 1) |
 
 > **Location matters:** this project lives **outside** OneDrive on purpose. The personal
@@ -92,6 +94,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 - Scheduled-tasks feature (registry, poller, local channel, `scheduler` subagent) —
   see the dedicated **Scheduled tasks** setup section below for the one-time steps
   this one *does* need.
+- Kids memory keeper (`kid_memories`/`kid_memory_triggers` tables, `kid_memories_store.py`,
+  `kids-memory` subagent) — see the dedicated **Kids memory keeper** section below. Needs
+  the Google Drive MCP connector authorized (already done) and no further setup.
 
 ## Launch (the orchestrator)
 
@@ -187,6 +192,35 @@ One-time setup:
 5. Try it: message the bot "every day at [a couple minutes from now], say hello" and
    confirm the scheduled reply arrives prefixed `📅 Scheduled:`.
 
+## Kids memory keeper
+
+Tell the orchestrator (in chat, or via Telegram) a quick memory, anecdote, or note
+about the kids — Ruth (4) and Claire (7) — natural-language ("Claire said the
+funniest thing today...") or explicit ("remember this for Ruth"). The `kids-memory`
+subagent:
+
+- Saves a local SQLite record (`kid_memories` table) that keeps the **verbatim raw
+  text** (`raw_text`, never edited) separate from an optional cleaned-up/corrected
+  working copy (`memory_text`).
+- Resolves the memory's actual **event date** from the message (not just "today") —
+  e.g. "back in March..." files correctly under that date, not the day it was
+  captured — with `exact`/`approximate` precision tracking.
+- Tags one or both children on a single record (no duplicate local rows for a
+  memory about both kids).
+- Mirrors a Markdown file (front-matter metadata + raw/refined text) into that
+  child's subfolder under the linked [Google Drive
+  folder](https://drive.google.com/drive/folders/1JP0kp_c6GcxwnRTlpAOGkwTEJjIgrEKS)
+  for long-term archival, filed by event date.
+- Learns which phrasings are/aren't real memory triggers over time
+  (`kid_memory_triggers` table) to reduce missed captures and false positives.
+
+Text-only for now; the schema (`tags_json`/`metadata_json` catch-alls, `media_type`
+column) is built to extend to photos/audio later without a migration. Capture-only
+in this version — no recall/search UI yet (a natural fast-follow).
+
+No setup needed beyond what's already done — the Google Drive MCP connector is
+authorized and the `Ruth`/`Claire` subfolders already exist.
+
 ## State store CLI (reference)
 
 ```
@@ -257,11 +291,12 @@ own brainstorm/spec before being built.
       on that person's list.
 - [ ] **Home maintenance agent** — same shape as the lawn & garden agent, but indoor: HVAC
       filters, smoke detector batteries, gutter cleaning, on a recurring cadence + calendar.
-- [ ] **Kids memory keeper** — quickly send a message (e.g. a transcribed voice note from
-      your phone) about a day-to-day moment with one or both kids, and have it captured as a
-      dated memory snapshot: saved locally to work with (search, recall, maybe compile into a
-      yearbook/journal later), and backed up to Google Drive so it's never at risk of being
-      lost. Needs the Google Drive MCP connector authorized first.
+- [ ] **Kids memory keeper — recall/search** — the capture side is built (see **Kids memory
+      keeper** section above); a natural fast-follow is querying it back ("what memories do
+      we have for Claire from this month?").
+- [ ] **Kids memory keeper — photo/audio support** — extend beyond text (transcribed voice
+      notes, photos) now that the schema/Drive pipeline is in place (`media_type` column
+      already anticipates this).
 
 ### Someday / needs more refinement
 
