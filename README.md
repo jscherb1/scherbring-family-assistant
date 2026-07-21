@@ -469,6 +469,11 @@ own brainstorm/spec before being built.
       above.
 - [ ] **Shopping assistant (deal-watching)** — watches for deals on non-urgent wanted items
       across stores, Craigslist, Facebook Marketplace, etc.
+- [ ] **Fitness coach agent** — design training protocols and plans, set goals, recommend
+      workouts, and analyze progress by pulling activity data from Strava (and possibly other
+      sources — Garmin, Apple Health, Whoop). Adapts the plan to actual training load and
+      reports on trends over time. Needs a Strava API integration (OAuth) as the primary
+      data source.
 - [ ] **Google Chat bridge** — a second chat channel (alongside Telegram) so the assistant
       is reachable from Google Chat too.
 - [ ] **Grocery list from pantry/fridge photos** — snap a picture of what's on hand and
