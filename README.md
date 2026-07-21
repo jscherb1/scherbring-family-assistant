@@ -28,7 +28,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `scheduler` channel). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
@@ -45,7 +45,10 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/profile_store.py` | Zero-dep CLI for the personal profile store (person/fact/global-fact sub-commands) — any subagent can call it directly |
 | `scripts/weather_store.py` | Zero-dep CLI for weather-reminders data (config/alert sub-commands) |
 | `scripts/home_maintenance_store.py` | Zero-dep CLI for home maintenance data (item/completion/due sub-commands) |
-| `.env.example` | Env template (no real secrets needed for Phase 1) |
+| `.claude/agents/hyvee.md` | Hy-Vee cart-builder subagent — resolves the Todoist shopping list to specific products and builds (never places) a Hy-Vee Aisles Online cart |
+| `scripts/hyvee_store.py` | Zero-dep CLI for the cart-builder decision store (history / prefs / feedback / seed / resolve / rank / run sub-commands) |
+| `scripts/hyvee/` | Playwright browser layer — `cart_ops.py` (login, purchase-history sync, product search, add-to-cart, cart verify), `diagnose.py` (site-change maintenance toolkit), `hyvee_web.py` (selector/URL/endpoint constants), `hyvee_session.py` (shared helpers) |
+| `.env.example` | Env template (Hy-Vee cart builder needs `HYVEE_USERNAME`/`HYVEE_PASSWORD` here; otherwise no real secrets needed for Phase 1) |
 
 > **Location matters:** this project lives **outside** OneDrive on purpose. The personal
 > task DB and any tokens must not sync to a corporate cloud tenant. Back up via a
@@ -377,6 +380,37 @@ python scripts/profile_store.py global-fact set --key home_address --value "123 
 
 No setup needed beyond what's already built — the schema applies itself on first use.
 
+## Hy-Vee cart builder
+
+Turn the Todoist shopping list into a **built (never placed)** Hy-Vee Aisles Online cart.
+Say "build my Hy-Vee cart" (chat or Telegram) and the `hyvee` subagent reads the list,
+resolves each item to a specific product, auto-adds the confident matches, asks about the
+rest in one batch, verifies the cart, and hands back a review summary for you to finalize
+and check out yourself. It **never** places an order.
+
+- **Learns from your purchases.** Item→product matching is seeded from your Hy-Vee order
+  history and improves every run: confidently-bought items auto-add; ambiguous ones are
+  flagged for a single batched confirmation, and your accept/reject/substitute feedback
+  tunes confidence over time (`hyvee_item_prefs`, `hyvee_feedback_log`).
+- **Tie-breakers when there's no history match:** purchase history → your explicit brand
+  preference → on sale → lower cost → Hy-Vee store brand as the safe default.
+- **Structured shopping-list items.** The meal-planner (and manual adds) can attach
+  `item:` / `brand:` / `size:` / `product_id:` / `qty:` / `note:` lines in a Todoist task's
+  description so downstream matching is exact rather than guessed.
+- **Two layers, cleanly split:** `scripts/hyvee_store.py` (zero-dep SQLite decision/learning
+  store) and `scripts/hyvee/` (Playwright automation). When Hy-Vee changes their site,
+  `python scripts/hyvee/diagnose.py check` reports exactly which selector/endpoint broke, and
+  the fix is a one-line change in `scripts/hyvee/hyvee_web.py`.
+
+One-time setup — put `HYVEE_USERNAME`/`HYVEE_PASSWORD` in `.env`, then:
+```
+pip install -r scripts/hyvee/requirements.txt && playwright install chromium
+python scripts/hyvee/cart_ops.py sync-history
+python scripts/hyvee_store.py history ingest --json <json_path from sync-history>
+python scripts/hyvee_store.py seed --items "milk,eggs,bread,bananas,..."
+```
+Build-only, always: `cart_ops.py` has no checkout command by design.
+
 ## State store CLI (reference)
 
 ```
@@ -421,10 +455,15 @@ own brainstorm/spec before being built.
 - [ ] **Personal finance agent** — needs a Monarch Money MCP server (all financial data is
       aggregated there). The official server is currently paused; look into unofficial/
       community alternatives.
-- [ ] **Shopping cart builder** — build (not place) orders at Hy-Vee and/or Target, comparing
-      price across stores, and remembering which specific variant of a regular item ("milk")
-      to add. Stops short of checkout — a human reviews and places the order. Note: Hy-Vee
-      auth has been difficult in the past.
+- [x] **Shopping cart builder — Phase 1 (Hy-Vee)** — build (never place) a Hy-Vee Aisles
+      Online cart from the Todoist shopping list, resolving each item to a specific product
+      from purchase history + learned preferences, with a feedback loop that sharpens matching
+      every run. Built: `hyvee` subagent, see **Hy-Vee cart builder** above.
+- [ ] **Shopping cart builder — Phase 2 (Target + cross-store optimization)** — add a second
+      cart builder for Target (same build-only, learn-from-history model as Hy-Vee), then
+      optimize *where* each item is bought: compare price/availability across Hy-Vee and Target
+      and route each item to the cheaper (or preferred) store, staging a cart at each. Still
+      stops short of checkout — a human reviews and places both orders.
 - [x] **Weather reminders** — proactive nudges ahead of incoming weather (shovel snow, bring
       in cushions, etc.). Built: `weather-reminders` subagent, see **Weather reminders agent**
       above.
