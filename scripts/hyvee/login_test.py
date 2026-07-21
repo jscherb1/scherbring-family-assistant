@@ -27,29 +27,24 @@ from playwright.sync_api import (
     sync_playwright,
 )
 
+from hyvee_web import HOME_URL, LOGIN_URL, SELECTORS
+
 # --- Paths ---
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 SESSION_FILE = REPO_ROOT / "state" / "hyvee_session.json"
 ERROR_SCREENSHOT = Path(__file__).resolve().parent / "last_error.png"
 
-# --- URLs ---
-HOME_URL = "https://www.hy-vee.com/"
-LOGIN_URL = "https://www.hy-vee.com/main/login"
-
-# --- Selectors (discovered from the live site) ---
-SEL_COOKIE_ACCEPT = "#onetrust-accept-btn-handler"
-SEL_USERNAME = "#username"
-SEL_PASSWORD = "#password"
-SEL_MFA = (
-    "input[autocomplete='one-time-code'], input[name*='code' i], "
-    "input[id*='code' i]"
-)
-SEL_LOGIN_LINK = "[data-testid='global-navigation-login']"
-SEL_CART_ICON = "[data-testid='global-navigation-cart-icon-button']"
-SEL_CART_BUBBLE = "[data-testid='global-navigation-cart-bubble']"
-SEL_SEARCH_INPUT = "[data-testid='global-navigation-search-input']"
-SEL_ADD_TO_CART = "[data-testid='add-to-cart-button']"
+# --- Selectors (see hyvee_web.py — the single source of truth) ---
+SEL_COOKIE_ACCEPT = SELECTORS["cookie_accept"]
+SEL_USERNAME = SELECTORS["username"]
+SEL_PASSWORD = SELECTORS["password"]
+SEL_MFA = SELECTORS["mfa"]
+SEL_LOGIN_LINK = SELECTORS["login_link"]
+SEL_CART_ICON = SELECTORS["cart_icon"]
+SEL_CART_BUBBLE = SELECTORS["cart_bubble"]
+SEL_SEARCH_INPUT = SELECTORS["search_input"]
+SEL_ADD_TO_CART = SELECTORS["add_to_cart"]
 
 
 def load_env(path: Path) -> dict:

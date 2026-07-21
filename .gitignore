@@ -27,6 +27,7 @@ state/logs/
 # --- Hy-Vee cart automation (local session + debug screenshot) ---
 state/hyvee_session.json
 scripts/hyvee/last_error.png
+scripts/hyvee/_debug/
 
 # --- Bun (installed by `bun install` in scripts/scheduler_channel/; bun.lock IS committed) ---
 scripts/scheduler_channel/node_modules/
