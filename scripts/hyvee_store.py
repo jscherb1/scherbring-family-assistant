@@ -181,7 +181,7 @@ def main(argv=None) -> int:
     hi.set_defaults(func=cmd_history_ingest)
     hs = history.add_parser("stats"); hs.add_argument("--item", default=None)
     hs.set_defaults(func=cmd_history_stats)
-    feedback = sub.add_parser("feedback").add_subparsers(dest="action", required=True)
+    feedback = sub.add_parser("feedback").add_subparsers(dest="fb_command", required=True)
     fr = feedback.add_parser("record")
     fr.add_argument("--item", required=True)
     fr.add_argument("--action", required=True, choices=["accepted", "rejected", "substituted"])
