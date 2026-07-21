@@ -185,6 +185,35 @@ def cmd_seed(args) -> None:
     conn.commit()
     _out(seeded)
 
+def cmd_resolve(args) -> None:
+    items = json.loads(Path(args.items_json).read_text(encoding="utf-8"))
+    conn = _connect(); resolved = []
+    for it in items:
+        key = normalize_item(it.get("item", ""))
+        entry = {"item": it.get("item", ""), "input": it}
+        if it.get("product_id") or it.get("upc"):
+            entry["decision"] = "exact"
+            entry["product_id"] = it.get("product_id"); entry["upc"] = it.get("upc")
+        else:
+            pref = conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (key,)).fetchone()
+            if pref and pref["confidence"] >= AUTO_THRESHOLD:
+                entry["decision"] = "auto"; entry["pref"] = dict(pref)
+            elif pref:
+                entry["decision"] = "flag"; entry["pref"] = dict(pref)
+            else:
+                entry["decision"] = "search"
+        resolved.append(entry)
+    _out({"resolved": resolved})
+
+def cmd_run_log(args) -> None:
+    conn = _connect(); rid = uuid.uuid4().hex
+    conn.execute("INSERT INTO hyvee_cart_runs (id, ts, items_json, resolved_json, cart_verified, summary) "
+                 "VALUES (?,?,?,?,?,?)",
+                 (rid, _now(), Path(args.items_json).read_text(encoding="utf-8"),
+                  Path(args.resolved_json).read_text(encoding="utf-8"),
+                  args.cart_verified, args.summary))
+    conn.commit(); _out({"id": rid})
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -223,6 +252,16 @@ def main(argv=None) -> int:
     seed.add_argument("--items", required=True)
     seed.add_argument("--min-confidence", type=float, default=0.0, dest="min_confidence")
     seed.set_defaults(func=cmd_seed)
+    resolve = sub.add_parser("resolve")
+    resolve.add_argument("--items-json", required=True, dest="items_json")
+    resolve.set_defaults(func=cmd_resolve)
+    run_group = sub.add_parser("run").add_subparsers(dest="run_command", required=True)
+    rl = run_group.add_parser("log")
+    rl.add_argument("--items-json", required=True, dest="items_json")
+    rl.add_argument("--resolved-json", required=True, dest="resolved_json")
+    rl.add_argument("--cart-verified", type=int, default=None, dest="cart_verified")
+    rl.add_argument("--summary", default=None)
+    rl.set_defaults(func=cmd_run_log)
     args = ap.parse_args(argv)
     args.func(args)
     return 0
