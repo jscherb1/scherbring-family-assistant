@@ -20,11 +20,15 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | Path | Purpose |
 |------|---------|
 | `.claude/agents/todoist.md` | Todoist subagent (scoped to Todoist MCP + the state store) |
-| `.claude/agents/meal-planner.md` | Meal-planner subagent (recipe library, Google Calendar, Todoist Shopping List) |
+| `.claude/agents/meal-planner.md` | Meal-planner subagent (recipe library, Google Calendar, Todoist Shopping List + frozen-protein thaw reminders) |
 | `.claude/agents/scheduler.md` | Scheduler subagent — creates/lists/pauses/deletes proactive scheduled tasks |
 | `.claude/agents/kids-memory.md` | Kids-memory subagent — captures memories about the kids locally + to Google Drive |
+| `.claude/agents/lawn-garden.md` | Lawn & garden subagent — tracks the lawn care program, product inventory, plants, weed issues, and the weekly proactive weather/calendar check |
+| `.claude/agents/profile.md` | Profile subagent — captures/recalls structured facts about the user, family, and friends; other subagents read the store directly |
+| `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
+| `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `scheduler` channel). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
@@ -37,6 +41,10 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/orchestrator_status.ps1` | Read-only check for whether the orchestrator is running |
 | `scripts/register_orchestrator_task.ps1` | One-time setup for the auto-start-at-logon Scheduled Task |
 | `scripts/kid_memories_store.py` | Zero-dep CLI for kid memories (add/update/get/list/mark-drive-synced/mark-drive-failed/add-trigger/triggers) |
+| `scripts/lawn_garden_store.py` | Zero-dep CLI for lawn & garden data (plant/product/program/treatment/issue/config sub-commands) |
+| `scripts/profile_store.py` | Zero-dep CLI for the personal profile store (person/fact/global-fact sub-commands) — any subagent can call it directly |
+| `scripts/weather_store.py` | Zero-dep CLI for weather-reminders data (config/alert sub-commands) |
+| `scripts/home_maintenance_store.py` | Zero-dep CLI for home maintenance data (item/completion/due sub-commands) |
 | `.env.example` | Env template (no real secrets needed for Phase 1) |
 
 > **Location matters:** this project lives **outside** OneDrive on purpose. The personal
@@ -235,6 +243,140 @@ No setup needed beyond what's already done — the Google Drive MCP connector is
 authorized, the `Ruth`/`Claire` subfolders already exist, and both scheduled tasks
 are registered.
 
+## Lawn & garden agent
+
+Tracks the Reinders 6-Step lawn care program, the chemical/product inventory, plant &
+mulch-bed locations, and recurring weed issues (quackgrass, clover, dandelion, thistle)
+for the ~10,000 sq ft yard in Rochester, MN. The `lawn-garden` subagent:
+
+- Logs treatments (program rounds and ad-hoc spot sprays) as they happen —
+  `lawn_garden_treatments` — including product, method (`broadcast`/`spot-spray`/
+  `backpack`), area, and target weeds.
+- Keeps the product inventory (`lawn_garden_products`), plant/bed locations
+  (`lawn_garden_plants`), and open weed/pest issues (`lawn_garden_issues`) up to date
+  from natural-language notes ("picked up a jug of Roundup", "there's a new thistle
+  patch by the shed").
+- Answers recall questions ("when did we last spray?", "what's Round 2?") straight from
+  the local SQLite data — read-only, same continuity pattern as the other subagents.
+- **Proactive, scheduled**: a weekly check (Saturdays) that combines program timing,
+  the ~monthly spot-spray cadence, current weather (Open-Meteo, no API key needed), and
+  Google Calendar free/busy time into one consolidated reminder — silent if nothing is
+  due. Register it via the `scheduler` subagent, same mechanism as the kids-memory
+  scheduled tasks (see **Scheduled tasks** above):
+  ```
+  python scripts/scheduler_store.py add --name "lawn-garden-weekly-check" \
+    --prompt "Delegate to the lawn-garden subagent to run the weekly proactive lawn & garden check." \
+    --cron "0 8 * * 6" --target-chat-id "<your chat_id>"
+  ```
+- Calendar events are only created after you explicitly confirm a suggested task in
+  chat — the weekly check itself never writes to your calendar unprompted.
+
+One-time setup: seed the program and yard profile once —
+```
+python scripts/lawn_garden_store.py program seed
+python scripts/lawn_garden_store.py config set --key yard_size_sqft --value 10000
+python scripts/lawn_garden_store.py config set --key location --value "Rochester, MN"
+python scripts/lawn_garden_store.py config set --key latitude --value 44.0234
+python scripts/lawn_garden_store.py config set --key longitude --value -92.4630
+python scripts/lawn_garden_store.py config set --key equipment --value "3x 1-gallon sprayer, 1x 4-gallon backpack sprayer"
+```
+then register the weekly check above whenever you're ready.
+
+## Weather reminders agent
+
+Proactive nudges ahead of incoming weather for the Rochester, MN home — bring in the
+deck cushions/furniture before rain, get ahead of shoveling before a decent snowfall,
+and flag severe thunderstorm/tornado watches. The `weather-reminders` subagent:
+
+- Checks Open-Meteo (no API key needed) against three simple rules —
+  `rain_cushions`, `snow_shoveling`, `severe_weather` — with thresholds stored in
+  `weather_config` (rain probability/amount, snow inches) and overridable any time.
+- **Proactive, scheduled**: a daily morning check that posts one consolidated message
+  only when something new is coming — silent otherwise. Each newly-triggered event is
+  logged in `weather_alerts` so it isn't repeated on consecutive mornings while still
+  in the forecast window.
+- Never creates a Todoist task unprompted — it proposes in chat, and only adds the
+  task if you confirm in a later turn.
+- Also answers ad hoc questions any time ("what's the weather looking like this
+  week?", "should I worry about anything?") without touching the alert log.
+
+One-time setup: seed the location once (reuses the same coordinates as the lawn &
+garden agent, entered independently since each agent owns its own config) —
+```
+python scripts/weather_store.py config set --key latitude --value 44.0234
+python scripts/weather_store.py config set --key longitude --value -92.4630
+python scripts/weather_store.py config set --key location --value "Rochester, MN"
+```
+then register the daily check:
+```
+python scripts/scheduler_store.py add --name "daily-weather-check" \
+  --prompt "Delegate to the weather-reminders subagent to run the daily proactive weather check (rain before cushions, snow-shoveling prep, severe weather watch)." \
+  --cron "30 6 * * *" --target-chat-id "<your chat_id>"
+```
+
+## Home maintenance agent
+
+Tracks recurring indoor home maintenance items — HVAC filter changes, smoke/CO
+detector batteries, water softener salt, garage clean-outs, and seasonal chores
+like winterizing outdoor spigots — each on its own recurrence cadence. The
+`home-maintenance` subagent:
+
+- Logs completions as they happen (`home_maintenance_completions`) against a set
+  of recurring item definitions (`home_maintenance_items`, each with its own
+  `interval_days`), same "definition + append-only log" shape as the lawn-garden
+  agent's plants/treatments tables.
+- Answers questions straight from the local data — "what's due soon?", "when did
+  we last test the smoke detectors?" — read-only, same continuity pattern as the
+  other subagents.
+- **Proactive, scheduled**: a weekly check (Sundays) that flags anything overdue
+  or due within the next 7 days in one consolidated message — silent if nothing's
+  due. It then offers a Google Calendar event, a Todoist task, or both for any
+  item; **nothing is created until you confirm**, and logging a completion always
+  requires you to say the chore was actually done (a reminder alone never marks
+  something complete).
+- Seeded with a starter list you can edit/pause (`--active 0`)/extend anytime:
+  HVAC filter change (90 days), smoke/CO detector battery test (~6 months), water
+  softener salt check (30 days), garage clean-out (~6 months, spring & fall),
+  winterize outdoor spigots (annual), test GFCI outlets (annual).
+
+One-time setup: seed the starter items, then register the weekly check —
+```
+python scripts/home_maintenance_store.py item seed
+python scripts/scheduler_store.py add --name "home-maintenance-weekly-check" \
+  --prompt "Delegate to the home-maintenance subagent to run the weekly proactive home maintenance due-check." \
+  --cron "0 9 * * 0" --target-chat-id "<your chat_id>"
+```
+
+## Personal profile
+
+A single source of truth for structured facts about the user, family, and friends —
+name, relationship, birthday, and open-ended per-person facts (allergy, shirt_size,
+school, dietary preference, etc.), plus household-level facts not tied to one person
+(home address, timezone, anniversary). Backed by `profile_people` /
+`profile_people_facts` / `profile_facts` and `scripts/profile_store.py`.
+
+- Talk to the `profile` subagent for natural-language capture ("remember my wife's
+  birthday is March 3rd") and recall ("what do we know about Jane?", "who's allergic
+  to anything?").
+- **Any other subagent can query the store directly** via `Bash` — no need to route
+  through the `profile` subagent for a simple read. This keeps lookups frictionless:
+  meal-planner checks it for dietary restrictions, scheduler for birthdays/
+  anniversaries, kids-memory for Ruth/Claire's structured facts, todoist for
+  gift-relevant preferences. Only the `profile` subagent should ever write to it, to
+  avoid duplicate person rows or inconsistent fact keys accumulating.
+- Ruth and Claire get `profile_people` rows too (birthday, allergies, sizes, school);
+  `kids-memory` keeps owning anecdotes/stories and Drive sync separately — the two
+  systems are complementary, not merged.
+
+```
+python scripts/profile_store.py person add --name "Jane Doe" --relationship spouse --birthday 1990-03-14
+python scripts/profile_store.py fact set --person-id <id> --key allergy --value "peanuts"
+python scripts/profile_store.py person get --name "Jane Doe"
+python scripts/profile_store.py global-fact set --key home_address --value "123 Main St"
+```
+
+No setup needed beyond what's already built — the schema applies itself on first use.
+
 ## State store CLI (reference)
 
 ```
@@ -276,9 +418,6 @@ originally listed here too — both are now built; see **Scheduled tasks** above
 Not scheduled, not designed — just captured so they don't get lost. Each would get its
 own brainstorm/spec before being built.
 
-- [ ] **Lawn & garden agent** — regular checks for spot-spraying weeds, a fertilizer
-      schedule, spring/fall + regular pruning/trimming, combined with weather and the
-      family calendar to actually get tasks scheduled.
 - [ ] **Personal finance agent** — needs a Monarch Money MCP server (all financial data is
       aggregated there). The official server is currently paused; look into unofficial/
       community alternatives.
@@ -286,8 +425,9 @@ own brainstorm/spec before being built.
       price across stores, and remembering which specific variant of a regular item ("milk")
       to add. Stops short of checkout — a human reviews and places the order. Note: Hy-Vee
       auth has been difficult in the past.
-- [ ] **Weather reminders** — proactive nudges ahead of incoming weather (shovel snow, bring
-      in cushions, etc.).
+- [x] **Weather reminders** — proactive nudges ahead of incoming weather (shovel snow, bring
+      in cushions, etc.). Built: `weather-reminders` subagent, see **Weather reminders agent**
+      above.
 - [ ] **Shopping assistant (deal-watching)** — watches for deals on non-urgent wanted items
       across stores, Craigslist, Facebook Marketplace, etc.
 - [ ] **Google Chat bridge** — a second chat channel (alongside Telegram) so the assistant
@@ -300,11 +440,13 @@ own brainstorm/spec before being built.
 - [ ] **Email triage / inbox digest** — the Gmail MCP server is also already connected but
       unused. A daily/weekly digest of what needs action (school notices, bills, appointment
       confirmations), same proactive shape as the heartbeat skill above.
-- [ ] **Birthday/gift-reminder agent** — the Todoist subagent already keeps per-person Gift
-      Ideas sub-lists; a proactive nudge ahead of a birthday/anniversary using what's already
-      on that person's list.
-- [ ] **Home maintenance agent** — same shape as the lawn & garden agent, but indoor: HVAC
-      filters, smoke detector batteries, gutter cleaning, on a recurring cadence + calendar.
+- [ ] **Birthday/gift-reminder agent** — the data layer now exists (`profile_people.birthday`
+      via the **Personal profile** section above, plus the Todoist subagent's per-person Gift
+      Ideas sub-lists); still needs a proactive scheduled check that cross-references upcoming
+      birthdays against what's already on that person's gift list.
+- [x] **Home maintenance agent** — same shape as the lawn & garden agent, but indoor: HVAC
+      filters, smoke detector batteries, water softener salt, garage clean-outs, seasonal
+      chores. Built: `home-maintenance` subagent, see **Home maintenance agent** above.
 - [ ] **Kids memory keeper — photo/audio support** — extend beyond text (transcribed voice
       notes, photos) now that the schema/Drive pipeline is in place (`media_type` column
       already anticipates this). Capture, recall/chat, and proactive monthly/weekly

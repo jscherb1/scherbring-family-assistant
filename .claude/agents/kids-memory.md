@@ -36,6 +36,17 @@ python scripts/state_store.py write \
 ```
 Not needed for a plain capture (saving a new memory) — only for recall/chat.
 
+## Profile lookups
+
+Ruth and Claire's **structured facts** (birthday, allergies, sizes, school) live in
+the shared profile store, not here — this agent owns anecdotes/stories only:
+```
+python scripts/profile_store.py person get --name "Ruth"
+python scripts/profile_store.py person get --name "Claire"
+```
+If a recall question needs a structured fact rather than an anecdote (e.g. "when's
+Claire's birthday?"), answer from there instead of searching memories for it.
+
 ## Deciding whether a message is a kid memory
 
 Both of these count:
