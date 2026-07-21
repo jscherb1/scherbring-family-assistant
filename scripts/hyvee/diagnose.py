@@ -296,6 +296,30 @@ def _check_selector(page, check: dict) -> tuple:
         page.wait_for_selector(check["selector"], state="visible", timeout=10000)
         return True, "visible"
     except PlaywrightTimeoutError:
+        if check.get("allow_empty"):
+            # This selector (currently only cart_line_item) legitimately
+            # renders nothing when the underlying list is empty — e.g. the
+            # cart page has zero line items. That's a valid, non-broken
+            # state, so before declaring FAIL we look for a second signal
+            # that confirms "the page loaded fine, it's just empty" rather
+            # than "the selector broke". See hyvee_web.SELECTORS
+            # ["cart_empty_indicator"] for the (intentionally loose) text
+            # match used for that second signal.
+            try:
+                page.wait_for_selector(
+                    SELECTORS["cart_empty_indicator"], state="visible", timeout=5000
+                )
+                return (
+                    True,
+                    "selector not visible, but empty-state indicator matched "
+                    "(cart is empty — not a break)",
+                )
+            except PlaywrightTimeoutError:
+                return (
+                    False,
+                    "selector not visible and no empty-state indicator found "
+                    "(possible real breakage)",
+                )
         return False, "selector not visible"
 
 

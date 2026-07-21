@@ -69,6 +69,24 @@ SELECTORS = {
     # test cart.
     "cart_line_item": "[class*='OuterWrapper']",
     "cart_line_qty": "[data-testid='incrementer-input']",
+    # Product-page quantity stepper that replaces the `add_to_cart` button
+    # after the first successful add (verified live 2026-07-21 via
+    # diagnose.py against product id 22943): the button becomes an
+    # incrementer with a "Remove From Cart" (-) button, a
+    # `data-testid='incrementer-input'` text field, and this "Increase
+    # Quantity" (+) button. `cart_ops.py add` uses this to add qty>1 units
+    # reliably instead of re-clicking a selector that's no longer the
+    # add-to-cart button.
+    "product_qty_increment": "button[aria-label='Increase Quantity']",
+    # Heuristic fallback used only by diagnose.py's `cart_line_item` critical
+    # check (see CRITICAL_CHECKS below): `cart_line_item` never renders on an
+    # empty cart, so the check needs a second, independent signal for "the
+    # cart page loaded fine and is just empty" vs. "the page/selector broke".
+    # Regex text match on "empty" is deliberately loose (exact empty-state
+    # copy hasn't been observed live because the test account's cart has
+    # never been empty during development) — it only needs to avoid a false
+    # FAIL, a real selector break still fails via the check's other branch.
+    "cart_empty_indicator": "text=/empty/i",
     "sponsored": "[data-testid='sponsored-text']",
     # Not reliably populated on search cards (see discovery doc) — kept for
     # completeness/inspection; prefer productId/UPC over brand strings.
@@ -126,6 +144,21 @@ CRITICAL_CHECKS = [
         "kind": "api",
         "url": PURCHASE_HISTORY_API.format(page=1),
         "expect_key": "purchaseGroups",
+    },
+    {
+        # `cart_ops.py verify-cart` reads line items via this exact selector
+        # against the cart page (see its module docstring's "verify-cart
+        # approach" section) — none of the checks above exercise it, so this
+        # selector could silently break while `check` stayed all-green.
+        # `allow_empty` tells diagnose.py's check runner that this selector
+        # legitimately renders nothing when the cart has zero items; see
+        # SELECTORS["cart_empty_indicator"] and _check_selector's allow_empty
+        # branch in diagnose.py for how that's made non-flaky.
+        "name": "cart line item (verify-cart selector)",
+        "kind": "selector",
+        "url": CART_PAGE_URL,
+        "selector": SELECTORS["cart_line_item"],
+        "allow_empty": True,
     },
     {
         # POST GraphQL endpoint; its real query body was never built —
