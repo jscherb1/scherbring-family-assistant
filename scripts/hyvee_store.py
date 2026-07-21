@@ -155,6 +155,36 @@ def cmd_feedback_record(args) -> None:
     pref = dict(conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (item,)).fetchone())
     _out({"pref": pref, "auto_add": conf >= AUTO_THRESHOLD})
 
+def _top_history_product(conn, item_key):
+    return conn.execute(
+        "SELECT product_name, COUNT(*) AS times, MAX(order_date) AS last_date, MAX(upc) AS upc "
+        "FROM hyvee_purchase_history WHERE lower(product_name) LIKE ? "
+        "GROUP BY product_name ORDER BY times DESC, last_date DESC LIMIT 1",
+        (f"%{item_key.lower()}%",)).fetchone()
+
+def cmd_seed(args) -> None:
+    conn = _connect(); seeded = []
+    for raw in args.items.split(","):
+        key = normalize_item(raw)
+        if not key:
+            continue
+        top = _top_history_product(conn, key)
+        if not top:
+            continue
+        conf = min(0.9, 0.4 + 0.1 * top["times"])
+        if conf < args.min_confidence:
+            continue
+        conn.execute(
+            "INSERT INTO hyvee_item_prefs (item, preferred_upc, product_name, confidence, source, updated_at) "
+            "VALUES (?,?,?,?, 'history', ?) "
+            "ON CONFLICT(item) DO UPDATE SET preferred_upc=excluded.preferred_upc, "
+            "product_name=excluded.product_name, confidence=excluded.confidence, "
+            "source='history', updated_at=excluded.updated_at",
+            (key, top["upc"], top["product_name"], conf, _now()))
+        seeded.append(dict(conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (key,)).fetchone()))
+    conn.commit()
+    _out(seeded)
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -189,6 +219,10 @@ def main(argv=None) -> int:
     fr.add_argument("--chosen-product-id", default=None, dest="chosen_product_id")
     fr.add_argument("--note", default=None)
     fr.set_defaults(func=cmd_feedback_record)
+    seed = sub.add_parser("seed")
+    seed.add_argument("--items", required=True)
+    seed.add_argument("--min-confidence", type=float, default=0.0, dest="min_confidence")
+    seed.set_defaults(func=cmd_seed)
     args = ap.parse_args(argv)
     args.func(args)
     return 0
