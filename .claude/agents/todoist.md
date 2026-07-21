@@ -53,6 +53,16 @@ meaningfully sharpen a gift idea.
   household item request. When adding, the task content is **only the item itself**
   (plus quantity if given), never the action — "add milk" → task content is `Milk`, not
   `Buy milk`. Quantities are fine (`Milk (2)`). **No due dates** on food/household items.
+  - **Structured description convention**: Shopping List tasks may carry a `key: value`
+    description block (`item:`, plus optional `brand`/`size`/`product_id`/`upc`/`qty`/
+    `note`) that the `hyvee` cart-builder subagent reads to resolve each item to a
+    specific product — e.g. a task titled `Milk (2)` with description `item: milk`
+    / `brand: Kemps` / `size: 0.5 gal` / `qty: 2` / `note: whole, not 2%`. When you
+    add a new shopping-list item yourself, a plain title with no description is fine
+    (`item:` just falls back to the title). When you **update** an existing shopping-list
+    task (quantity change, note, etc.), preserve any existing structured description
+    block rather than clearing or overwriting it wholesale — merge your change into it
+    (e.g. bump `qty:`) instead of replacing the whole description with new free text.
 - **Costco List** — same rules as Shopping List (item only, quantity ok, no due dates),
   but only used when the request explicitly says "Costco" or "bulk." Otherwise default to
   Shopping List.
