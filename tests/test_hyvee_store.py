@@ -109,5 +109,23 @@ class TestSeed(unittest.TestCase):
         self.assertAlmostEqual(seeded["milk"]["confidence"], 0.6)  # 0.4 + 0.1*2
         self.assertNotIn("ranch", seeded)  # no history match -> skipped
 
+class TestResolve(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); self.tmp.close(); self.db = self.tmp.name
+        run(["prefs","set","--item","milk","--preferred-product-id","111","--confidence","0.8"], self.db)
+        run(["prefs","set","--item","eggs","--preferred-product-id","222","--confidence","0.5"], self.db)
+    def tearDown(self): os.unlink(self.db)
+    def _items(self, data):
+        f = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w"); json.dump(data, f); f.close(); return f.name
+    def test_decisions(self):
+        path = self._items([{"item":"milk"},{"item":"eggs"},{"item":"kombucha"},
+                            {"item":"soap","product_id":"999"}])
+        out = run(["resolve","--items-json", path], self.db)
+        d = {r["item"]: r["decision"] for r in out["resolved"]}
+        self.assertEqual(d["milk"], "auto")
+        self.assertEqual(d["eggs"], "flag")
+        self.assertEqual(d["kombucha"], "search")
+        self.assertEqual(d["soap"], "exact")
+
 if __name__ == "__main__":
     unittest.main()
