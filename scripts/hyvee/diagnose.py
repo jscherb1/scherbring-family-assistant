@@ -13,9 +13,12 @@ Subcommands:
         Navigate to a URL and record JSON network responses whose URL
         contains `kw` (default: "api").
     dump-card
-        Load a milk search, extract the first product card's outerHTML and
-        the fields the cart-builder relies on (productId, upc, name, size,
-        price, sponsored, isBuyAgain, ...).
+        Load a milk search, extract the first REAL search-results card
+        (SELECTORS["search_result_card"] — the actual paginated grid the
+        cart-builder depends on) plus the first recommendation-carousel card
+        (SELECTORS["product_card"]) for comparison, dumping outerHTML and the
+        fields the cart-builder relies on (productId, upc, name, size,
+        price, sponsored, isBuyAgain, ...) for each.
     check
         Run every entry in hyvee_web.CRITICAL_CHECKS against the live site
         and print a PASS/FAIL table. Exits non-zero if anything fails.
@@ -241,6 +244,21 @@ CARD_JS = r"""
 """
 
 
+def _dump_one_card(page, out: Path, label: str, selector: str) -> dict | None:
+    locator = page.locator(selector).first
+    if locator.count() == 0:
+        print(f"[dump-card] {label}: no match for selector {selector!r}")
+        return None
+    locator.scroll_into_view_if_needed(timeout=10000)
+    page.wait_for_timeout(1000)
+    data = locator.evaluate(CARD_JS)
+    out_file = out / f"dump_card_{label}.json"
+    out_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(f"[dump-card] {label} -> {out_file}")
+    print(json.dumps({k: v for k, v in data.items() if k != "outerHTML"}, indent=2))
+    return data
+
+
 def cmd_dump_card(args) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -252,14 +270,13 @@ def cmd_dump_card(args) -> int:
             page.goto(url, wait_until="domcontentloaded", timeout=45000)
             page.wait_for_timeout(4000)
             dismiss_cookie_banner(page)
-            card = page.locator(SELECTORS["product_card"]).first
-            card.scroll_into_view_if_needed(timeout=10000)
-            page.wait_for_timeout(1000)
-            data = card.evaluate(CARD_JS)
-            out_file = out / "dump_card.json"
-            out_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            print(f"[dump-card] term={args.term!r} -> {out_file}")
-            print(json.dumps({k: v for k, v in data.items() if k != "outerHTML"}, indent=2))
+            print(f"[dump-card] term={args.term!r}")
+            # The real search-results grid — what the cart-builder actually
+            # depends on (see SELECTORS["search_result_card"] comment in
+            # hyvee_web.py for why this differs from "product_card").
+            _dump_one_card(page, out, "search_result_card", SELECTORS["search_result_card"])
+            # The recommendation/carousel card, kept for comparison.
+            _dump_one_card(page, out, "product_card", SELECTORS["product_card"])
             return 0
         finally:
             browser.close()

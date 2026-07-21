@@ -1,5 +1,11 @@
 """Browser layer for the Hy-Vee cart-builder: sync history, search, add, verify.
 
+*** IMPORTANT — verify-cart contract: productId is ALWAYS null. ***
+`verify-cart` reads line items from the cart-page DOM, which has no
+product-link href to parse a productId out of (unlike `search`). Every line
+item it returns has `productId: null`. Consumers MUST match cart line items
+to products by `upc`, never by `productId`.
+
 Four subcommands, each printing JSON to stdout:
     sync-history [--max-pages N]
         Fetches the purchase-history API (logged-in `page.request`), paginating
@@ -16,6 +22,8 @@ Four subcommands, each printing JSON to stdout:
     verify-cart
         Returns current cart line items as JSON
         [{"productId", "upc", "description", "quantity"}].
+        NOTE: productId is always null here (see the *** warning above) —
+        match line items by upc.
 
         Approach: DOM fallback (chosen deliberately — see module docstring
         section "verify-cart approach" below for why the GraphQL replay was
@@ -46,7 +54,9 @@ navigates to the cart page and reads line items directly from the rendered
 cart-line elements (data-testid based selectors added to hyvee_web.SELECTORS
 as `cart_line_item`, `cart_line_qty`). This is robust to the exact GraphQL
 contract and still returns the same {productId, upc, description, quantity}
-shape by parsing the product link and image URL exactly like `search` does.
+shape by parsing the image URL exactly like `search` does — except cart-line
+elements carry no product-link href (unlike search cards), so `productId` is
+always null here; consumers must match by `upc` instead.
 """
 
 import argparse

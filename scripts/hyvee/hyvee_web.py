@@ -99,6 +99,17 @@ CRITICAL_CHECKS = [
         "selector": SELECTORS["product_card"],
     },
     {
+        # The real search-results grid (see search_result_card comment above)
+        # — `product card` above only covers the 3-item recommendation
+        # carousel and would stay green even if the actual results grid the
+        # cart-builder depends on broke. Both checks are kept: they verify
+        # two distinct, real page elements.
+        "name": "search result card",
+        "kind": "selector",
+        "url": SEARCH_URL_TMPL.format(term="milk"),
+        "selector": SELECTORS["search_result_card"],
+    },
+    {
         "name": "add-to-cart button",
         "kind": "selector",
         "url": SEARCH_URL_TMPL.format(term="milk"),
@@ -117,11 +128,12 @@ CRITICAL_CHECKS = [
         "expect_key": "purchaseGroups",
     },
     {
-        # POST GraphQL endpoint; its real query body isn't built until Task 8
-        # (cart_ops.py). This check is intentionally lenient — it only
-        # confirms the endpoint exists (anything but a 404 counts as PASS).
-        # Task 8's `cart_ops.py verify-cart` exercises the real contract
-        # with the actual GraphQL query/response shape.
+        # POST GraphQL endpoint; its real query body was never built —
+        # Task 8's `cart_ops.py verify-cart` reads the cart via the
+        # cart-page DOM (CART_PAGE_URL) instead of replaying this GraphQL
+        # call. This check is intentionally lenient — it only confirms the
+        # getActiveCart endpoint still exists (anything but a 404 counts as
+        # PASS); it does not exercise the real query/response shape.
         "name": "getActiveCart API",
         "kind": "api",
         "url": GET_ACTIVE_CART_API,
