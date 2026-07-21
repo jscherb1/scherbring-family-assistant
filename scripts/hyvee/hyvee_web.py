@@ -18,6 +18,12 @@ workflow.
 HOME_URL = "https://www.hy-vee.com/"
 LOGIN_URL = "https://www.hy-vee.com/main/login"
 SEARCH_URL_TMPL = "https://www.hy-vee.com/aisles-online/search?search={term}"
+PRODUCT_PAGE_TMPL = "https://www.hy-vee.com/aisles-online/p/{product_id}"
+# The cart *review* page (view/adjust quantities before deciding to check
+# out) — despite the "checkout" segment in its path, this is not the
+# payment/checkout flow itself. cart_ops.py navigates here to verify cart
+# contents but never clicks through to payment.
+CART_PAGE_URL = "https://www.hy-vee.com/aisles-online/checkout/cart"
 
 # --- API endpoints ---
 PURCHASE_HISTORY_API = (
@@ -43,6 +49,26 @@ SELECTORS = {
     "search_input": "[data-testid='global-navigation-search-input']",
     "add_to_cart": "[data-testid='add-to-cart-button']",
     "product_card": "[data-testid='UniversalProductCard']",
+    # `product_card` (data-testid='UniversalProductCard') only matches the
+    # small recommendation/carousel swimlane above the results grid (verified
+    # live 2026-07-21 while building cart_ops.py: on a "milk" search it
+    # matched 3 unrelated carousel items — Haagen-Dazs ice cream, cold brew
+    # coffee — never the ~30-per-page paginated grid of actual milk
+    # products). The real search-results grid renders the *same* internal
+    # component markup but without that top-level testid; its card root is
+    # reliably identified as the ancestor of the add-to-cart button's
+    # `primary-action-component` wrapper. Use this selector for anything
+    # that needs the actual result set (cart_ops.py `search`); `product_card`
+    # is kept for the carousel / diagnose.py compatibility.
+    "search_result_card": "div:has(> [data-testid='primary-action-component'])",
+    # Cart line items (`/aisles-online/checkout/cart` — the cart *review*
+    # page, not a payment/checkout step) reuse the exact same card-root
+    # component/class as search results and the carousel, but with an
+    # `incrementer-input` quantity control instead of an add-to-cart button.
+    # Verified live 2026-07-21: matched exactly the 3 items actually in the
+    # test cart.
+    "cart_line_item": "[class*='OuterWrapper']",
+    "cart_line_qty": "[data-testid='incrementer-input']",
     "sponsored": "[data-testid='sponsored-text']",
     # Not reliably populated on search cards (see discovery doc) — kept for
     # completeness/inspection; prefer productId/UPC over brand strings.
