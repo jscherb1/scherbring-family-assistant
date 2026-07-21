@@ -13,6 +13,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = REPO_ROOT / "state" / "schema.sql"
 
+AUTO_THRESHOLD = 0.75
+STEP_UP = 0.1
+STEP_DOWN = 0.2
+
 for _s in (sys.stdout, sys.stderr):
     if hasattr(_s, "reconfigure"):
         _s.reconfigure(encoding="utf-8")
@@ -32,6 +36,9 @@ def _now() -> str:
 
 def _out(obj) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=2))
+
+def _clamp(x):
+    return max(0.0, min(1.0, x))
 
 def normalize_item(text: str) -> str:
     t = (text or "").lower().strip()
@@ -119,6 +126,35 @@ def cmd_history_stats(args) -> None:
         f"GROUP BY product_name ORDER BY times DESC, last_order_date DESC", params).fetchall()
     _out([dict(r) for r in rows])
 
+def cmd_feedback_record(args) -> None:
+    item = normalize_item(args.item)
+    conn = _connect()
+    conn.execute("INSERT INTO hyvee_feedback_log (id, ts, item, proposed_product_id, action, chosen_product_id, note) "
+                 "VALUES (?,?,?,?,?,?,?)",
+                 (uuid.uuid4().hex, _now(), item, args.proposed_product_id, args.action,
+                  args.chosen_product_id, args.note))
+    row = conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (item,)).fetchone()
+    if row is None:
+        conn.execute("INSERT INTO hyvee_item_prefs (item, confidence, updated_at) VALUES (?,?,?)",
+                     (item, 0.0, _now()))
+        row = conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (item,)).fetchone()
+    conf = row["confidence"]; tc = row["times_confirmed"]; tr = row["times_rejected"]
+    ppid = row["preferred_product_id"]
+    if args.action == "accepted":
+        conf = _clamp(conf + STEP_UP); tc += 1
+    elif args.action == "rejected":
+        conf = _clamp(conf - STEP_DOWN); tr += 1
+    elif args.action == "substituted":
+        conf = _clamp(conf - STEP_DOWN); tr += 1
+        if args.chosen_product_id:
+            ppid = args.chosen_product_id
+    conn.execute("UPDATE hyvee_item_prefs SET confidence=?, times_confirmed=?, times_rejected=?, "
+                 "preferred_product_id=?, updated_at=? WHERE item=?",
+                 (conf, tc, tr, ppid, _now(), item))
+    conn.commit()
+    pref = dict(conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (item,)).fetchone())
+    _out({"pref": pref, "auto_add": conf >= AUTO_THRESHOLD})
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -145,6 +181,14 @@ def main(argv=None) -> int:
     hi.set_defaults(func=cmd_history_ingest)
     hs = history.add_parser("stats"); hs.add_argument("--item", default=None)
     hs.set_defaults(func=cmd_history_stats)
+    feedback = sub.add_parser("feedback").add_subparsers(dest="action", required=True)
+    fr = feedback.add_parser("record")
+    fr.add_argument("--item", required=True)
+    fr.add_argument("--action", required=True, choices=["accepted", "rejected", "substituted"])
+    fr.add_argument("--proposed-product-id", default=None, dest="proposed_product_id")
+    fr.add_argument("--chosen-product-id", default=None, dest="chosen_product_id")
+    fr.add_argument("--note", default=None)
+    fr.set_defaults(func=cmd_feedback_record)
     args = ap.parse_args(argv)
     args.func(args)
     return 0

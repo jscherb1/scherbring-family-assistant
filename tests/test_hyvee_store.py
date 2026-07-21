@@ -60,5 +60,25 @@ class TestPrefs(unittest.TestCase):
         self.assertEqual(got["preferred_product_id"], "4160380")
         self.assertAlmostEqual(got["confidence"], 0.9)
 
+class TestFeedback(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); self.tmp.close(); self.db = self.tmp.name
+        run(["prefs", "set", "--item", "milk", "--preferred-product-id", "111",
+             "--confidence", "0.7"], self.db)
+    def tearDown(self): os.unlink(self.db)
+    def test_accept_raises_and_graduates(self):
+        out = run(["feedback", "record", "--item", "milk", "--action", "accepted",
+                   "--proposed-product-id", "111"], self.db)
+        self.assertAlmostEqual(out["pref"]["confidence"], 0.8)
+        self.assertTrue(out["auto_add"])
+        self.assertEqual(out["pref"]["times_confirmed"], 1)
+    def test_substitute_switches_product_and_lowers(self):
+        out = run(["feedback", "record", "--item", "milk", "--action", "substituted",
+                   "--proposed-product-id", "111", "--chosen-product-id", "222"], self.db)
+        self.assertEqual(out["pref"]["preferred_product_id"], "222")
+        self.assertAlmostEqual(out["pref"]["confidence"], 0.5)
+        self.assertFalse(out["auto_add"])
+        self.assertEqual(out["pref"]["times_rejected"], 1)
+
 if __name__ == "__main__":
     unittest.main()
