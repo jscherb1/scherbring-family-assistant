@@ -127,5 +127,25 @@ class TestResolve(unittest.TestCase):
         self.assertEqual(d["kombucha"], "search")
         self.assertEqual(d["soap"], "exact")
 
+class TestRank(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); self.tmp.close(); self.db = self.tmp.name
+    def tearDown(self): os.unlink(self.db)
+    def _cands(self, data):
+        f = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w"); json.dump(data, f); f.close(); return f.name
+    def test_tiebreakers(self):
+        cands = self._cands([
+            {"product_id": "A", "name": "Prairie Farms Whole Milk", "price": "$3.49", "unit_price": "$6.98", "on_sale": False},
+            {"product_id": "B", "name": "Hy-Vee Whole Milk", "price": "$2.99", "unit_price": "$5.98", "on_sale": False},
+            {"product_id": "C", "name": "Kemps Whole Milk", "price": "$3.29", "unit_price": "$6.58", "on_sale": True},
+        ])
+        out = run(["rank", "--item", "milk", "--candidates-json", cands], self.db)
+        order = [c["product_id"] for c in out]
+        # C is on sale (beats non-sale); then cheaper unit price B before A;
+        # B is also the Hy-Vee brand default.
+        self.assertEqual(order[0], "C")
+        self.assertEqual(order[1], "B")
+        self.assertEqual(order[2], "A")
+
 if __name__ == "__main__":
     unittest.main()

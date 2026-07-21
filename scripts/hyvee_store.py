@@ -214,6 +214,61 @@ def cmd_run_log(args) -> None:
                   args.cart_verified, args.summary))
     conn.commit(); _out({"id": rid})
 
+HYVEE_BRAND_MARKERS = ("hy-vee", "that's smart")
+
+def _money(s):
+    if not s:
+        return None
+    m = re.search(r"(\d+(?:\.\d+)?)", str(s))
+    return float(m.group(1)) if m else None
+
+def _is_hyvee_brand(cand):
+    blob = f"{cand.get('brand') or ''} {cand.get('name') or ''}".lower()
+    return any(mark in blob for mark in HYVEE_BRAND_MARKERS)
+
+def rank_candidates(candidates, pref, history_names):
+    pref = pref or {}
+    pref_brand = (pref.get("pref_brand") or "").lower().strip()
+    max_price = pref.get("max_price")
+    hist_lower = {h.lower() for h in history_names}
+    def key(c):
+        name = (c.get("name") or "").lower()
+        in_history = any(h in name or name in h for h in hist_lower) or (
+            c.get("upc") and c.get("upc") in history_names)
+        brand_match = bool(pref_brand) and pref_brand in name
+        price = _money(c.get("price"))
+        unit = _money(c.get("unit_price"))
+        over_budget = bool(max_price) and price is not None and price > max_price
+        c["in_history"] = in_history; c["is_hyvee_brand"] = _is_hyvee_brand(c)
+        # sort ascending: False(0)<True(1) so negate booleans we want first
+        return (
+            over_budget,                       # in-budget first
+            not in_history,                    # history first
+            not brand_match,                   # explicit brand pref
+            not bool(c.get("on_sale")),        # on sale
+            unit if unit is not None else float("inf"),   # lower unit cost
+            price if price is not None else float("inf"), # lower price
+            not c["is_hyvee_brand"],           # Hy-Vee brand default
+        )
+    ranked = sorted(candidates, key=key)
+    for c in ranked:
+        reasons = []
+        if c.get("in_history"): reasons.append("bought before")
+        if c.get("on_sale"): reasons.append("on sale")
+        if c.get("is_hyvee_brand"): reasons.append("Hy-Vee brand")
+        c["_rank_reason"] = ", ".join(reasons) or "cost"
+    return ranked
+
+def cmd_rank(args) -> None:
+    cands = json.loads(Path(args.candidates_json).read_text(encoding="utf-8"))
+    conn = _connect()
+    key = normalize_item(args.item)
+    pref = conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (key,)).fetchone()
+    hist = conn.execute("SELECT product_name, upc FROM hyvee_purchase_history "
+                        "WHERE lower(product_name) LIKE ?", (f"%{key}%",)).fetchall()
+    names = [r["product_name"] for r in hist] + [r["upc"] for r in hist if r["upc"]]
+    _out(rank_candidates(cands, dict(pref) if pref else None, names))
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="group", required=True)
@@ -262,6 +317,10 @@ def main(argv=None) -> int:
     rl.add_argument("--cart-verified", type=int, default=None, dest="cart_verified")
     rl.add_argument("--summary", default=None)
     rl.set_defaults(func=cmd_run_log)
+    rank = sub.add_parser("rank")
+    rank.add_argument("--item", required=True)
+    rank.add_argument("--candidates-json", required=True, dest="candidates_json")
+    rank.set_defaults(func=cmd_rank)
     args = ap.parse_args(argv)
     args.func(args)
     return 0
