@@ -91,6 +91,12 @@ python scripts/hyvee/cart_ops.py add --product-id <id> [--qty N]
 ```
 Use `product_id` if present, otherwise `upc`. No prompt for these.
 
+`add`'s output includes `qty_matched` (whether the cart's bubble count actually
+increased by the requested `qty`, not just by some amount). If `qty_matched` is
+`false` for an item, don't treat it as a silent success — note that item's
+quantity discrepancy (`requested_qty` vs. `delta`) for the step 7 review summary
+so the user knows to double check it in the cart.
+
 ### 4. One batched confirmation for everything else
 
 Collect **all** `flag`/`search` items from this run and present them to the user in a
@@ -112,6 +118,9 @@ python scripts/hyvee/cart_ops.py add --product-id <id> [--qty N]
   `--chosen-product-id`).
 - `rejected` → don't add anything for that item; still record the feedback so
   confidence adjusts.
+
+Same as step 3: check `qty_matched` on every `add` call here too, and flag any
+`false` in the step 7 review summary.
 
 ### 6. Verify the cart
 

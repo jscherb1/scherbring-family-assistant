@@ -17,8 +17,13 @@ Four subcommands, each printing JSON to stdout:
         non-sponsored UniversalProductCard fields as a JSON list consumed by
         `hyvee_store.py rank`.
     add --product-id 4160380 [--qty 1]
-        Navigates to the product page and clicks add-to-cart --qty times,
-        printing {"added": bool, "cart_qty": N} (bubble count before/after).
+        Navigates to the product page, clicks add-to-cart once, then (for
+        qty>1) uses the quantity-stepper "+" that replaces the button to add
+        the remaining units, printing {"added": bool, "cart_qty": N,
+        "requested_qty": N, "delta": N, "qty_matched": bool}. `delta` is the
+        actual bubble-count increase and `qty_matched` is whether it equals
+        `requested_qty` — the caller's real signal for whether every
+        requested unit landed (bubble count before/after).
     verify-cart
         Returns current cart line items as JSON
         [{"productId", "upc", "description", "quantity"}].
@@ -360,10 +365,59 @@ def cmd_add(args) -> int:
             page.wait_for_timeout(2500)
             dismiss_cookie_banner(page)
 
+            qty = max(1, args.qty)
             add_button = page.locator(SELECTORS["add_to_cart"]).first
-            add_button.scroll_into_view_if_needed(timeout=10000)
-            for _ in range(max(1, args.qty)):
+            increment_button = page.locator(
+                SELECTORS["product_qty_increment"]
+            ).first
+
+            clicks_remaining = qty
+            if add_button.count() > 0:
+                # Common path: nothing of this product in the cart yet, so
+                # the add-to-cart button is present. First unit: click it —
+                # the only add control that exists before this product has
+                # anything in the cart.
+                add_button.scroll_into_view_if_needed(timeout=10000)
                 add_button.click(timeout=15000)
+                page.wait_for_timeout(2000)
+                clicks_remaining -= 1
+            elif increment_button.count() > 0:
+                # This product already has a line in the cart (e.g. a prior
+                # run/test added it) — the add-to-cart button has already
+                # been replaced by the stepper, so there's no "first click"
+                # via add-to-cart; go straight to the stepper for every
+                # requested unit.
+                increment_button.scroll_into_view_if_needed(timeout=10000)
+            else:
+                raise RuntimeError(
+                    "Neither add-to-cart button nor quantity stepper found "
+                    "on product page"
+                )
+
+            # Remaining units (qty > 1, or all of qty if we started from the
+            # stepper branch above): verified live 2026-07-21 that the
+            # add-to-cart button is replaced by a quantity stepper
+            # (incrementer) after the first click — re-clicking the original
+            # add-to-cart selector for units 2..N is a no-op on this site.
+            # Prefer the stepper's "+" control (SELECTORS
+            # ["product_qty_increment"]); fall back to re-clicking
+            # add-to-cart in case a product/page variant never shows the
+            # stepper, since that's still strictly better than giving up.
+            for _ in range(clicks_remaining):
+                try:
+                    increment = page.locator(
+                        SELECTORS["product_qty_increment"]
+                    ).first
+                    if increment.count() > 0:
+                        increment.click(timeout=10000)
+                    else:
+                        fallback_button = page.locator(
+                            SELECTORS["add_to_cart"]
+                        ).first
+                        if fallback_button.count() > 0:
+                            fallback_button.click(timeout=15000)
+                except PlaywrightTimeoutError:
+                    pass
                 page.wait_for_timeout(2000)
 
             # Re-navigate to get an accurate "after" bubble count for the
@@ -372,8 +426,26 @@ def cmd_add(args) -> int:
             page.wait_for_timeout(1500)
             dismiss_cookie_banner(page)
             after = _cart_quantity(page)
+            delta = after - before
 
-            print(json.dumps({"added": after > before, "cart_qty": after}))
+            print(
+                json.dumps(
+                    {
+                        "added": after > before,
+                        "cart_qty": after,
+                        "requested_qty": qty,
+                        "delta": delta,
+                        # The orchestrator (`.claude/agents/hyvee.md`) uses
+                        # this as its signal for whether the exact requested
+                        # quantity landed — a partial/no increase (e.g. the
+                        # stepper never appeared and the fallback re-click
+                        # no-op'd) still returns 0 here rather than raising,
+                        # so the caller can flag the item instead of the
+                        # whole run failing.
+                        "qty_matched": delta == qty,
+                    }
+                )
+            )
             return 0
         except Exception as exc:  # noqa: BLE001
             _screenshot_on_error(page)
