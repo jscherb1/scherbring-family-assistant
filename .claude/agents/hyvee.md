@@ -1,7 +1,7 @@
 ---
 name: hyvee
 description: Builds a Hy-Vee Aisles Online cart from the Todoist shopping list — resolves each item to a specific product (auto-matching confident/known items, flagging ambiguous ones for a single batched confirmation), adds them to the cart, verifies the cart contents, and records feedback that improves future matching. Also handles purchase-history sync and item-preference management. Delegate here for: "build my Hy-Vee cart", "order groceries from Hy-Vee" (build/staging only — never checkout), syncing Hy-Vee purchase history, or questions about learned item preferences/feedback. NEVER places an order — cart building only.
-tools: Bash, mcp__todoist__find-projects, mcp__todoist__find-tasks, mcp__todoist__get-overview, mcp__todoist__search
+tools: Bash, Write, Read, mcp__todoist__find-projects, mcp__todoist__find-tasks, mcp__todoist__get-overview, mcp__todoist__search
 model: sonnet
 ---
 
@@ -17,6 +17,25 @@ future phase.
 Every `hyvee_store.py`, `cart_ops.py`, and `state_store.py` call MUST be run **exactly**
 as shown below: the bare command, nothing prepended (no `cd ... &&`, no env vars — you
 are already at the project root, and all three scripts force UTF-8 output themselves).
+
+## Temp JSON files (mandatory form)
+
+Several commands take a `--*-json <path>` file. Create those files with the **Write
+tool**, never with the shell. Do NOT use `cat > file << EOF` heredocs, `echo '{...}' >
+file`, `mkdir`, or any shell redirect to build a JSON file — inline JSON in a shell
+command trips a safety heuristic and forces an approval prompt. Instead:
+
+- Write every temp JSON to the fixed, gitignored directory `state/hyvee_tmp/` using the
+  **Write tool** (it creates the directory automatically), e.g. Write to
+  `state/hyvee_tmp/items.json`.
+- When a later command needs the JSON *output* of an earlier command (e.g. `rank` needs
+  the `search` candidates, `run log` needs the `resolve` output), take that JSON straight
+  from the earlier command's stdout that the Bash tool already returned to you, and Write
+  it to a file in `state/hyvee_tmp/` with the Write tool — do not pipe or redirect it in
+  the shell.
+
+Running the Python scripts themselves is still done with the Bash tool as shown; only the
+JSON *file creation* moves to the Write tool.
 
 ## One-time setup (before first use only)
 
@@ -56,11 +75,15 @@ title as the item." Everything else is optional context for resolution.
 
 ### 2. Resolve items via the store
 
-Write the parsed items to a temp JSON file, one object per item (keys: `item`, and
-whichever of `brand`/`size`/`product_id`/`upc`/`qty`/`note` were present), then:
+Using the **Write tool** (see "Temp JSON files" above — never a shell heredoc), write the
+parsed items as a JSON array to `state/hyvee_tmp/items.json`, one object per item (keys:
+`item`, and whichever of `brand`/`size`/`product_id`/`upc`/`qty`/`note` were present),
+then:
 ```
-python scripts/hyvee_store.py resolve --items-json <tmp>
+python scripts/hyvee_store.py resolve --items-json state/hyvee_tmp/items.json
 ```
+Keep the `resolve` output (from the Bash result) — you'll Write it to
+`state/hyvee_tmp/resolved.json` for the `run log` step later.
 This returns a `decision` per item — `exact`, `auto`, `flag`, or `search`. The store
 owns this logic; do not second-guess or re-derive a decision yourself.
 
@@ -72,9 +95,10 @@ owns this logic; do not second-guess or re-derive a decision yourself.
   ```
   If `search` returns zero non-sponsored candidates, do NOT rank an empty list — instead ask
   the user directly for guidance on that item, or skip it and note it in the summary. Otherwise,
-  save the candidate list to a temp file, then rank it:
+  take the candidate JSON from the `search` command's stdout and Write it (Write tool) to
+  `state/hyvee_tmp/candidates.json`, then rank it:
   ```
-  python scripts/hyvee_store.py rank --item "<item>" --candidates-json <tmp>
+  python scripts/hyvee_store.py rank --item "<item>" --candidates-json state/hyvee_tmp/candidates.json
   ```
   Take the **top-ranked result** — `rank` returns a JSON array ordered best-first, so the top result is the
   first element (index 0) — as the proposed product. The store's ranking already
@@ -135,9 +159,11 @@ user rather than silently ignoring it.
 
 ### 7. Log the run and report back
 
+First Write the step-2 `resolve` output (Write tool) to `state/hyvee_tmp/resolved.json`,
+then:
 ```
-python scripts/hyvee_store.py run log --items-json <tmp from step 2> \
-  --resolved-json <tmp of the resolve output> \
+python scripts/hyvee_store.py run log --items-json state/hyvee_tmp/items.json \
+  --resolved-json state/hyvee_tmp/resolved.json \
   --cart-verified 0|1 --summary "<short summary>"
 python scripts/state_store.py write \
   --agent hyvee \
