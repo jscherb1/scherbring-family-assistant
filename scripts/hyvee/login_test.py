@@ -28,15 +28,12 @@ from playwright.sync_api import (
 )
 
 from hyvee_web import HOME_URL, LOGIN_URL, SELECTORS
+from hyvee_session import ENV_FILE, SESSION_FILE, dismiss_cookie_banner, load_env
 
 # --- Paths ---
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = REPO_ROOT / ".env"
-SESSION_FILE = REPO_ROOT / "state" / "hyvee_session.json"
 ERROR_SCREENSHOT = Path(__file__).resolve().parent / "last_error.png"
 
 # --- Selectors (see hyvee_web.py — the single source of truth) ---
-SEL_COOKIE_ACCEPT = SELECTORS["cookie_accept"]
 SEL_USERNAME = SELECTORS["username"]
 SEL_PASSWORD = SELECTORS["password"]
 SEL_MFA = SELECTORS["mfa"]
@@ -45,31 +42,6 @@ SEL_CART_ICON = SELECTORS["cart_icon"]
 SEL_CART_BUBBLE = SELECTORS["cart_bubble"]
 SEL_SEARCH_INPUT = SELECTORS["search_input"]
 SEL_ADD_TO_CART = SELECTORS["add_to_cart"]
-
-
-def load_env(path: Path) -> dict:
-    """Minimal .env parser (stdlib only) — KEY=VALUE lines, ignores blanks/#."""
-    values = {}
-    if not path.exists():
-        return values
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        values[key.strip()] = val.strip().strip('"').strip("'")
-    return values
-
-
-def dismiss_cookie_banner(page) -> None:
-    """Accept the OneTrust cookie banner if it's covering the page."""
-    try:
-        btn = page.locator(SEL_COOKIE_ACCEPT).first
-        if btn.is_visible(timeout=3000):
-            btn.click()
-            page.wait_for_timeout(1000)
-    except PlaywrightTimeoutError:
-        pass
 
 
 def is_logged_in(page) -> bool:
