@@ -33,14 +33,58 @@ def _now() -> str:
 def _out(obj) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=2))
 
+def normalize_item(text: str) -> str:
+    t = (text or "").lower().strip()
+    t = re.sub(r"^\s*\d+\s*(x|ct|count|pk|pack|lb|lbs|oz|gal)?\s*", "", t)  # leading qty
+    t = re.sub(r"[^a-z0-9 ]+", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    if t.endswith("s") and not t.endswith("ss"):
+        t = t[:-1]
+    return t
+
 def _extract_upc(url: str):
     m = re.search(r"/products/(\d+)/", url or "")
     return m.group(1) if m else None
+
+_PREF_FIELDS = ["preferred_product_id", "preferred_upc", "product_name", "size",
+                "confidence", "pref_brand", "max_price", "prefer_on_sale", "pref_size", "source"]
+
+def _pref_default(col, v):
+    if v is not None:
+        return v
+    return {"confidence": 0.0, "prefer_on_sale": 0, "times_confirmed": 0,
+            "times_rejected": 0, "source": "history"}.get(col, None)
 
 def cmd_prefs_list(args) -> None:
     conn = _connect()
     rows = conn.execute("SELECT * FROM hyvee_item_prefs ORDER BY item").fetchall()
     _out([dict(r) for r in rows])
+
+def cmd_prefs_set(args) -> None:
+    item = normalize_item(args.item)
+    conn = _connect()
+    row = conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (item,)).fetchone()
+    vals = {f: getattr(args, f) for f in _PREF_FIELDS}
+    if row is None:
+        cols = ["item"] + _PREF_FIELDS + ["updated_at"]
+        data = [item] + [vals[f] for f in _PREF_FIELDS] + [_now()]
+        # defaults for NOT NULL columns when omitted
+        conn.execute(f"INSERT INTO hyvee_item_prefs ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})",
+                     [(_pref_default(f, v)) for f, v in zip(cols, data)])
+    else:
+        sets, params = [], []
+        for f in _PREF_FIELDS:
+            if vals[f] is not None:
+                sets.append(f"{f}=?"); params.append(vals[f])
+        sets.append("updated_at=?"); params.append(_now()); params.append(item)
+        conn.execute(f"UPDATE hyvee_item_prefs SET {','.join(sets)} WHERE item=?", params)
+    conn.commit()
+    _out(dict(conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (item,)).fetchone()))
+
+def cmd_prefs_get(args) -> None:
+    conn = _connect()
+    row = conn.execute("SELECT * FROM hyvee_item_prefs WHERE item=?", (normalize_item(args.item),)).fetchone()
+    _out(dict(row) if row else {})
 
 def cmd_history_ingest(args) -> None:
     data = json.loads(Path(args.json).read_text(encoding="utf-8"))
@@ -80,6 +124,22 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="group", required=True)
     prefs = sub.add_parser("prefs").add_subparsers(dest="action", required=True)
     prefs.add_parser("list").set_defaults(func=cmd_prefs_list)
+    ps = prefs.add_parser("set")
+    ps.add_argument("--item", required=True)
+    ps.add_argument("--preferred-product-id", default=None, dest="preferred_product_id")
+    ps.add_argument("--preferred-upc", default=None, dest="preferred_upc")
+    ps.add_argument("--product-name", default=None, dest="product_name")
+    ps.add_argument("--size", default=None)
+    ps.add_argument("--confidence", type=float, default=None)
+    ps.add_argument("--pref-brand", default=None, dest="pref_brand")
+    ps.add_argument("--max-price", type=float, default=None, dest="max_price")
+    ps.add_argument("--prefer-on-sale", type=int, default=None, dest="prefer_on_sale")
+    ps.add_argument("--pref-size", default=None, dest="pref_size")
+    ps.add_argument("--source", default=None)
+    ps.set_defaults(func=cmd_prefs_set)
+    pg = prefs.add_parser("get")
+    pg.add_argument("--item", required=True)
+    pg.set_defaults(func=cmd_prefs_get)
     history = sub.add_parser("history").add_subparsers(dest="action", required=True)
     hi = history.add_parser("ingest"); hi.add_argument("--json", required=True)
     hi.set_defaults(func=cmd_history_ingest)
