@@ -79,6 +79,13 @@ class TestFeedback(unittest.TestCase):
         self.assertAlmostEqual(out["pref"]["confidence"], 0.5)
         self.assertFalse(out["auto_add"])
         self.assertEqual(out["pref"]["times_rejected"], 1)
+    def test_feedback_creates_pref_when_absent(self):
+        out = run(["feedback", "record", "--item", "cheese", "--action", "accepted",
+                   "--proposed-product-id", "333"], self.db)
+        self.assertTrue("pref" in out)
+        self.assertAlmostEqual(out["pref"]["confidence"], 0.1)
+        self.assertEqual(out["pref"]["times_confirmed"], 1)
+        self.assertFalse(out["auto_add"])
 
 if __name__ == "__main__":
     unittest.main()
