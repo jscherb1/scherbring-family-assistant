@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, tempfile, unittest
+import json, os, sqlite3, subprocess, sys, tempfile, unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -146,6 +146,36 @@ class TestRank(unittest.TestCase):
         self.assertEqual(order[0], "C")
         self.assertEqual(order[1], "B")
         self.assertEqual(order[2], "A")
+
+class TestRunLog(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); self.tmp.close(); self.db = self.tmp.name
+        self.items_f = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w")
+        self.resolved_f = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w")
+    def tearDown(self):
+        os.unlink(self.db)
+        os.unlink(self.items_f.name)
+        os.unlink(self.resolved_f.name)
+    def test_run_log_persistence(self):
+        json.dump([{"item": "milk"}], self.items_f); self.items_f.close()
+        json.dump([{"item": "milk", "decision": "auto"}], self.resolved_f); self.resolved_f.close()
+        out = run(["run", "log", "--items-json", self.items_f.name, "--resolved-json", self.resolved_f.name,
+                   "--cart-verified", "1", "--summary", "test run"], self.db)
+        self.assertIn("id", out)
+        self.assertNotEqual(out["id"], "")
+        rid = out["id"]
+        conn = sqlite3.connect(self.db)
+        row = conn.execute("SELECT items_json, resolved_json, cart_verified, summary FROM hyvee_cart_runs WHERE id=?", (rid,)).fetchone()
+        self.assertIsNotNone(row, "Run not found in DB")
+        items_data = json.loads(row[0])
+        resolved_data = json.loads(row[1])
+        self.assertEqual(len(items_data), 1)
+        self.assertEqual(items_data[0]["item"], "milk")
+        self.assertEqual(len(resolved_data), 1)
+        self.assertEqual(resolved_data[0]["decision"], "auto")
+        self.assertEqual(row[2], 1, "cart_verified should be 1")
+        self.assertEqual(row[3], "test run", "summary mismatch")
+        conn.close()
 
 if __name__ == "__main__":
     unittest.main()
