@@ -22,7 +22,13 @@ Usage:
         [--memory-date 2026-03-14] [--memory-date-precision exact|approximate]
         (--memory-text refines/corrects the working copy only; raw_text is immutable)
     python scripts/kid_memories_store.py get --id <id>
-    python scripts/kid_memories_store.py list [--child Ruth] [--drive-status pending] [--limit 20]
+    python scripts/kid_memories_store.py list [--child Ruth] [--drive-status pending] \
+        [--memory-date 2026-03-14] [--since 2026-01-01] [--until 2026-03-31] \
+        [--logged-since 2026-07-14] [--logged-until 2026-07-20] \
+        [--search "bike"] [--tag funny] [--limit 20]
+        (--since/--until filter by memory_date i.e. when it happened; --logged-since/
+        --logged-until filter by created_at i.e. when it was captured - used for the
+        weekly capture-cadence check)
     python scripts/kid_memories_store.py mark-drive-synced --id <id> --drive-files-json '{...}'
     python scripts/kid_memories_store.py mark-drive-failed --id <id>
     python scripts/kid_memories_store.py add-trigger --phrase "..." --kind positive|false_positive [--note "..."]
@@ -199,6 +205,25 @@ def cmd_list(args: argparse.Namespace) -> int:
         if args.memory_date:
             sql += " AND memory_date = ?"
             params.append(args.memory_date)
+        if args.since:
+            sql += " AND memory_date >= ?"
+            params.append(args.since)
+        if args.until:
+            sql += " AND memory_date <= ?"
+            params.append(args.until)
+        if args.logged_since:
+            sql += " AND created_at >= ?"
+            params.append(args.logged_since)
+        if args.logged_until:
+            sql += " AND created_at <= ?"
+            params.append(args.logged_until)
+        if args.search:
+            sql += " AND (raw_text LIKE ? OR memory_text LIKE ?)"
+            like = f"%{args.search}%"
+            params.extend([like, like])
+        if args.tag:
+            sql += " AND tags_json LIKE ?"
+            params.append(f'%"{args.tag}"%')
         sql += " ORDER BY memory_date DESC, created_at DESC"
         if args.limit is not None:
             sql += " LIMIT ?"
@@ -306,10 +331,16 @@ def build_parser() -> argparse.ArgumentParser:
     get.add_argument("--id", required=True)
     get.set_defaults(func=cmd_get)
 
-    ls = sub.add_parser("list", help="List kid memories.")
+    ls = sub.add_parser("list", help="List/search kid memories.")
     ls.add_argument("--child", default=None)
     ls.add_argument("--drive-status", dest="drive_status", default=None, choices=["pending", "synced", "failed"])
-    ls.add_argument("--memory-date", dest="memory_date", default=None, help="Exact YYYY-MM-DD filter.")
+    ls.add_argument("--memory-date", dest="memory_date", default=None, help="Exact YYYY-MM-DD filter (event date).")
+    ls.add_argument("--since", default=None, help="YYYY-MM-DD; memory_date >= this (event date range).")
+    ls.add_argument("--until", default=None, help="YYYY-MM-DD; memory_date <= this (event date range).")
+    ls.add_argument("--logged-since", dest="logged_since", default=None, help="ISO timestamp/date; created_at >= this (capture date range).")
+    ls.add_argument("--logged-until", dest="logged_until", default=None, help="ISO timestamp/date; created_at <= this (capture date range).")
+    ls.add_argument("--search", default=None, help="Substring match against raw_text or memory_text.")
+    ls.add_argument("--tag", default=None, help="Filter to memories tagged with this tag.")
     ls.add_argument("--limit", type=int, default=None)
     ls.set_defaults(func=cmd_list)
 

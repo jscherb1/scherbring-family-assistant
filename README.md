@@ -213,13 +213,27 @@ subagent:
   for long-term archival, filed by event date.
 - Learns which phrasings are/aren't real memory triggers over time
   (`kid_memory_triggers` table) to reduce missed captures and false positives.
+- **Recall & chat**: ask it anything about past memories — "what do we know about
+  Claire's swimming lessons?", "any updates on the girls lately?", "tell me about
+  last summer" — with or without a timeframe. It infers child/keyword/date filters
+  from the question, searches the local DB, and answers conversationally
+  (follow-ups keep continuity via the shared state store, same pattern as
+  meal-planner). Read-only — chatting never edits a memory.
+- **Proactive, scheduled**: a monthly recap (first Sunday of the month, 7:30 PM —
+  highlights per child from the past month) and a weekly capture-cadence check
+  (Sunday 8 PM — nudges you if either girl hasn't had a memory logged in the past
+  week; silent otherwise). Both registered as `scheduler` tasks
+  (`kids-memory-monthly-recap`, `kids-memory-weekly-checkin`) — see **Scheduled
+  tasks** above for how that delivery mechanism works. Note: since cron here can't
+  natively express "first Sunday of the month," the monthly task actually fires
+  every Sunday and self-gates internally on day-of-month 1–7.
 
 Text-only for now; the schema (`tags_json`/`metadata_json` catch-alls, `media_type`
-column) is built to extend to photos/audio later without a migration. Capture-only
-in this version — no recall/search UI yet (a natural fast-follow).
+column) is built to extend to photos/audio later without a migration.
 
 No setup needed beyond what's already done — the Google Drive MCP connector is
-authorized and the `Ruth`/`Claire` subfolders already exist.
+authorized, the `Ruth`/`Claire` subfolders already exist, and both scheduled tasks
+are registered.
 
 ## State store CLI (reference)
 
@@ -291,12 +305,10 @@ own brainstorm/spec before being built.
       on that person's list.
 - [ ] **Home maintenance agent** — same shape as the lawn & garden agent, but indoor: HVAC
       filters, smoke detector batteries, gutter cleaning, on a recurring cadence + calendar.
-- [ ] **Kids memory keeper — recall/search** — the capture side is built (see **Kids memory
-      keeper** section above); a natural fast-follow is querying it back ("what memories do
-      we have for Claire from this month?").
 - [ ] **Kids memory keeper — photo/audio support** — extend beyond text (transcribed voice
       notes, photos) now that the schema/Drive pipeline is in place (`media_type` column
-      already anticipates this).
+      already anticipates this). Capture, recall/chat, and proactive monthly/weekly
+      scheduled prompts are all built — see the **Kids memory keeper** section above.
 
 ### Someday / needs more refinement
 
