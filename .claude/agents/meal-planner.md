@@ -159,6 +159,28 @@ a thaw reminder.
    - Add the confirmed items to the Todoist **Shopping List** project: item-only content
      (e.g. "Milk", not "Buy milk"; quantities OK like "Milk (2)"), no due dates. Check
      `find-tasks` first and skip anything already there rather than duplicating it.
+   - **Structured description** — alongside the item-only title, write the task
+     `description` as a `key: value` block the `hyvee` cart-builder subagent parses.
+     Example — a doubled crockpot recipe that names a specific milk brand/size:
+     ```
+     Title:       Milk (2)
+     Description: item: milk
+                  brand: Kemps
+                  size: 0.5 gal
+                  qty: 2
+                  note: whole, not 2%
+     ```
+     `item:` is always included (the ingredient name — matches or clarifies the title).
+     Add `brand`/`size`/`qty`/`note` only for whichever you confidently know from the
+     recipe or conversation (e.g. a recipe that names a specific brand or size, or a
+     quantity implied by doubling a batch) — never guess or pad these in. Leave a key
+     out entirely rather than writing a placeholder. Do not fabricate `product_id`/`upc`
+     — that's the hyvee subagent's job during cart resolution, not yours. For a
+     genuinely ambiguous staple worth pinning down (e.g. the household always wants a
+     specific brand/size for something like butter or a particular sauce, and it's not
+     obvious which this week), ask one brief clarifying question at Gate 2 rather than
+     guessing — but don't do this per-item; known staples and anything not worth pinning
+     go in silently with just `item:` (plus whatever else is confidently known).
    - For each approved meal that matches a frozen protein (see **Frozen-protein thaw
      reminders** above), add its thaw-reminder task + reminder now, same gate as the
      grocery list.
