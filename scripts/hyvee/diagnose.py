@@ -27,9 +27,9 @@ Usage:
     python scripts/hyvee/diagnose.py check
 
 All browser subcommands default to headless (pass --headed to watch).
-Requires HYVEE_USERNAME / HYVEE_PASSWORD in the repo-root .env for any
-subcommand that needs a logged-in session (reuses state/hyvee_session.json
-from login_test.py — run that first if it doesn't exist yet).
+No credentials are needed here — subcommands that need a logged-in session
+reuse the saved state/hyvee_session.json from login_test.py (run that first
+if it doesn't exist yet).
 """
 
 import argparse
@@ -43,41 +43,14 @@ from playwright.sync_api import (
 )
 
 from hyvee_web import CRITICAL_CHECKS, SEARCH_URL_TMPL, SELECTORS
+from hyvee_session import SESSION_FILE, dismiss_cookie_banner
 
 # Force utf-8 stdout so PASS/FAIL glyphs and product names never explode on
 # Windows consoles stuck in a legacy codepage.
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = REPO_ROOT / ".env"
-SESSION_FILE = REPO_ROOT / "state" / "hyvee_session.json"
 DEFAULT_OUT = Path(__file__).resolve().parent / "_debug"
-
-
-def load_env(path: Path) -> dict:
-    """Minimal .env parser (stdlib only) — KEY=VALUE lines, ignores blanks/#."""
-    values = {}
-    if not path.exists():
-        return values
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        values[key.strip()] = val.strip().strip('"').strip("'")
-    return values
-
-
-def dismiss_cookie_banner(page) -> None:
-    """Accept the OneTrust cookie banner if it's covering the page."""
-    try:
-        btn = page.locator(SELECTORS["cookie_accept"]).first
-        if btn.is_visible(timeout=3000):
-            btn.click()
-            page.wait_for_timeout(1000)
-    except PlaywrightTimeoutError:
-        pass
 
 
 def new_context(p, headless: bool, use_session: bool = True):
