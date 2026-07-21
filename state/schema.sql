@@ -276,3 +276,57 @@ CREATE TABLE IF NOT EXISTS weather_alerts (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_weather_alerts_type_date
     ON weather_alerts (alert_type, target_date);
+
+-- Hy-Vee cart builder: synced purchase-history snapshot (frequency/recency source).
+CREATE TABLE IF NOT EXISTS hyvee_purchase_history (
+    id           TEXT PRIMARY KEY,      -- uuid4 hex
+    upc          TEXT,                  -- from product image URL (may be null)
+    product_name TEXT NOT NULL,         -- from image altText
+    order_date   TEXT NOT NULL,         -- ISO date (YYYY-MM-DD)
+    purchase_id  TEXT NOT NULL,         -- Hy-Vee order uuid
+    synced_at    TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_hyvee_history_unique
+    ON hyvee_purchase_history (purchase_id, product_name);
+CREATE INDEX IF NOT EXISTS idx_hyvee_history_name
+    ON hyvee_purchase_history (product_name, order_date DESC);
+
+-- Learned item->product map, one row per normalized item key (e.g. "milk").
+CREATE TABLE IF NOT EXISTS hyvee_item_prefs (
+    item                 TEXT PRIMARY KEY,   -- normalized key
+    preferred_product_id TEXT,
+    preferred_upc        TEXT,
+    product_name         TEXT,
+    size                 TEXT,
+    confidence           REAL NOT NULL DEFAULT 0.0,  -- 0.0..1.0
+    pref_brand           TEXT,
+    max_price            REAL,
+    prefer_on_sale       INTEGER NOT NULL DEFAULT 0, -- 0/1
+    pref_size            TEXT,
+    source               TEXT NOT NULL DEFAULT 'history', -- history|user|mealplan
+    times_confirmed      INTEGER NOT NULL DEFAULT 0,
+    times_rejected       INTEGER NOT NULL DEFAULT 0,
+    updated_at           TEXT NOT NULL
+);
+
+-- Append-only feedback driving confidence changes (auditable).
+CREATE TABLE IF NOT EXISTS hyvee_feedback_log (
+    id                  TEXT PRIMARY KEY,   -- uuid4 hex
+    ts                  TEXT NOT NULL,
+    item                TEXT NOT NULL,
+    proposed_product_id TEXT,
+    action              TEXT NOT NULL,      -- accepted|rejected|substituted
+    chosen_product_id   TEXT,
+    note                TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hyvee_feedback_item ON hyvee_feedback_log (item, ts DESC);
+
+-- Per cart-build run log.
+CREATE TABLE IF NOT EXISTS hyvee_cart_runs (
+    id            TEXT PRIMARY KEY,   -- uuid4 hex
+    ts            TEXT NOT NULL,
+    items_json    TEXT NOT NULL,      -- list of parsed input items
+    resolved_json TEXT NOT NULL,      -- item -> product + auto/flagged
+    cart_verified INTEGER NOT NULL DEFAULT 0,
+    summary       TEXT
+);

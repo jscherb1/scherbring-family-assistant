@@ -28,7 +28,17 @@
       "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/state_store.py write *)",
       "Bash(python scripts/scheduler_store.py *)",
       "Bash(cd \"C:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/scheduler_store.py *)",
-      "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/scheduler_store.py *)"
+      "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/scheduler_store.py *)",
+      "Bash(python scripts/hyvee/cart_ops.py *)",
+      "Bash(cd \"C:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/hyvee/cart_ops.py *)",
+      "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/hyvee/cart_ops.py *)",
+      "Bash(python scripts/hyvee_store.py *)",
+      "Bash(cd \"C:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/hyvee_store.py *)",
+      "Bash(cd \"c:\\Users\\JustinScherbring\\Projects\\personal-assistant\" && python scripts/hyvee_store.py *)",
+      "Edit(state/hyvee_tmp/**)",
+      "Edit(//c/Users/JustinScherbring/Projects/personal-assistant/state/hyvee_tmp/**)",
+      "Write(state/hyvee_tmp/**)",
+      "Write(//c/Users/JustinScherbring/Projects/personal-assistant/state/hyvee_tmp/**)"
     ]
   }
 }
