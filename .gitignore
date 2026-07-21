@@ -28,6 +28,7 @@ state/logs/
 state/hyvee_session.json
 scripts/hyvee/last_error.png
 scripts/hyvee/_debug/
+state/hyvee_tmp/
 
 # --- Bun (installed by `bun install` in scripts/scheduler_channel/; bun.lock IS committed) ---
 scripts/scheduler_channel/node_modules/
