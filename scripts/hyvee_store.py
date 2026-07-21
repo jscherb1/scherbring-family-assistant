@@ -190,6 +190,7 @@ def cmd_resolve(args) -> None:
     conn = _connect(); resolved = []
     for it in items:
         key = normalize_item(it.get("item", ""))
+        # keep the raw item string so callers get back what they sent; pref lookups below use the normalized key
         entry = {"item": it.get("item", ""), "input": it}
         if it.get("product_id") or it.get("upc"):
             entry["decision"] = "exact"
