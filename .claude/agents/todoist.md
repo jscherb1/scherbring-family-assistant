@@ -36,6 +36,17 @@ A shared SQLite store records what each agent did. You MUST use it on every turn
   field a later question might reference. Assume the follow-up will be answered from this
   JSON alone, without re-querying Todoist.
 
+## Profile lookups
+
+For a gift-idea request that could use known preferences/sizes for the person
+(e.g. "add a gift idea for Jane"), check the shared profile store first:
+```
+python scripts/profile_store.py person get --name "<name>"
+```
+Run from the project root, bare command, no `cd`/env prefix. Not required for
+ordinary shopping/wish-list items — only when the person's known facts would
+meaningfully sharpen a gift idea.
+
 ## Your lists
 
 - **Shopping List** — food and household items. This is the **default** for any grocery /

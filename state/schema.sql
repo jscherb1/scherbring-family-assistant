@@ -106,3 +106,173 @@ CREATE TABLE IF NOT EXISTS kid_memory_triggers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_kid_memory_triggers_kind ON kid_memory_triggers (kind);
+
+-- Lawn & garden agent: plant/bed locations (simple tracking — name, type, rough
+-- location) for a ~10,000 sq ft yard in Rochester, MN.
+CREATE TABLE IF NOT EXISTS lawn_garden_plants (
+    id          TEXT PRIMARY KEY,      -- uuid4
+    name        TEXT NOT NULL,         -- e.g. "hostas", "front foundation bed"
+    plant_type  TEXT,                  -- e.g. "shrub", "perennial", "mulch bed" (free text)
+    location    TEXT NOT NULL,         -- rough description, e.g. "front bed by garage"
+    notes       TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+-- Chemical/product inventory (fertilizers, herbicides, etc. currently on hand).
+CREATE TABLE IF NOT EXISTS lawn_garden_products (
+    id                TEXT PRIMARY KEY,     -- uuid4
+    name              TEXT NOT NULL,        -- e.g. "T-Zone SE", "Trimec Lawn Weed Killer"
+    category          TEXT NOT NULL,        -- 'fertilizer' | 'herbicide' | 'other'
+    active_ingredient TEXT,                 -- e.g. "Mesotrione", "Triclopyr/Sulfentrazone/2,4-D/Dicamba"
+    epa_reg_no        TEXT,
+    container_desc    TEXT,                 -- e.g. "1 quart concentrate", "4 lb/gal jug"
+    in_stock          INTEGER NOT NULL DEFAULT 1,  -- 0/1, user-reported
+    notes             TEXT,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL
+);
+
+-- Reinders 6-Step program reference (seeded once from the printed program; editable
+-- if the user changes products/timing in future years).
+CREATE TABLE IF NOT EXISTS lawn_garden_program (
+    id            TEXT PRIMARY KEY,     -- uuid4
+    round_number  INTEGER NOT NULL,     -- 1-6
+    task_label    TEXT NOT NULL,        -- e.g. "Pre-emerge fertilizer application"
+    product_name  TEXT NOT NULL,        -- e.g. "15-0-0 Bar. 80% RxN or 19-0-6 Dim. 50% RxN"
+    timing_desc   TEXT NOT NULL,        -- e.g. "Mid April (when grass starts greening up)"
+    timing_month  INTEGER NOT NULL,     -- 1-12, approximate month for scheduling logic
+    coverage_desc TEXT,                 -- e.g. "12500 sq. ft." / "1.5 oz per 1000 sq ft"
+    notes         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_lawn_garden_program_round ON lawn_garden_program (round_number);
+
+-- Log of actual applications/treatments performed (program rounds AND ad-hoc spot
+-- sprays). Append-only history, like kid_memories.
+CREATE TABLE IF NOT EXISTS lawn_garden_treatments (
+    id                TEXT PRIMARY KEY,     -- uuid4
+    treatment_date    TEXT NOT NULL,        -- ISO date (YYYY-MM-DD) it was applied
+    round_number      INTEGER,              -- loosely refs lawn_garden_program.round_number, NULL for ad-hoc
+    product_name      TEXT NOT NULL,
+    method            TEXT NOT NULL,        -- 'broadcast' | 'spot-spray' | 'backpack'
+    area              TEXT,                 -- e.g. "whole yard", "front bed", "back fence line"
+    target_weeds_json TEXT,                 -- e.g. ["dandelion","clover"]
+    notes             TEXT,
+    created_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lawn_garden_treatments_date
+    ON lawn_garden_treatments (treatment_date DESC);
+
+-- Ongoing weed/pest/disease issues and their status, so recurring problems
+-- (quackgrass, clover, dandelion, thistle) are tracked over time.
+CREATE TABLE IF NOT EXISTS lawn_garden_issues (
+    id            TEXT PRIMARY KEY,      -- uuid4
+    issue         TEXT NOT NULL,         -- e.g. "quackgrass", "thistle patch"
+    location      TEXT,
+    status        TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'resolved'
+    first_noted   TEXT NOT NULL,         -- ISO date
+    resolved_date TEXT,
+    notes         TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lawn_garden_issues_status ON lawn_garden_issues (status);
+
+-- Free-form yard profile (size, location/coords for weather lookups, equipment on
+-- hand). Simple key/value store — avoids a single-row table with nullable columns.
+CREATE TABLE IF NOT EXISTS lawn_garden_config (
+    key   TEXT PRIMARY KEY,   -- e.g. "yard_size_sqft", "latitude", "longitude", "equipment"
+    value TEXT NOT NULL
+);
+
+-- Personal profile: the user, family, and friends. Single source of truth for
+-- structured facts (birthdays, allergies, sizes, school, etc.) shared across all
+-- subagents (scripts/profile_store.py). Ruth/Claire get rows here too for their
+-- structured facts; kids-memory (kid_memories above) separately owns anecdotes/
+-- stories and Drive sync — the two systems are complementary, not merged.
+CREATE TABLE IF NOT EXISTS profile_people (
+    id           TEXT PRIMARY KEY,      -- uuid4
+    name         TEXT NOT NULL,
+    relationship TEXT,                  -- 'self' | 'spouse' | 'child' | 'friend' | ...
+    birthday     TEXT,                  -- MM-DD or YYYY-MM-DD
+    notes        TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_people_name ON profile_people (name);
+
+-- Arbitrary structured facts per person (allergy, shirt_size, school, favorite_color,
+-- etc.) — key/value per person, same rationale as lawn_garden_config: avoids a
+-- single-row table with nullable columns for every possible fact type.
+CREATE TABLE IF NOT EXISTS profile_people_facts (
+    id         TEXT PRIMARY KEY,      -- uuid4
+    person_id  TEXT NOT NULL REFERENCES profile_people(id),
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_people_facts_person ON profile_people_facts (person_id);
+
+-- Global facts not tied to a specific person (home_address, timezone, anniversary, etc.).
+CREATE TABLE IF NOT EXISTS profile_facts (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Home maintenance agent: recurring indoor maintenance items (HVAC filters, smoke
+-- detector batteries, etc.), same "definition + append-only log" split as the
+-- lawn-garden plants/treatments tables above.
+CREATE TABLE IF NOT EXISTS home_maintenance_items (
+    id            TEXT PRIMARY KEY,      -- uuid4
+    name          TEXT NOT NULL,         -- e.g. "HVAC filter change"
+    category      TEXT NOT NULL,         -- 'hvac' | 'safety' | 'appliance' | 'cleaning' | 'seasonal' | 'other'
+    interval_days INTEGER NOT NULL,      -- recurrence cadence, e.g. 90
+    active        INTEGER NOT NULL DEFAULT 1,  -- 0/1, paused items excluded from due-checks
+    notes         TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_home_maintenance_items_active ON home_maintenance_items (active);
+
+-- Log of completed maintenance (append-only, like lawn_garden_treatments). An
+-- item's "last done" date is MAX(completed_date) here, falling back to the
+-- item's created_at if it has never been completed.
+CREATE TABLE IF NOT EXISTS home_maintenance_completions (
+    id             TEXT PRIMARY KEY,     -- uuid4
+    item_id        TEXT NOT NULL REFERENCES home_maintenance_items(id),
+    completed_date TEXT NOT NULL,        -- ISO date (YYYY-MM-DD)
+    notes          TEXT,
+    created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_home_maintenance_completions_item
+    ON home_maintenance_completions (item_id, completed_date DESC);
+
+-- Weather-reminders agent: location/coords for the Open-Meteo lookup and the
+-- alert thresholds (rain %, snow inches), same key/value rationale as
+-- lawn_garden_config — avoids a single-row table with nullable columns.
+CREATE TABLE IF NOT EXISTS weather_config (
+    key   TEXT PRIMARY KEY,   -- e.g. "latitude", "longitude", "location", "rain_probability_threshold"
+    value TEXT NOT NULL
+);
+
+-- Log of proactive weather alerts already sent, keyed by alert type + the date
+-- the event is expected, so the daily check doesn't re-alert the same rain/snow/
+-- storm event on consecutive mornings while it's still in the forecast window.
+CREATE TABLE IF NOT EXISTS weather_alerts (
+    id                   TEXT PRIMARY KEY,     -- uuid4
+    alert_type           TEXT NOT NULL,        -- 'rain_cushions' | 'snow_shoveling' | 'severe_weather'
+    target_date          TEXT NOT NULL,        -- ISO date (YYYY-MM-DD) the event is expected
+    todoist_task_created INTEGER NOT NULL DEFAULT 0,  -- 0/1
+    created_at           TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_weather_alerts_type_date
+    ON weather_alerts (alert_type, target_date);

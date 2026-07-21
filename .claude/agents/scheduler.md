@@ -61,6 +61,17 @@ python scripts/state_store.py write \
   --detail-json '{"task_id":"...","name":"...","cron":"...","action":"created|paused|resumed|deleted"}'
 ```
 
+## Profile lookups
+
+If a task references a specific person's date (e.g. "remind me a week before Jane's
+birthday"), resolve it from the shared profile store rather than asking the user to
+repeat a date already on file:
+```
+python scripts/profile_store.py person get --name "<name>"
+```
+Same bare-command convention as the other scripts below. If the person or date isn't
+on file, ask the user for it — don't guess.
+
 ## Workflow
 
 1. **Classify the request**: create a new task, list existing tasks, pause/resume one,
