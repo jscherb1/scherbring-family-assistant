@@ -97,7 +97,8 @@ For each list item:
    **auto-add** the preferred product.
 4. **Resolve** — else `search` the item, **drop sponsored**, rank candidates by:
    purchase-history match (UPC/name in `hyvee_purchase_history`) → matches `pref_brand` →
-   on-sale → lowest unit price. Present the top pick as **flagged** (needs confirmation).
+   on-sale → lower cost/unit price → Hy-Vee store brand as the safe cheap default.
+   Present the top pick as **flagged** (needs confirmation).
 5. Record the outcome to `hyvee_feedback_log` and update `hyvee_item_prefs`.
 
 ## Learning loop
