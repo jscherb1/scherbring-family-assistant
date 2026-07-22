@@ -395,7 +395,7 @@ CREATE TABLE IF NOT EXISTS finance_config (
 CREATE TABLE IF NOT EXISTS finance_report_log (
     id            TEXT PRIMARY KEY,   -- uuid4 hex
     created_at    TEXT NOT NULL,      -- local ISO
-    period        TEXT NOT NULL,      -- 'weekly' | 'monthly'
+    period        TEXT NOT NULL,      -- 'weekly' | 'monthly' | 'annual'
     range_start   TEXT NOT NULL,      -- YYYY-MM-DD
     range_end     TEXT NOT NULL,
     drive_file_id TEXT,               -- set after Drive upload
