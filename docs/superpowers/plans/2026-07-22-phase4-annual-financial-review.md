@@ -812,11 +812,16 @@ the convention throughout this repo. An **on-demand** monthly request ("how did 
 month look") bypasses this gate entirely — the gate only applies to the scheduled
 Saturday firing.
 
-**Annual — no self-gate needed.** The `annual-financial-review` task's cron is already
-constrained to fire on the last Saturday of November only (day-of-month 22-28,
-restricted to November, restricted to Saturday) — there's no ambiguity to resolve in
-the prompt, unlike the monthly case. Just run the annual workflow (section 2b above)
-whenever this task fires.
+**Annual self-gate.** The `annual-financial-review` task's cron (`0 9 * 11 6`) fires
+**every Saturday in November**. Before doing any work, check whether today is the
+**last Saturday of November**: `(today + 7 days).month != 11`. If it is not the last
+Saturday, **reply with nothing and stop** — do not call any tools, do not post
+anything. This is the same self-gate pattern as the monthly task above (this repo's
+cron matcher uses standard Vixie-cron OR semantics when both day-of-month and
+day-of-week are restricted — see `scripts/scheduler_store.py`'s module docstring — so
+a combined `day-of-month 22-28 AND Saturday` restriction cannot be expressed in a
+single cron field set; the self-gate is what actually narrows it to one firing a
+year). An **on-demand** annual request bypasses this gate entirely, same as monthly.
 ```
 
 - [ ] **Step 6: Verify the edited file reads correctly**
@@ -883,19 +888,23 @@ it; if it has changed, use the current value instead).
 - [ ] **Step 2: Register `annual-financial-review`**
 
 ```bash
-python scripts/scheduler_store.py add --name "annual-financial-review" --prompt "Delegate to the finance-reporter subagent to run its annual financial review workflow (calendar year-to-date: Jan 1 through today). It should gather data via the monarch MCP tools including month-by-month spending, year-over-year comparisons, and 3-year net worth and spending trends, author the narrative fields itself grounded in the numbers it computed, render the HTML report with finance_report.py --period annual, upload it to the Reports subfolder of the finance Drive folder, record it via finance_store.py report add --period annual, and reply into this Telegram chat with the compact telegram_summary text plus the Drive link." --cron "0 9 22-28 11 6" --target-chat-id "<chat_id from Step 1>"
+python scripts/scheduler_store.py add --name "annual-financial-review" --prompt "Delegate to the finance-reporter subagent to run its annual financial review workflow (calendar year-to-date: Jan 1 through today). It should gather data via the monarch MCP tools including month-by-month spending, year-over-year comparisons, and 3-year net worth and spending trends, author the narrative fields itself grounded in the numbers it computed, render the HTML report with finance_report.py --period annual, upload it to the Reports subfolder of the finance Drive folder, record it via finance_store.py report add --period annual, and reply into this Telegram chat with the compact telegram_summary text plus the Drive link." --cron "0 9 * 11 6" --target-chat-id "<chat_id from Step 1>"
 ```
-Expected: PASS — prints the new task's JSON row with `"cron_expression": "0 9 22-28 11 6"`.
+Expected: PASS — prints the new task's JSON row with `"cron_expression": "0 9 * 11 6"`.
 
 - [ ] **Step 3: Verify the schedule**
 
 ```bash
 python scripts/scheduler_store.py list
 ```
-Expected: `annual-financial-review` appears, `enabled: 1`, cron `0 9 22-28 11 6`.
-Confirm `0 9 22-28 11 6` reads as: minute 0, hour 9, day-of-month 22-28, month 11
-(November), day-of-week 6 (Saturday) — the 22nd-28th of any month always contains
-exactly one Saturday (the last one), so this fires exactly once a year.
+Expected: `annual-financial-review` appears, `enabled: 1`, cron `0 9 * 11 6`.
+Confirm `0 9 * 11 6` reads as: minute 0, hour 9, day-of-month wildcard, month 11
+(November), day-of-week 6 (Saturday) — this fires on every Saturday in November
+(4-5 times a year). Because this repo's cron matcher uses OR semantics when both
+day-of-month and day-of-week are restricted (see `scripts/scheduler_store.py`), the
+day-of-month-22-28 trick used elsewhere does NOT resolve to a single firing here — the
+day-of-month wildcard avoids that ambiguity, and the agent's in-agent self-gate (see
+Task 4 above, "Annual self-gate") narrows the actual work to the last Saturday only.
 
 - [ ] **Step 4: Mark Phase 4 built in the backlog doc**
 
@@ -932,10 +941,10 @@ subagent (`.claude/agents/finance-reporter.md`) gathers year-to-date data
 1 → same-date window for an apples-to-apples YoY) and authors the narrative
 itself, grounded in the specific numbers it computed — `data_gaps` always
 flags the missing Phase 3 retirement model as a limitation. The scheduled task
-`annual-financial-review` (cron `0 9 22-28 11 6` — day-of-month 22-28
-restricted to November and Saturday always resolves to exactly the last
-Saturday, no in-agent self-gate needed) is registered in the scheduler.
-Reports are delivered the same way as Phase 2: brief Telegram highlights plus
+`annual-financial-review` (cron `0 9 * 11 6` — every Saturday in November,
+same pattern as the monthly task, plus an in-agent self-gate that checks for
+the last Saturday of November and no-ops otherwise) is registered in the
+scheduler. Reports are delivered the same way as Phase 2: brief Telegram highlights plus
 a full HTML report in the Drive `Reports` folder, no email.
 
 **Original spec** (kept for reference):
@@ -986,9 +995,9 @@ git add docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md
 git commit -m "$(cat <<'EOF'
 docs: mark Phase 4 (annual financial review) built
 
-Registers the annual-financial-review scheduled task (last Saturday in
-November, cron 0 9 22-28 11 6) and documents the built state, matching
-the Phase 2 backlog-doc convention.
+Registers the annual-financial-review scheduled task (every Saturday in
+November, cron 0 9 * 11 6, with an in-agent self-gate to the last one)
+and documents the built state, matching the Phase 2 backlog-doc convention.
 
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
 EOF

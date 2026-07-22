@@ -197,11 +197,16 @@ the convention throughout this repo. An **on-demand** monthly request ("how did 
 month look") bypasses this gate entirely — the gate only applies to the scheduled
 Saturday firing.
 
-**Annual — no self-gate needed.** The `annual-financial-review` task's cron is already
-constrained to fire on the last Saturday of November only (day-of-month 22-28,
-restricted to November, restricted to Saturday) — there's no ambiguity to resolve in
-the prompt, unlike the monthly case. Just run the annual workflow (section 2b above)
-whenever this task fires.
+**Annual self-gate.** The `annual-financial-review` task's cron (`0 9 * 11 6`) fires
+**every Saturday in November**. Before doing any work, check whether today is the
+**last Saturday of November**: `(today + 7 days).month != 11`. If it is not the last
+Saturday, **reply with nothing and stop** — do not call any tools, do not post
+anything. This is the same self-gate pattern as the monthly task above (this repo's
+cron matcher uses standard Vixie-cron OR semantics when both day-of-month and
+day-of-week are restricted — see `scripts/scheduler_store.py`'s module docstring — so
+a combined `day-of-month 22-28 AND Saturday` restriction cannot be expressed in a
+single cron field set; the self-gate is what actually narrows it to one firing a
+year). An **on-demand** annual request bypasses this gate entirely, same as monthly.
 
 ## Data-backed questions outside the report shape
 
