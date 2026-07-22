@@ -9,7 +9,7 @@ payload into a consistent HTML report. Reused as-is by Phase 4 (annual
 review) at a 12-month rollup.
 
 Usage:
-    python scripts/finance_report.py --period weekly|monthly --data-file <path.json> [--out <path.html>]
+    python scripts/finance_report.py --period weekly|monthly|annual --data-file <path.json> [--out <path.html>]
 
 Payload shape (fields not applicable to a period may be omitted):
 {
@@ -21,7 +21,20 @@ Payload shape (fields not applicable to a period may be omitted):
   "by_category": [{"name": "...", "amount": 0, "prior_amount": 0}],
   "by_who": [{"tag": "WHO - Justin", "amount": 0, "prior_amount": 0}],
   "budget": [{"name": "...", "planned": 0, "actual": 0, "remaining": 0}],
-  "net_worth": {"current": 0, "prior": 0}
+  "net_worth": {"current": 0, "prior": 0},
+  "by_month": [{"name": "Jan", "amount": 0}],
+  "trends": [
+    {"label": "Net worth by year", "points": [{"year": "2024", "value": 0}]},
+    {"label": "Total spending by year", "points": [{"year": "2024", "value": 0}]}
+  ],
+  "narrative": {
+    "executive_summary": "2-4 sentences: the year in a nutshell.",
+    "income_and_spending": "Paragraph(s), one per newline, on what income/spending did and why.",
+    "net_worth_narrative": "Paragraph on what drove net worth change this year.",
+    "looking_ahead": "Softer, explicitly-directional commentary - observations, not projections.",
+    "data_gaps": ["Specific things that would make this more data-driven."],
+    "telegram_highlights": ["2-4 short lines for the Telegram brief."]
+  }
 }
 
 Prints JSON to stdout: {"html_path": "...", "telegram_summary": "..."}
@@ -170,6 +183,73 @@ def _section_net_worth(nw: dict) -> str:
     </section>"""
 
 
+def _section_by_month(rows: list) -> str:
+    if not rows:
+        return ""
+    amounts = [r.get("amount") or 0 for r in rows]
+    max_amount = max(amounts) if amounts else 0
+    body = "\n".join(
+        _bar_row(r.get("name", "Unknown"), r.get("amount"), max_amount)
+        for r in rows
+    )
+    return f"""
+    <section>
+      <h2>Spending by month</h2>
+      {body}
+    </section>"""
+
+
+def _section_trends(trends: list) -> str:
+    if not trends:
+        return ""
+    blocks = []
+    for trend in trends:
+        points = trend.get("points", [])
+        if not points:
+            continue
+        values = [p.get("value") or 0 for p in points]
+        max_value = max(values) if values else 0
+        rows_html = "\n".join(
+            _bar_row(p.get("year", "Unknown"), p.get("value"), max_value)
+            for p in points
+        )
+        blocks.append(f"""
+    <section>
+      <h2>{escape(trend.get('label', 'Trend'))}</h2>
+      {rows_html}
+    </section>""")
+    return "".join(blocks)
+
+
+def _narrative_paragraphs(text: str) -> str:
+    """Render one <p> per newline-separated paragraph. Plain text only, escaped."""
+    if not text:
+        return ""
+    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+    return "\n".join(f"<p>{escape(p)}</p>" for p in paragraphs)
+
+
+def _section_narrative_block(title: str, text: str) -> str:
+    if not text:
+        return ""
+    return f"""
+    <section class="narrative">
+      <h2>{escape(title)}</h2>
+      {_narrative_paragraphs(text)}
+    </section>"""
+
+
+def _section_data_gaps(gaps: list) -> str:
+    if not gaps:
+        return ""
+    items = "\n".join(f"<li>{escape(g)}</li>" for g in gaps)
+    return f"""
+    <section class="callout">
+      <h2>What would sharpen this</h2>
+      <ul>{items}</ul>
+    </section>"""
+
+
 CSS = """
 body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif; background:#f7f7f8; color:#1c1c1e; margin:0; padding:32px; }
 .report { max-width:720px; margin:0 auto; background:#fff; border-radius:12px; padding:32px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
@@ -194,6 +274,11 @@ th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #eceef1; }
 tr.over td { color:#c0392b; }
 .stat { background:#f2f2f5; border-radius:8px; padding:12px 16px; display:inline-block; }
 .stat-value { font-size:20px; font-weight:600; }
+.narrative p { font-size:14px; line-height:1.5; margin:0 0 10px; color:#2c2c2e; }
+.narrative p:last-child { margin-bottom:0; }
+.callout { background:#fff8e6; border:1px solid #f0dca0; border-radius:8px; padding:16px 20px; }
+.callout h2 { border-bottom:none; margin-bottom:8px; color:#8a6d1d; }
+.callout ul { margin:0; padding-left:20px; font-size:13px; color:#5c4a13; }
 footer { margin-top:24px; font-size:11px; color:#9a9a9e; }
 """
 
@@ -219,13 +304,30 @@ def render_html(payload: dict, period: str) -> str:
       <div class="stat"><div class="stat-label">Savings rate</div><div class="stat-value">{_fmt_pct(savings_rate)}</div></div>
     </div>"""
 
-    sections = [
-        _section_by_who(payload.get("by_who", [])),
-        _section_by_category(payload.get("by_category", [])),
-    ]
-    if period == "monthly":
-        sections.append(_section_budget(payload.get("budget", [])))
-        sections.append(_section_net_worth(payload.get("net_worth", {})))
+    narrative = payload.get("narrative", {}) or {}
+
+    if period == "annual":
+        sections = [
+            _section_narrative_block("Executive summary", narrative.get("executive_summary")),
+            _section_by_who(payload.get("by_who", [])),
+            _section_by_category(payload.get("by_category", [])),
+            _section_narrative_block("Income & spending", narrative.get("income_and_spending")),
+            _section_by_month(payload.get("by_month", [])),
+            _section_trends(payload.get("trends", [])),
+            _section_budget(payload.get("budget", [])),
+            _section_net_worth(payload.get("net_worth", {})),
+            _section_narrative_block("What drove net worth", narrative.get("net_worth_narrative")),
+            _section_narrative_block("Looking ahead", narrative.get("looking_ahead")),
+            _section_data_gaps(narrative.get("data_gaps", [])),
+        ]
+    else:
+        sections = [
+            _section_by_who(payload.get("by_who", [])),
+            _section_by_category(payload.get("by_category", [])),
+        ]
+        if period == "monthly":
+            sections.append(_section_budget(payload.get("budget", [])))
+            sections.append(_section_net_worth(payload.get("net_worth", {})))
 
     return f"""<!doctype html>
 <html>
@@ -253,8 +355,11 @@ def build_telegram_summary(payload: dict, period: str) -> str:
     prior_expenses = totals.get("prior_expenses")
     income = totals.get("income")
     savings_rate = totals.get("savings_rate")
+    narrative = payload.get("narrative", {}) or {}
 
     lines = [f"📊 {period_label}"]
+    if period == "annual":
+        lines.extend(narrative.get("telegram_highlights", []))
     if expenses is not None:
         delta = ""
         if prior_expenses is not None:
@@ -279,7 +384,7 @@ def build_telegram_summary(payload: dict, period: str) -> str:
         cat_line = ", ".join(f"{r.get('name')}: {_fmt_money(r.get('amount'))}" for r in top)
         lines.append(f"Top categories — {cat_line}")
 
-    if period == "monthly":
+    if period in ("monthly", "annual"):
         nw = payload.get("net_worth", {}) or {}
         if nw.get("current") is not None:
             nw_line = f"Net worth {_fmt_money(nw.get('current'))}"
@@ -299,7 +404,7 @@ def build_telegram_summary(payload: dict, period: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Render a finance spending-summary HTML report.")
-    parser.add_argument("--period", required=True, choices=["weekly", "monthly"])
+    parser.add_argument("--period", required=True, choices=["weekly", "monthly", "annual"])
     parser.add_argument("--data-file", required=True, help="Path to a JSON payload file.")
     parser.add_argument("--out", default=None, help="Output .html path (default: state/finance_reports/<period>-<end date>.html)")
     args = parser.parse_args(argv)
