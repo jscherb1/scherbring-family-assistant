@@ -203,7 +203,7 @@ Saturday firing.
 Saturday, **reply with nothing and stop** — do not call any tools, do not post
 anything. This is the same self-gate pattern as the monthly task above (this repo's
 cron matcher uses standard Vixie-cron OR semantics when both day-of-month and
-day-of-week are restricted — see `scripts/scheduler_store.py`'s module docstring — so
+day-of-week are restricted — see the cron-matcher comment in `scripts/scheduler_store.py` — so
 a combined `day-of-month 22-28 AND Saturday` restriction cannot be expressed in a
 single cron field set; the self-gate is what actually narrows it to one firing a
 year). An **on-demand** annual request bypasses this gate entirely, same as monthly.
