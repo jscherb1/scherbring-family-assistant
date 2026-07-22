@@ -106,7 +106,27 @@ vs-actual review:** compare actual net worth/savings trajectory
 (`get_net_worth`) against the plan's projected path, and flag if
 assumptions/allocation/savings rate need revisiting.
 
-## Phase 4 — Annual family financial review
+## Phase 4 — Annual family financial review — BUILT 2026-07-22
+
+Built as a new `annual` mode on the existing Phase 2 infrastructure — no new
+script or agent. `scripts/finance_report.py --period annual` adds month-by-month,
+3-year trend (net worth + total spending), and agent-authored narrative sections
+(executive summary, income/spending explanation, net-worth narrative,
+forward-looking commentary, and explicit data-gap callouts) alongside the
+existing category/who/budget/net-worth renderers. The `finance-reporter`
+subagent (`.claude/agents/finance-reporter.md`) gathers year-to-date data
+(calendar Jan 1 → review date, with prior-year comparisons using the same Jan
+1 → same-date window for an apples-to-apples YoY) and authors the narrative
+itself, grounded in the specific numbers it computed — `data_gaps` always
+flags the missing Phase 3 retirement model as a limitation. The scheduled task
+`annual-financial-review` (cron `0 9 * 11 6` — every Saturday in November,
+same pattern as the monthly task, plus an in-agent self-gate that checks for
+the last Saturday of November and no-ops otherwise) is registered in the
+scheduler.
+Reports are delivered the same way as Phase 2: brief Telegram highlights plus
+a full HTML report in the Drive `Reports` folder, no email.
+
+**Original spec** (kept for reference):
 
 **Cadence:** last Saturday in November (same self-gating approach as Phase 2's
 monthly summary — fire weekly on Saturdays, self-gate to the specific week).
@@ -117,6 +137,40 @@ by category, by WHO tag, by time (month-over-month within the year), compared
 to budget and to previous years (multi-year `get_net_worth`/`get_cashflow`
 history). Reuse the Phase 2 HTML report generator/template rather than building
 a second one — this is the same report shape at a different rollup.
+
+## Tooling backlog — reduce approval friction for report generation
+
+**Logged 2026-07-22, during Phase 4 live testing.** Generating a report (weekly,
+monthly, or annual) via the `finance-reporter` subagent required the user to approve
+20+ tool calls in one session. Root cause diagnosed: the agent was writing a one-off
+Python script (via `Bash` heredoc) purely to *compute* the payload — delta
+percentages, rounding, extra fields the renderer doesn't even read — then executing
+it. That's two approval-gated actions (write the script, run it) for work that needed
+neither computation nor code execution, since `scripts/finance_report.py` already
+derives deltas from raw `amount`/`prior_amount` pairs itself.
+
+**First fix already applied** (same session, before this backlog note): tightened
+`.claude/agents/finance-reporter.md`'s payload-assembly instructions to mandate
+writing the payload JSON directly via the `Write` tool with literal values — never
+generating and executing a throwaway script — and to supply only the raw numbers the
+schema documents, not invented derived fields.
+
+**Still open — worth a follow-up session:**
+- Confirm in practice that `Write` calls to the scratchpad temp directory are actually
+  low/no-friction as designed, now that the agent isn't reaching for `Bash`+Python at
+  all for payload construction. If `Write` itself still prompts per-call, that's a
+  different problem than the one just fixed and needs its own investigation (possibly
+  a permission rule, possibly a harness-level question).
+- Consider whether the Drive-upload and `finance_store.py report add` steps (both
+  already real actions, not just data assembly) can be reduced to fewer/narrower
+  approval points without loosening what actually needs a human's eyes.
+- If friction persists after the `Write`-tool fix, reassess whether `finance_report.py`
+  should accept the payload some other way (e.g., piped directly rather than via a
+  file) to remove the intermediate scratchpad step entirely.
+- Goal: enable routine report generation (especially the recurring scheduled
+  weekly/monthly/annual firings, which run unattended) without requiring the user to
+  approve anything at all, while keeping genuinely consequential actions (Drive
+  writes, DB writes) appropriately visible.
 
 ## Phase 5 — Proactive recommendations & general Q&A
 
@@ -144,7 +198,7 @@ actually afford" rather than generic advice.
 1. Phase 2 (summaries) — BUILT, see above. Builds directly on Phase 1's WHO-tagging investment
    (spend-by-person reporting only works once tagging is solid) and is
    self-contained infra (HTML report + Drive + Telegram) reusable by Phase 4.
-2. Phase 4 (annual review) — cheap once Phase 2's report generator exists.
+2. Phase 4 (annual review) — BUILT, see above. Was cheap once Phase 2's report generator existed.
 3. Phase 3 (retirement modeling) — the largest lift; deserves a dedicated
    brainstorm + input interview with the user before any code.
 4. Phase 5 (Q&A + recommendations) — layers on top of whichever of Phase 2/3
