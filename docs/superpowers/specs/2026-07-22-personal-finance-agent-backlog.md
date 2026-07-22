@@ -106,7 +106,26 @@ vs-actual review:** compare actual net worth/savings trajectory
 (`get_net_worth`) against the plan's projected path, and flag if
 assumptions/allocation/savings rate need revisiting.
 
-## Phase 4 — Annual family financial review
+## Phase 4 — Annual family financial review — BUILT 2026-07-22
+
+Built as a new `annual` mode on the existing Phase 2 infrastructure — no new
+script or agent. `scripts/finance_report.py --period annual` adds month-by-month,
+3-year trend (net worth + total spending), and agent-authored narrative sections
+(executive summary, income/spending explanation, net-worth narrative,
+forward-looking commentary, and explicit data-gap callouts) alongside the
+existing category/who/budget/net-worth renderers. The `finance-reporter`
+subagent (`.claude/agents/finance-reporter.md`) gathers year-to-date data
+(calendar Jan 1 → review date, with prior-year comparisons using the same Jan
+1 → same-date window for an apples-to-apples YoY) and authors the narrative
+itself, grounded in the specific numbers it computed — `data_gaps` always
+flags the missing Phase 3 retirement model as a limitation. The scheduled task
+`annual-financial-review` (cron `0 9 22-28 11 6` — day-of-month 22-28
+restricted to November and Saturday always resolves to exactly the last
+Saturday, no in-agent self-gate needed) is registered in the scheduler.
+Reports are delivered the same way as Phase 2: brief Telegram highlights plus
+a full HTML report in the Drive `Reports` folder, no email.
+
+**Original spec** (kept for reference):
 
 **Cadence:** last Saturday in November (same self-gating approach as Phase 2's
 monthly summary — fire weekly on Saturdays, self-gate to the specific week).
@@ -144,7 +163,7 @@ actually afford" rather than generic advice.
 1. Phase 2 (summaries) — BUILT, see above. Builds directly on Phase 1's WHO-tagging investment
    (spend-by-person reporting only works once tagging is solid) and is
    self-contained infra (HTML report + Drive + Telegram) reusable by Phase 4.
-2. Phase 4 (annual review) — cheap once Phase 2's report generator exists.
+2. Phase 4 (annual review) — BUILT, see above. Was cheap once Phase 2's report generator existed.
 3. Phase 3 (retirement modeling) — the largest lift; deserves a dedicated
    brainstorm + input interview with the user before any code.
 4. Phase 5 (Q&A + recommendations) — layers on top of whichever of Phase 2/3
