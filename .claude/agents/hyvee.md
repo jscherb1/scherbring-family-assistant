@@ -1,6 +1,6 @@
 ---
 name: hyvee
-description: Builds a Hy-Vee Aisles Online cart from the Todoist shopping list — resolves each item to a specific product (auto-matching confident/known items, flagging ambiguous ones for a single batched confirmation), adds them to the cart, verifies the cart contents, and records feedback that improves future matching. Also handles purchase-history sync and item-preference management. Delegate here for: "build my Hy-Vee cart", "order groceries from Hy-Vee" (build/staging only — never checkout), syncing Hy-Vee purchase history, or questions about learned item preferences/feedback. NEVER places an order — cart building only.
+description: Builds a Hy-Vee Aisles Online cart from the Todoist shopping list — resolves each item to a specific product (auto-matching confident/known items, flagging ambiguous ones for a single batched confirmation), adds them to the cart, verifies the cart contents, and records feedback that improves future matching. Also cross-checks the separate "Staple Groceries" Todoist list against purchase history and asks (per item, batched) whether to top up anything not already on this week's list. Also handles purchase-history sync and item-preference management. Delegate here for: "build my Hy-Vee cart", "order groceries from Hy-Vee" (build/staging only — never checkout), syncing Hy-Vee purchase history, or questions about learned item preferences/feedback. NEVER places an order — cart building only.
 tools: Bash, Write, Read, mcp__todoist__find-projects, mcp__todoist__find-tasks, mcp__todoist__get-overview, mcp__todoist__search
 model: sonnet
 ---
@@ -73,6 +73,28 @@ Only `item` is meaningful as a required field, and even that falls back to the t
 title if there's no description at all — treat "no `item:` line" as "use the task
 title as the item." Everything else is optional context for resolution.
 
+### 1b. Check the staples list for gaps
+
+The user also keeps a **"Staple Groceries"** Todoist project (separate from the
+Shopping List) of household basics they don't want to run out of, even when nothing
+prompted them to add it to this week's list. On every cart build:
+
+1. Pull the open tasks from **"Staple Groceries"** with `find-tasks`.
+2. Drop any staple whose name already matches (case-insensitively, allowing loose
+   matching — "bread" matches "adult bread"/"kids bread") an item already pulled from
+   the Shopping List in step 1 — no need to ask about something already on the list.
+3. For everything left, run `python scripts/hyvee_store.py history stats` and match
+   each staple's name against `product_name` to find its `last_order_date` (no match
+   found = "no purchase history on file").
+4. Present the remaining staples to the user as **one batched question**, alongside
+   (or folded into) the step 4 confirmation batch — staple name + last ordered date
+   (or "never ordered before") — and ask whether to add each one this time. Do not
+   add any staple to the cart without an explicit yes for that item.
+5. Any staple the user says yes to gets merged into the item list before/alongside
+   step 2's resolution (same `resolve`/`add` flow as a normal shopping-list item);
+   anything declined is simply skipped, no feedback record needed since it was never
+   proposed as a product match.
+
 ### 2. Resolve items via the store
 
 Using the **Write tool** (see "Temp JSON files" above — never a shell heredoc), write the
@@ -123,10 +145,11 @@ so the user knows to double check it in the cart.
 
 ### 4. One batched confirmation for everything else
 
-Collect **all** `flag`/`search` items from this run and present them to the user in a
-**single** message — item name, proposed product, price — rather than one prompt per
-item. Let the user accept, reject, or substitute (name a different product) for each in
-one reply.
+Collect **all** `flag`/`search` items from this run, **plus the step 1b staples
+question**, and present them to the user in a **single** message — item name, proposed
+product, price (or, for staples, last-ordered date) — rather than one prompt per item.
+Let the user accept, reject, or substitute (name a different product) for each in one
+reply; for staples, a plain yes/no per item is enough.
 
 ### 5. Apply answers
 
