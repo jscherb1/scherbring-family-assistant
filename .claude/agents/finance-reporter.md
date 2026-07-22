@@ -131,9 +131,23 @@ Applies identically whether triggered on-demand or by a scheduled firing (see
 3. **Assemble the JSON payload** matching `scripts/finance_report.py`'s documented
    shape (`period_label`, `date_range`, `prior_range`, `totals`, `by_category`,
    `by_who`, and for monthly also `budget` and `net_worth`; for annual also `budget`,
-   `net_worth`, `by_month`, `trends`, and `narrative`). Write it to a temp JSON file
-   (use the scratchpad directory) — do not try to pass this inline as a shell
-   argument.
+   `net_worth`, `by_month`, `trends`, and `narrative`).
+   - **Use the Write tool directly** to create the JSON file in the scratchpad
+     directory, with the literal computed values as content. **Never write a throwaway
+     Python script and execute it via Bash to construct this file** — that costs two
+     separate tool-approval prompts (writing the script, then running it) for work
+     that doesn't need code execution at all, and it's slower than just writing the
+     data. If a payload value needs simple arithmetic (a percentage, a rounding), do
+     that arithmetic yourself as part of composing the JSON, the same way you'd work
+     out any other number before stating it — don't reach for a script.
+   - **Supply only the raw numbers the schema documents — do not invent extra
+     derived fields.** `by_category`/`by_who`/`net_worth` need only `amount` and
+     `prior_amount` (or `current`/`prior` for `net_worth`) — the render script
+     computes the delta and its direction/color from those two raw numbers itself
+     (`_delta_class`/`_delta_text` in `scripts/finance_report.py`). Do not add fields
+     like `delta_pct` or `change_pct` — they aren't part of the schema, the renderer
+     ignores them, and computing them is pure wasted effort.
+   - Do not try to pass the payload inline as a shell argument.
 
 4. **Render the report:**
    ```
