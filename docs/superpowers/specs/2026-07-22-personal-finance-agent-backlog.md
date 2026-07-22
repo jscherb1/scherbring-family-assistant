@@ -138,6 +138,40 @@ to budget and to previous years (multi-year `get_net_worth`/`get_cashflow`
 history). Reuse the Phase 2 HTML report generator/template rather than building
 a second one — this is the same report shape at a different rollup.
 
+## Tooling backlog — reduce approval friction for report generation
+
+**Logged 2026-07-22, during Phase 4 live testing.** Generating a report (weekly,
+monthly, or annual) via the `finance-reporter` subagent required the user to approve
+20+ tool calls in one session. Root cause diagnosed: the agent was writing a one-off
+Python script (via `Bash` heredoc) purely to *compute* the payload — delta
+percentages, rounding, extra fields the renderer doesn't even read — then executing
+it. That's two approval-gated actions (write the script, run it) for work that needed
+neither computation nor code execution, since `scripts/finance_report.py` already
+derives deltas from raw `amount`/`prior_amount` pairs itself.
+
+**First fix already applied** (same session, before this backlog note): tightened
+`.claude/agents/finance-reporter.md`'s payload-assembly instructions to mandate
+writing the payload JSON directly via the `Write` tool with literal values — never
+generating and executing a throwaway script — and to supply only the raw numbers the
+schema documents, not invented derived fields.
+
+**Still open — worth a follow-up session:**
+- Confirm in practice that `Write` calls to the scratchpad temp directory are actually
+  low/no-friction as designed, now that the agent isn't reaching for `Bash`+Python at
+  all for payload construction. If `Write` itself still prompts per-call, that's a
+  different problem than the one just fixed and needs its own investigation (possibly
+  a permission rule, possibly a harness-level question).
+- Consider whether the Drive-upload and `finance_store.py report add` steps (both
+  already real actions, not just data assembly) can be reduced to fewer/narrower
+  approval points without loosening what actually needs a human's eyes.
+- If friction persists after the `Write`-tool fix, reassess whether `finance_report.py`
+  should accept the payload some other way (e.g., piped directly rather than via a
+  file) to remove the intermediate scratchpad step entirely.
+- Goal: enable routine report generation (especially the recurring scheduled
+  weekly/monthly/annual firings, which run unattended) without requiring the user to
+  approve anything at all, while keeping genuinely consequential actions (Drive
+  writes, DB writes) appropriately visible.
+
 ## Phase 5 — Proactive recommendations & general Q&A
 
 **Data-backed Q&A** ("can we afford a new car", "what if we did a $X home
