@@ -119,9 +119,10 @@ subagent (`.claude/agents/finance-reporter.md`) gathers year-to-date data
 1 → same-date window for an apples-to-apples YoY) and authors the narrative
 itself, grounded in the specific numbers it computed — `data_gaps` always
 flags the missing Phase 3 retirement model as a limitation. The scheduled task
-`annual-financial-review` (cron `0 9 22-28 11 6` — day-of-month 22-28
-restricted to November and Saturday always resolves to exactly the last
-Saturday, no in-agent self-gate needed) is registered in the scheduler.
+`annual-financial-review` (cron `0 9 * 11 6` — every Saturday in November,
+same pattern as the monthly task, plus an in-agent self-gate that checks for
+the last Saturday of November and no-ops otherwise) is registered in the
+scheduler.
 Reports are delivered the same way as Phase 2: brief Telegram highlights plus
 a full HTML report in the Drive `Reports` folder, no email.
 

@@ -124,12 +124,18 @@ New case in the existing report workflow:
 ### 3. Scheduling
 
 New scheduled task `annual-financial-review`. Cron can't express "last Saturday of
-November" directly, so — same trick as the monthly report, but resolved at the cron
-level instead of an in-prompt self-gate — restrict the day-of-month range to 22-28
-(which always contains exactly one Saturday, the last one of the month) and the month
-to November: `0 9 22-28 11 6`. This is simpler than the monthly case since there's no
-ambiguity once cron constrains the day-of-month window, so no self-gating logic is
-needed in the agent for this task.
+November" directly. The day-of-month-range trick (day-of-month 22-28 AND Saturday)
+would work under *AND* semantics for restricted day-of-month + day-of-week fields, but
+this repo's cron matcher (`scripts/scheduler_store.py`) implements standard Vixie-cron
+*OR* semantics instead: when both fields are restricted, a date matches if *either*
+matches. Under that matcher, `0 9 22-28 11 6` fires on every day 22-28 of November
+*plus* every Saturday of November — about 10 times, not once. So instead this follows
+the same pattern as the monthly report: cron restricted to Saturday only, scoped to
+November (`0 9 * 11 6` — day-of-month wildcard means only the day-of-week restriction
+applies, no OR ambiguity), plus an in-agent self-gate that checks "is today the last
+Saturday of November" and no-ops otherwise. See the "Annual self-gate" section of
+`.claude/agents/finance-reporter.md` for the exact check, which mirrors the existing
+monthly self-gate.
 
 ### 4. `finance_store.py` — `report` subcommand
 
@@ -163,4 +169,4 @@ already a free-form `TEXT` column.
    Monarch numbers, a narrative grounded in those specific numbers (not generic
    filler), and a successful Drive upload as raw HTML.
 4. `scheduler_store.py list` shows `annual-financial-review` enabled with cron
-   `0 9 22-28 11 6`.
+   `0 9 * 11 6`.
