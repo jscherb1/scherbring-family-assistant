@@ -500,6 +500,10 @@ own brainstorm/spec before being built.
 - [ ] **Personal finance agent — Phase 2+ (summaries, retirement modeling, annual review,
       recommendations/Q&A)** — see
       `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md` for the plan.
+- [ ] **`scripts/finance_report.py` — add annual report support** — currently only renders
+      `--period weekly|monthly`. Running the first annual review (2026-07-22) required
+      hand-appending narrative/by-month/trends HTML sections as a workaround. Add a proper
+      `annual` period with `by_month`, `trends`, and `narrative` rendering.
 - [x] **Shopping cart builder — Phase 1 (Hy-Vee)** — build (never place) a Hy-Vee Aisles
       Online cart from the Todoist shopping list, resolving each item to a specific product
       from purchase history + learned preferences, with a feedback loop that sharpens matching
