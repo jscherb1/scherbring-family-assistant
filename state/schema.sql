@@ -330,3 +330,76 @@ CREATE TABLE IF NOT EXISTS hyvee_cart_runs (
     cart_verified INTEGER NOT NULL DEFAULT 0,
     summary       TEXT
 );
+
+-- Personal finance agent (Monarch Money, via the local monarch-mcp-server since
+-- the official MCP is paused). Learned merchant/account -> WHO-tag map, same
+-- "learned map + append-only feedback log" shape as hyvee_item_prefs /
+-- hyvee_feedback_log above, since it's the same confidence-building problem:
+-- infer a WHO tag, act if confident, learn from the user's confirm/correct.
+CREATE TABLE IF NOT EXISTS finance_who_map (
+    signal_key       TEXT PRIMARY KEY,   -- normalized merchant name OR "account:<account_id>"
+    signal_type      TEXT NOT NULL,      -- 'merchant' | 'account'
+    who_tag_name     TEXT NOT NULL,      -- e.g. "WHO:Justin", "Adults", "Kids", "Family"
+    confidence       REAL NOT NULL DEFAULT 0.0,  -- 0.0..1.0
+    times_confirmed  INTEGER NOT NULL DEFAULT 0,
+    times_rejected   INTEGER NOT NULL DEFAULT 0,
+    source           TEXT NOT NULL DEFAULT 'inferred',  -- 'inferred' | 'user'
+    updated_at       TEXT NOT NULL
+);
+
+-- Append-only audit of every tagging decision the finance agent makes or
+-- proposes, so a review batch can be reconstructed/explained later and
+-- finance_who_map confidence changes are traceable (mirrors hyvee_feedback_log).
+CREATE TABLE IF NOT EXISTS finance_tag_log (
+    id                TEXT PRIMARY KEY,   -- uuid4 hex
+    ts                TEXT NOT NULL,
+    transaction_id    TEXT NOT NULL,      -- Monarch transaction id
+    merchant_name     TEXT,
+    account_id        TEXT,
+    amount            REAL,
+    txn_date          TEXT,               -- ISO date (YYYY-MM-DD)
+    proposed_who_tag  TEXT,               -- WHO tag inferred/proposed (null if none inferred)
+    confidence        REAL,
+    action            TEXT NOT NULL,      -- 'tagged_auto' | 'tagged_confirmed' | 'skipped_ambiguous' | 'marked_reviewed'
+    user_decision      TEXT,              -- 'confirmed' | 'corrected' | 'rejected' | null (pending)
+    note              TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_finance_tag_log_txn ON finance_tag_log (transaction_id, ts DESC);
+
+-- Proposed Monarch transaction rules (merchant -> WHO tag) awaiting the user's
+-- approval before being created via create_transaction_rule. Once approved and
+-- created, monarch_rule_id records the live rule's id for reference.
+CREATE TABLE IF NOT EXISTS finance_rule_proposals (
+    id               TEXT PRIMARY KEY,   -- uuid4 hex
+    created_at       TEXT NOT NULL,
+    merchant_name    TEXT NOT NULL,
+    who_tag_name     TEXT NOT NULL,
+    evidence_json    TEXT,               -- e.g. matching transaction ids/dates that justified the proposal
+    status           TEXT NOT NULL DEFAULT 'proposed',  -- 'proposed' | 'approved' | 'rejected' | 'created'
+    monarch_rule_id  TEXT,               -- set once created in Monarch
+    decided_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_finance_rule_proposals_status ON finance_rule_proposals (status);
+
+-- Free-form finance agent config (Drive working-folder id, cached WHO tag ids,
+-- last historical-sweep cursor for resumability). Same key/value rationale as
+-- lawn_garden_config / weather_config.
+CREATE TABLE IF NOT EXISTS finance_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Phase 2: history of generated spending-summary reports (finance-reporter
+-- subagent), so "link me last month's report" is answerable and reports are
+-- traceable. Mirrors the finance_tag_log / finance_rule_proposals shape.
+CREATE TABLE IF NOT EXISTS finance_report_log (
+    id            TEXT PRIMARY KEY,   -- uuid4 hex
+    created_at    TEXT NOT NULL,      -- local ISO
+    period        TEXT NOT NULL,      -- 'weekly' | 'monthly'
+    range_start   TEXT NOT NULL,      -- YYYY-MM-DD
+    range_end     TEXT NOT NULL,
+    drive_file_id TEXT,               -- set after Drive upload
+    drive_url     TEXT,
+    summary       TEXT                -- the Telegram brief that was sent
+);
+CREATE INDEX IF NOT EXISTS idx_finance_report_log_period ON finance_report_log (period, range_end DESC);

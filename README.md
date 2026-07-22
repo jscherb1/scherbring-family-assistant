@@ -380,6 +380,48 @@ python scripts/profile_store.py global-fact set --key home_address --value "123 
 
 No setup needed beyond what's already built — the schema applies itself on first use.
 
+## Personal finance agent
+
+Monarch Money transaction review and WHO tagging (Phase 1 of a larger personal-finance
+program — see `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md` for
+the rest: spending summaries, retirement modeling, annual review, recommendations/Q&A).
+
+Monarch's **official** MCP (`mcp__claude_ai_Monarch_Money__*`) is currently paused by
+Monarch. Until it's restored, this agent talks to Monarch through a **local, vendored MCP
+server** instead: `vendor/monarch-mcp-server/` (the community
+[`robcerda/monarch-mcp-server`](https://github.com/robcerda/monarch-mcp-server), built on
+the actively-maintained `MonarchMoneyCommunity` fork), registered as `monarch` in
+`.mcp.json`. Credentials never pass through Claude — auth is a one-time terminal step that
+saves a session to the OS keyring:
+
+```
+cd vendor/monarch-mcp-server
+python login_setup.py   # choose option 1: paste browser session cookies from app.monarch.com
+```
+
+The `finance` subagent:
+
+- Pulls transactions needing review (`get_transactions_needing_review`), skips anything
+  still pending, and infers a **WHO tag** (the user's existing convention: `WHO:<person>`
+  for one person, `Adults`/`Kids`/`Family` for mixed) per transaction from a learned
+  merchant/account map (`finance_who_map`), account ownership, and the personal profile
+  store.
+- **Auto-applies** the WHO tag only when confident, always merging with the transaction's
+  existing tags (`set_transaction_tags` replaces the whole tag set, so trip/event tags are
+  preserved deliberately). Ambiguous cases are surfaced with a short set of choices instead
+  of guessed.
+- **Never clears "needs review" on its own.** It tags, summarizes what it did, and asks —
+  only transactions the user explicitly confirms get `mark_transaction_reviewed` called.
+  This is deliberately conservative for now; it may graduate to auto-review once the
+  learned map's track record is strong.
+- Proposes standing Monarch **rules** (merchant → WHO tag) once a pattern is confirmed
+  repeatedly, and only creates the rule (`create_transaction_rule`) on explicit approval.
+- Runs an on-demand **historical sweep** for transactions missing any WHO-equivalent tag,
+  batched by date range with a resumable cursor (`finance_config`).
+
+Backed by `finance_who_map` / `finance_tag_log` / `finance_rule_proposals` /
+`finance_config` and `scripts/finance_store.py`.
+
 ## Hy-Vee cart builder
 
 Turn the Todoist shopping list into a **built (never placed)** Hy-Vee Aisles Online cart.
@@ -452,9 +494,12 @@ originally listed here too — both are now built; see **Scheduled tasks** above
 Not scheduled, not designed — just captured so they don't get lost. Each would get its
 own brainstorm/spec before being built.
 
-- [ ] **Personal finance agent** — needs a Monarch Money MCP server (all financial data is
-      aggregated there). The official server is currently paused; look into unofficial/
-      community alternatives.
+- [x] **Personal finance agent — Phase 1 (Monarch connectivity + WHO tagging)** — official
+      Monarch MCP is paused, so this uses a vendored community MCP server instead. Built:
+      `finance` subagent, see **Personal finance agent** above.
+- [ ] **Personal finance agent — Phase 2+ (summaries, retirement modeling, annual review,
+      recommendations/Q&A)** — see
+      `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md` for the plan.
 - [x] **Shopping cart builder — Phase 1 (Hy-Vee)** — build (never place) a Hy-Vee Aisles
       Online cart from the Todoist shopping list, resolving each item to a specific product
       from purchase history + learned preferences, with a feedback loop that sharpens matching
