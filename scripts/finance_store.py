@@ -40,10 +40,10 @@ Usage:
     python scripts/finance_store.py rule-proposal update --id <id> \
         --status approved|rejected|created [--monarch-rule-id <id>]
 
-    python scripts/finance_store.py report add --period weekly|monthly \
+    python scripts/finance_store.py report add --period weekly|monthly|annual \
         --range-start 2026-07-13 --range-end 2026-07-19 \
         [--drive-file-id <id>] [--drive-url "..."] [--summary "..."]
-    python scripts/finance_store.py report list [--period weekly|monthly] [--limit 10]
+    python scripts/finance_store.py report list [--period weekly|monthly|annual] [--limit 10]
     python scripts/finance_store.py report update --id <id> \
         [--drive-file-id <id>] [--drive-url "..."] [--summary "..."]
 
@@ -306,8 +306,8 @@ def cmd_rule_proposal_update(args: argparse.Namespace) -> int:
 # --- report ---------------------------------------------------------------
 
 def cmd_report_add(args: argparse.Namespace) -> int:
-    if args.period not in ("weekly", "monthly"):
-        return _err("--period must be 'weekly' or 'monthly'")
+    if args.period not in ("weekly", "monthly", "annual"):
+        return _err("--period must be 'weekly', 'monthly', or 'annual'")
     new_id = uuid.uuid4().hex
     conn = _connect()
     try:
@@ -490,7 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
     rpt_sub = rpt.add_subparsers(dest="report_command", required=True)
 
     rpt_add = rpt_sub.add_parser("add", help="Record a generated report.")
-    rpt_add.add_argument("--period", required=True, choices=["weekly", "monthly"])
+    rpt_add.add_argument("--period", required=True, choices=["weekly", "monthly", "annual"])
     rpt_add.add_argument("--range-start", dest="range_start", required=True)
     rpt_add.add_argument("--range-end", dest="range_end", required=True)
     rpt_add.add_argument("--drive-file-id", dest="drive_file_id", default=None)
@@ -499,7 +499,7 @@ def build_parser() -> argparse.ArgumentParser:
     rpt_add.set_defaults(func=cmd_report_add)
 
     rpt_list = rpt_sub.add_parser("list", help="List generated reports.")
-    rpt_list.add_argument("--period", default=None, choices=["weekly", "monthly"])
+    rpt_list.add_argument("--period", default=None, choices=["weekly", "monthly", "annual"])
     rpt_list.add_argument("--limit", type=int, default=None)
     rpt_list.set_defaults(func=cmd_report_list)
 
