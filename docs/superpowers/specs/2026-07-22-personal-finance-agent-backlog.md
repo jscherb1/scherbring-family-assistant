@@ -68,7 +68,40 @@ user and rely on them sending it (defeats "automatic" delivery), (b) add an SMTP
 step (needs credentials/config), (c) re-check whether a send-capable Gmail tool
 becomes available. Decide with the user before committing to an approach.
 
-## Phase 3 — Retirement modeling & planning
+## Phase 3 — Retirement modeling & planning — BUILT 2026-07-23
+
+Built as a dedicated `retirement` subagent (`.claude/agents/retirement.md`, `model:
+sonnet`, read-only against Monarch) on two new stdlib+numpy/xlsxwriter scripts:
+- `scripts/retirement_model.py` — the Monte Carlo engine (numpy, lognormal annual
+  returns, accumulation → decumulation): returns `success_probability`, per-year
+  p10/p50/p90 percentile trajectories, a deterministic median projection, ending-balance
+  percentiles, and a depletion summary; runs base case + what-if scenarios via `run_all`.
+- `scripts/retirement_workbook.py` — builds the deliverable **user-editable `.xlsx`
+  modeling workbook** (xlsxwriter): Summary, an editable **Assumptions** tab, a
+  **Base Case** with LIVE Excel formulas referencing Assumptions (edit an input → Excel
+  recalculates), a **Monte Carlo** confidence-band tab, one tab per **scenario**, and a
+  **Data Sources** tab.
+
+Instead of the spec's Google Sheets workbook (no Sheets API tooling exists in this
+environment — only Drive), the workbook is a native `.xlsx` (openpyxl/xlsxwriter both
+available; numpy available, scipy not). **Delivery to Drive uses a dedicated CLI**,
+`scripts/drive_upload.py` (its own Google OAuth token; see `docs/retirement-drive-setup.md`)
+rather than the Drive MCP tool — the MCP path only accepts content inline and a ~70KB
+binary workbook is ~93KB of base64 as a single tool argument, which is impractical and
+breaks the unattended run. The CLI uploads straight from the file path and does an
+**in-place `files.update`** on one canonical `Retirement-Model.xlsx` in a `Retirement/`
+subfolder, so Drive's native revision history is the archive (id/url cached in
+`finance_config` as `retirement_workbook_file_id`/`_url`). Assumptions live in
+`finance_config` key `retirement_assumptions` (retire age
+62, plan-through 95, spend $120k, inflation 3%, SS start 67 with configurable amount);
+current balance, annual contribution, and allocation-derived return/volatility are
+**data-driven from Monarch each run** and overridable in the workbook. The scheduled task
+`retirement-quarterly-review` (cron `0 9 * 1,4,7,10 6` — every Saturday in
+Jan/Apr/Jul/Oct, plus an in-agent last-Saturday self-gate) runs the plan-vs-actual
+review. Engine + workbook covered by `tests/test_retirement_model.py` and
+`tests/test_retirement_workbook.py`.
+
+**Original spec** (kept for reference):
 
 **Recommended architecture:** a **Monte Carlo simulation engine**, not
 spreadsheet formulas — the user explicitly wants confidence levels and
@@ -199,8 +232,11 @@ actually afford" rather than generic advice.
    (spend-by-person reporting only works once tagging is solid) and is
    self-contained infra (HTML report + Drive + Telegram) reusable by Phase 4.
 2. Phase 4 (annual review) — BUILT, see above. Was cheap once Phase 2's report generator existed.
-3. Phase 3 (retirement modeling) — the largest lift; deserves a dedicated
-   brainstorm + input interview with the user before any code.
+3. Phase 3 (retirement modeling) — BUILT 2026-07-23, see above.
 4. Phase 5 (Q&A + recommendations) — layers on top of whichever of Phase 2/3
    exists at the time; can start as data-backed Q&A immediately and grow richer
-   as Phase 3 lands.
+   as Phase 3 lands. **Partially in place:** the `retirement` subagent already
+   answers retirement-relevant "can we afford X" questions by running what-ifs
+   through the model, and `finance` routes such questions to it. The broader
+   creative-recommendations engine (idle-cash-vs-invest, rental ROI, etc.) is
+   still its own follow-up.
