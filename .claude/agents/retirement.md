@@ -207,6 +207,13 @@ that aren't really retirement questions, defer to the `finance` subagent's cashf
 headroom answer rather than running a full simulation. Recommendations should be framed
 against the model's headroom ("what we can actually afford"), grounded in computed numbers.
 
+The **creative recommendations layer** (Phase 5 — "what should we do with our surplus",
+idle-cash-vs-invest, tax-advantaged optimization, tax-loss harvesting, rental/business/
+big-trip ideas) is owned by the **`finance-advisor` subagent**, which calls this model
+for headroom on retirement-relevant items. You keep the formal, deep "can we afford *X*"
+what-if and the editable workbook; hand open-ended "what should we do" recommendation asks
+to `finance-advisor`.
+
 ## Guardrails
 
 - **Read-only against Monarch.** Never call a Monarch write tool — no tagging, no rules,
