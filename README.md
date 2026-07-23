@@ -27,8 +27,17 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/profile.md` | Profile subagent — captures/recalls structured facts about the user, family, and friends; other subagents read the store directly |
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
+| `.claude/agents/finance.md` | Finance subagent (Phase 1) — Monarch transaction review + WHO tagging, rule proposals, historical sweeps |
+| `.claude/agents/finance-reporter.md` | Finance-reporter subagent (Phases 2 & 4) — weekly/monthly/annual spending-summary HTML reports to Drive + Telegram brief |
+| `.claude/agents/retirement.md` | Retirement subagent (Phase 3) — Monte Carlo projection + editable `.xlsx` modeling workbook to Drive; owns "can we afford X" what-ifs |
+| `.claude/agents/finance-advisor.md` | Finance-advisor subagent (Phase 5) — on-demand, read-only proactive recommendations engine (idle cash, debt, tax-advantaged, tax-loss, insurance/estate + directional ideas) |
+| `scripts/finance_store.py` | Zero-dep CLI for finance working-state (who-map / tagging log / rule proposals / report log / config sub-commands) |
+| `scripts/finance_report.py` | Renders self-contained HTML spending reports (`--period weekly|monthly|annual`) |
+| `scripts/retirement_model.py` | Monte Carlo retirement engine (numpy) — success probability, percentile bands, base + what-if scenarios |
+| `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
+| `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `scheduler` channel). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
@@ -380,14 +389,15 @@ python scripts/profile_store.py global-fact set --key home_address --value "123 
 
 No setup needed beyond what's already built — the schema applies itself on first use.
 
-## Personal finance agent
+## Personal finance program (Phases 1–5)
 
-Monarch Money transaction review and WHO tagging (Phase 1 of a larger personal-finance
-program — see `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md` for
-the rest: spending summaries, retirement modeling, annual review, recommendations/Q&A).
+A multi-agent personal-finance suite built on Monarch Money data — **all five phases are
+built**. Four scoped subagents share a common working-state store (`scripts/finance_store.py`)
+and the Monte Carlo retirement model. Full plan/history:
+`docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md`.
 
 Monarch's **official** MCP (`mcp__claude_ai_Monarch_Money__*`) is currently paused by
-Monarch. Until it's restored, this agent talks to Monarch through a **local, vendored MCP
+Monarch. Until it's restored, these agents talk to Monarch through a **local, vendored MCP
 server** instead: `vendor/monarch-mcp-server/` (the community
 [`robcerda/monarch-mcp-server`](https://github.com/robcerda/monarch-mcp-server), built on
 the actively-maintained `MonarchMoneyCommunity` fork), registered as `monarch` in
@@ -399,28 +409,73 @@ cd vendor/monarch-mcp-server
 python login_setup.py   # choose option 1: paste browser session cookies from app.monarch.com
 ```
 
-The `finance` subagent:
+All four subagents are **read-only against Monarch except `finance`** (the only one that
+writes tags / rules / review status), default to **Sonnet**, and follow the same "derive
+from data, be transparent about assumptions/gaps, never hand-wave a number" discipline.
+
+### `finance` — transaction review & WHO tagging (Phase 1)
 
 - Pulls transactions needing review (`get_transactions_needing_review`), skips anything
-  still pending, and infers a **WHO tag** (the user's existing convention: `WHO:<person>`
-  for one person, `Adults`/`Kids`/`Family` for mixed) per transaction from a learned
-  merchant/account map (`finance_who_map`), account ownership, and the personal profile
-  store.
-- **Auto-applies** the WHO tag only when confident, always merging with the transaction's
-  existing tags (`set_transaction_tags` replaces the whole tag set, so trip/event tags are
-  preserved deliberately). Ambiguous cases are surfaced with a short set of choices instead
-  of guessed.
-- **Never clears "needs review" on its own.** It tags, summarizes what it did, and asks —
-  only transactions the user explicitly confirms get `mark_transaction_reviewed` called.
-  This is deliberately conservative for now; it may graduate to auto-review once the
-  learned map's track record is strong.
-- Proposes standing Monarch **rules** (merchant → WHO tag) once a pattern is confirmed
-  repeatedly, and only creates the rule (`create_transaction_rule`) on explicit approval.
-- Runs an on-demand **historical sweep** for transactions missing any WHO-equivalent tag,
-  batched by date range with a resumable cursor (`finance_config`).
+  still pending, and infers a **WHO tag** (the user's convention: `WHO - <person>` for one
+  person, `Adults`/`Kids`/`Family` for mixed) from a learned merchant/account map
+  (`finance_who_map`), account ownership, and the personal profile store.
+- **Auto-applies** the tag only when confident, always merging with the transaction's
+  existing tags (`set_transaction_tags` replaces the whole set, so trip/event tags are
+  preserved deliberately). Ambiguous cases are surfaced with a short set of choices.
+- **Never clears "needs review" on its own** — it tags, summarizes, and asks; only
+  user-confirmed transactions get `mark_transaction_reviewed`. Proposes standing Monarch
+  **rules** (merchant → WHO tag) once a pattern is confirmed, created only on explicit
+  approval. Runs an on-demand **historical sweep** (resumable cursor in `finance_config`).
+- Also answers factual data-backed questions (net worth, budget-vs-actual) directly.
+
+### `finance-reporter` — spending summaries & annual review (Phases 2 & 4)
+
+- Turns Monarch data into **weekly / monthly / annual** spending-summary reports — a brief
+  Telegram message plus a self-contained HTML report (rendered by
+  `scripts/finance_report.py`, `--period weekly|monthly|annual`) saved to a `Reports/`
+  subfolder in Google Drive. Budget vs. actual, prior-period deltas, and spend-by-WHO.
+- The **annual review** adds month-by-month + 3-year trends and an agent-authored
+  narrative (executive summary, income/spending, net-worth, forward-looking), every claim
+  citing a computed number.
+- Scheduled tasks: `weekly-spending-summary`, `monthly-spending-summary`,
+  `annual-financial-review` (the monthly/annual ones self-gate to the last Saturday).
+
+### `retirement` — retirement modeling (Phase 3)
+
+- Runs a **Monte Carlo retirement projection** (`scripts/retirement_model.py`, numpy) from
+  Monarch-derived, user-overridable assumptions (stored in `finance_config` under
+  `retirement_assumptions`) → success probability, p10/p50/p90 bands, ending-balance
+  percentiles, and what-if scenarios.
+- Produces a **deep, user-editable `.xlsx` workbook** (`scripts/retirement_workbook.py`) —
+  live Excel formulas on an editable Assumptions tab, a Monte Carlo band tab, one tab per
+  scenario — uploaded to a `Retirement/` Drive subfolder in place via `scripts/drive_upload.py`
+  (Drive revision history = the archive).
+- Owns the formal **"can we afford X"** what-ifs (retire earlier, a second home, a big
+  renovation) and the scheduled `retirement-quarterly-review` (plan-vs-actual, last
+  Saturday of Jan/Apr/Jul/Oct).
+
+### `finance-advisor` — proactive recommendations (Phase 5)
+
+- **On-demand, read-only, pure advice.** Turns real Monarch data (cash, debt + APRs,
+  holdings/allocation incl. taxable unrealized losses, cashflow surplus, budget headroom)
+  plus the retirement model's headroom into **grounded, ranked recommendations** — a
+  grounded tier first (idle-cash-vs-invest, debt-payoff-vs-expected-return, tax-advantaged
+  optimization HSA/401k/backdoor-Roth/529, tax-loss harvesting, insurance/estate gaps),
+  then directional/speculative ideas (rental, business, big trip, new car) framed against
+  what the model says is affordable.
+- Ask it "what should we do with our money", "should we pay down the mortgage or invest",
+  "any tax-advantaged opportunities we're missing", "any tax-loss harvesting", "insurance
+  or estate gaps". Chat/Telegram output only — no Drive artifact.
+- The facts Monarch can't provide (tax bracket, HSA eligibility, insurance/estate coverage,
+  liquidity target, risk tolerance) live in a stored `advisor_profile` (`finance_config`) —
+  asked once, persisted, never invented silently. **Follow-up not yet built:** fold an
+  advisor section into the annual review report.
 
 Backed by `finance_who_map` / `finance_tag_log` / `finance_rule_proposals` /
-`finance_config` and `scripts/finance_store.py`.
+`finance_report_log` / `finance_config` and `scripts/finance_store.py`. No setup beyond the
+Monarch login above and the Drive connector (already authorized); the retirement workbook's
+Drive-upload CLI has its own one-time `python scripts/drive_upload.py auth` step (see
+`docs/retirement-drive-setup.md`).
 
 ## Hy-Vee cart builder
 
@@ -494,16 +549,21 @@ originally listed here too — both are now built; see **Scheduled tasks** above
 Not scheduled, not designed — just captured so they don't get lost. Each would get its
 own brainstorm/spec before being built.
 
-- [x] **Personal finance agent — Phase 1 (Monarch connectivity + WHO tagging)** — official
-      Monarch MCP is paused, so this uses a vendored community MCP server instead. Built:
-      `finance` subagent, see **Personal finance agent** above.
-- [ ] **Personal finance agent — Phase 2+ (summaries, retirement modeling, annual review,
-      recommendations/Q&A)** — see
-      `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md` for the plan.
-- [ ] **`scripts/finance_report.py` — add annual report support** — currently only renders
-      `--period weekly|monthly`. Running the first annual review (2026-07-22) required
-      hand-appending narrative/by-month/trends HTML sections as a workaround. Add a proper
-      `annual` period with `by_month`, `trends`, and `narrative` rendering.
+- [x] **Personal finance program — Phases 1–5 (all built)** — Monarch connectivity + WHO
+      tagging (`finance`), weekly/monthly/annual spending reports (`finance-reporter`),
+      Monte Carlo retirement modeling + editable workbook (`retirement`), and the proactive
+      recommendations engine (`finance-advisor`). Official Monarch MCP is paused, so this
+      uses a vendored community MCP server. See **Personal finance program** above and
+      `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md`.
+      - [ ] **Remaining follow-up:** fold a `finance-advisor` recommendations section into the
+            annual review report (`finance-reporter` annual mode) so the proactive layer also
+            lands once a year, not just on-demand.
+      - [ ] **Retirement model refinement:** derive asset allocation from real holdings
+            (currently an 85/15 assumption) and replace the placeholder Social Security
+            estimate with a real one — both are editable levers today, this is a
+            "make the numbers trustworthy" pass. See the Phase 3 backlog note.
+- [x] **`scripts/finance_report.py` — annual report support** — `--period annual` now renders
+      `by_month`, `trends`, and agent-authored `narrative` sections (built with Phase 4).
 - [x] **Shopping cart builder — Phase 1 (Hy-Vee)** — build (never place) a Hy-Vee Aisles
       Online cart from the Todoist shopping list, resolving each item to a specific product
       from purchase history + learned preferences, with a feedback loop that sharpens matching
