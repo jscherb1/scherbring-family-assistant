@@ -101,6 +101,19 @@ Jan/Apr/Jul/Oct, plus an in-agent last-Saturday self-gate) runs the plan-vs-actu
 review. Engine + workbook covered by `tests/test_retirement_model.py` and
 `tests/test_retirement_workbook.py`.
 
+**Refinement backlog (not yet done — make the analysis more robust):** the first
+build ships two deliberate placeholders that should become genuinely data-driven
+before the model is leaned on for real decisions:
+- **Asset allocation** is assumed (85/15 → return/volatility) rather than derived
+  from actual holdings. Pull the real stock/bond split per account via
+  `get_account_holdings` and map it to return/vol instead of the fallback.
+- **Social Security** is a placeholder ($40k/yr combined at 67). Replace with a
+  real estimate (from earnings history / SSA statement, or a documented
+  methodology), keeping it a configurable lever.
+Both are low-risk to iterate on since every value is already an editable
+Assumptions cell + config field; this is a "make the numbers trustworthy" pass,
+not new architecture. Logged 2026-07-23.
+
 **Original spec** (kept for reference):
 
 **Recommended architecture:** a **Monte Carlo simulation engine**, not
