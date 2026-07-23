@@ -221,23 +221,31 @@ schema documents, not invented derived fields.
 ## Phase 5 — Proactive recommendations & general Q&A
 
 **Data-backed Q&A** ("can we afford a new car", "what if we did a $X home
-renovation"): answer from real Monarch data (accounts, cashflow, budget
-headroom) plus, once Phase 3 exists, the retirement model — running a what-if
-through the Monte Carlo engine is the most rigorous way to answer "can we
-afford X" for anything retirement-relevant; smaller near-term purchases can be
-answered from cashflow/budget headroom alone.
+renovation") — **BUILT** as part of Phase 3: the `retirement` subagent runs
+retirement-relevant what-ifs through the Monte Carlo engine and answers from the
+success-probability delta, and `finance` routes such questions to it. Smaller
+near-term purchases are answered from cashflow/budget headroom by `finance`.
 
-**Creative recommendations** (the user's ask: "be creative... rental houses,
-invest in a business, plan a trip, get a new car, etc."): this is genuinely
-open-ended and worth its own brainstorm rather than a prescriptive checklist
-here. Starting angles to research/consider: rental property ROI vs. the user's
-liquidity and risk tolerance, opportunity cost of large cash balances sitting
-idle vs. investing, debt payoff vs. investment return comparisons, tax-loss
-harvesting opportunities, HSA/529/retirement account contribution optimization,
-insurance/estate-planning gaps, and only then more speculative ideas like a
-business investment or a big trip — weighed against the retirement model's
-headroom once Phase 3 exists so recommendations are grounded in "what we can
-actually afford" rather than generic advice.
+**Creative recommendations** — **BUILT 2026-07-23** as a dedicated read-only
+`finance-advisor` subagent (`.claude/agents/finance-advisor.md`, `model: sonnet`).
+See `docs/superpowers/specs/2026-07-23-finance-advisor-design.md` for the design.
+It turns real Monarch data (cash, debt + APRs, holdings/allocation incl. taxable
+unrealized losses, trailing cashflow surplus, budget headroom, recurring premiums)
+plus the Phase 3 retirement model's headroom into **grounded, ranked, data-backed
+recommendations** — a grounded tier first (idle-cash-vs-invest, debt-payoff-vs-
+expected-return, tax-advantaged optimization HSA/401k/backdoor-Roth/529, tax-loss
+harvesting, insurance/estate gaps), then directional/speculative ideas (rental,
+business, big trip, new car) each framed against the model's headroom. Key
+decisions: **on-demand only** (no scheduled firing), **chat/Telegram output only**
+(no Drive artifact), **pure advice** (read-only, never acts — no writes, Todoist
+tasks, or goals), and the facts Monarch can't provide (tax bracket, HSA
+eligibility, insurance/estate coverage, liquidity target, risk tolerance) live in
+a stored `advisor_profile` (`finance_config`) — asked once, persisted, never
+invented silently.
+
+**Follow-up (not yet built):** fold an advisor recommendations section into the
+**annual review report** (Phase 4 / `finance-reporter` annual mode) so the
+proactive layer also lands once a year, in addition to the on-demand agent.
 
 ## Suggested build order
 
@@ -246,10 +254,8 @@ actually afford" rather than generic advice.
    self-contained infra (HTML report + Drive + Telegram) reusable by Phase 4.
 2. Phase 4 (annual review) — BUILT, see above. Was cheap once Phase 2's report generator existed.
 3. Phase 3 (retirement modeling) — BUILT 2026-07-23, see above.
-4. Phase 5 (Q&A + recommendations) — layers on top of whichever of Phase 2/3
-   exists at the time; can start as data-backed Q&A immediately and grow richer
-   as Phase 3 lands. **Partially in place:** the `retirement` subagent already
-   answers retirement-relevant "can we afford X" questions by running what-ifs
-   through the model, and `finance` routes such questions to it. The broader
-   creative-recommendations engine (idle-cash-vs-invest, rental ROI, etc.) is
-   still its own follow-up.
+4. Phase 5 (Q&A + recommendations) — **BUILT 2026-07-23.** The data-backed "can we
+   afford X" Q&A landed with Phase 3 (`retirement` runs what-ifs; `finance` routes
+   to it). The creative-recommendations engine is now the read-only `finance-advisor`
+   subagent (on-demand, chat-only, pure advice, stored `advisor_profile`). Only
+   follow-up left: fold an advisor section into the annual review report.
