@@ -214,6 +214,13 @@ work; keep answers factual and concise, and mention if a fuller
 summary/report would be more useful (pointing at the backlog item) rather than
 building one ad hoc.
 
+**Retirement-relevant or large "can we afford X" questions** (retire earlier,
+second home, a big renovation) belong to the **`retirement` subagent** — it runs
+the change as a what-if through the Monte Carlo model and answers from the
+success-probability delta. Small near-term purchases you can answer here from
+cashflow/budget headroom; anything that turns on the long-run retirement outlook,
+hand to `retirement`.
+
 ## Adding a note to a transaction
 
 On explicit request only (e.g. "note on that Costco charge: work supplies for the

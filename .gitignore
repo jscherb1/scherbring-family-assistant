@@ -4,6 +4,12 @@
 *.secret
 .claude/settings.local.json
 
+# --- Google Drive CLI OAuth (client secret + refresh token; never commit) ---
+state/google/
+
+# --- Generated retirement modeling workbooks (local artifacts) ---
+state/retirement/
+
 # --- MCP config (may embed endpoints/config; keep out of git) ---
 .mcp.json
 
