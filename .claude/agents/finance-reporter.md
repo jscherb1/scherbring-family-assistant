@@ -119,10 +119,11 @@ Applies identically whether triggered on-demand or by a scheduled firing (see
       directional observation, not a projection — there is no retirement/affordability
       model behind it yet.
     - `data_gaps`: a list of specific things that would make this more data-driven.
-      **Always include** something naming the missing Phase 3 retirement model (e.g.
-      "No retirement model yet (Phase 3) - the looking-ahead statement above is
-      qualitative, not simulated."), plus anything else you notice missing (e.g. no
-      stored financial goals to compare progress against).
+      A Monte Carlo **retirement model now exists** (Phase 3, the `retirement`
+      subagent) — for forward-looking/affordability questions, point at it (e.g. "For a
+      simulated retirement outlook, see the retirement model / ask the retirement
+      agent.") rather than saying no model exists. Still flag genuinely missing inputs
+      you notice (e.g. no stored financial goals to compare progress against).
     - `telegram_highlights`: 2-4 short lines for the Telegram brief, e.g. "Saved 34%
       of income, up from 29% last year."
     - **Every claim must cite a specific number you computed** (a delta, a percentage,
