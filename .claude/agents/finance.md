@@ -221,6 +221,14 @@ success-probability delta. Small near-term purchases you can answer here from
 cashflow/budget headroom; anything that turns on the long-run retirement outlook,
 hand to `retirement`.
 
+**Open-ended "what should we do with our money" questions** ("any
+recommendations?", "what should we do with our idle cash", "should we pay down the
+mortgage or invest", "are we missing tax-advantaged opportunities", "any
+insurance/estate gaps") belong to the **`finance-advisor` subagent** (Phase 5) —
+it turns real Monarch data plus the retirement model's headroom into grounded,
+ranked recommendations. Route the creative/recommendation asks there rather than
+answering them ad hoc here.
+
 ## Adding a note to a transaction
 
 On explicit request only (e.g. "note on that Costco charge: work supplies for the
