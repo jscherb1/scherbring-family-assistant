@@ -64,13 +64,22 @@ def _err(msg: str) -> int:
 def _fmt_money(value) -> str:
     if value is None:
         return "-"
-    return f"${value:,.2f}"
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.2f}"
 
 
 def _fmt_pct(value) -> str:
     if value is None:
         return "-"
-    return f"{value:.1f}%"
+    return f"{value * 100:.1f}%"
+
+
+def _pos(value):
+    """Normalize a spend/prior-spend figure to its magnitude. Monarch's
+    get_spending_summary reports expenses as negative (cashflow convention),
+    but this report always displays spend amounts as positive dollar
+    figures — deltas/arrows carry the direction separately."""
+    return None if value is None else abs(value)
 
 
 def _delta_class(current, prior, invert: bool = False) -> str:
@@ -111,6 +120,7 @@ def _bar_row(label: str, amount, max_amount, prior_amount=None) -> str:
 def _section_by_category(rows: list) -> str:
     if not rows:
         return ""
+    rows = [dict(r, amount=_pos(r.get("amount")), prior_amount=_pos(r.get("prior_amount"))) for r in rows]
     amounts = [r.get("amount") or 0 for r in rows]
     max_amount = max(amounts) if amounts else 0
     body = "\n".join(
@@ -127,6 +137,7 @@ def _section_by_category(rows: list) -> str:
 def _section_by_who(rows: list) -> str:
     if not rows:
         return ""
+    rows = [dict(r, amount=_pos(r.get("amount")), prior_amount=_pos(r.get("prior_amount"))) for r in rows]
     amounts = [r.get("amount") or 0 for r in rows]
     max_amount = max(amounts) if amounts else 0
     body = "\n".join(
@@ -287,10 +298,10 @@ def render_html(payload: dict, period: str) -> str:
     period_label = payload.get("period_label", period.capitalize())
     totals = payload.get("totals", {}) or {}
     income = totals.get("income")
-    expenses = totals.get("expenses")
+    expenses = _pos(totals.get("expenses"))
     savings = totals.get("savings")
     savings_rate = totals.get("savings_rate")
-    prior_expenses = totals.get("prior_expenses")
+    prior_expenses = _pos(totals.get("prior_expenses"))
     delta_cls = _delta_class(expenses, prior_expenses)
     delta_txt = _delta_text(expenses, prior_expenses) if prior_expenses is not None else ""
 
@@ -351,8 +362,8 @@ def render_html(payload: dict, period: str) -> str:
 def build_telegram_summary(payload: dict, period: str) -> str:
     period_label = payload.get("period_label", period.capitalize())
     totals = payload.get("totals", {}) or {}
-    expenses = totals.get("expenses")
-    prior_expenses = totals.get("prior_expenses")
+    expenses = _pos(totals.get("expenses"))
+    prior_expenses = _pos(totals.get("prior_expenses"))
     income = totals.get("income")
     savings_rate = totals.get("savings_rate")
     narrative = payload.get("narrative", {}) or {}
@@ -374,13 +385,15 @@ def build_telegram_summary(payload: dict, period: str) -> str:
 
     by_who = payload.get("by_who", [])
     if by_who:
-        top = sorted(by_who, key=lambda r: r.get("amount") or 0, reverse=True)[:4]
+        who_rows = [dict(r, amount=_pos(r.get("amount"))) for r in by_who]
+        top = sorted(who_rows, key=lambda r: r.get("amount") or 0, reverse=True)[:4]
         who_line = ", ".join(f"{r.get('tag')}: {_fmt_money(r.get('amount'))}" for r in top)
         lines.append(f"By who — {who_line}")
 
     by_category = payload.get("by_category", [])
     if by_category:
-        top = sorted(by_category, key=lambda r: r.get("amount") or 0, reverse=True)[:3]
+        cat_rows = [dict(r, amount=_pos(r.get("amount"))) for r in by_category]
+        top = sorted(cat_rows, key=lambda r: r.get("amount") or 0, reverse=True)[:3]
         cat_line = ", ".join(f"{r.get('name')}: {_fmt_money(r.get('amount'))}" for r in top)
         lines.append(f"Top categories — {cat_line}")
 

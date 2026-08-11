@@ -21,3 +21,8 @@ $LogFile = Join-Path $LogDir ("scheduler_poll_{0}.log" -f (Get-Date -Format "yyy
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 Add-Content -Path $LogFile -Value "[$timestamp] --- poll pass ---"
 python scripts\scheduler_poll.py 2>&1 | Tee-Object -FilePath $LogFile -Append
+
+# Piggyback the Telegram MCP health check on this same 2-minute cadence so a
+# broken connection (see watchdog_telegram_health.ps1 for background) gets
+# detected and healed in minutes rather than sitting silently for hours.
+& (Join-Path $PSScriptRoot "watchdog_telegram_health.ps1") 2>&1 | Tee-Object -FilePath $LogFile -Append
