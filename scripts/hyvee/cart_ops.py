@@ -78,13 +78,18 @@ from playwright.sync_api import (
 from hyvee_web import (
     CART_PAGE_URL,
     HOME_URL,
-    LOGIN_URL,
     PRODUCT_PAGE_TMPL,
     PURCHASE_HISTORY_API,
     SEARCH_URL_TMPL,
     SELECTORS,
 )
-from hyvee_session import ENV_FILE, SESSION_FILE, dismiss_cookie_banner, load_env
+from hyvee_session import (
+    ENV_FILE,
+    SESSION_FILE,
+    dismiss_cookie_banner,
+    goto_login,
+    load_env,
+)
 
 ERROR_SCREENSHOT = Path(__file__).resolve().parent / "last_error.png"
 
@@ -186,7 +191,7 @@ def _is_logged_in(page) -> bool:
 
 
 def _do_login(page, username: str, password: str) -> None:
-    page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=45000)
+    goto_login(page)
     page.wait_for_timeout(2000)
     dismiss_cookie_banner(page)
     page.fill(SELECTORS["username"], username)

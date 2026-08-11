@@ -10,6 +10,12 @@ state/google/
 # --- Generated retirement modeling workbooks (local artifacts) ---
 state/retirement/
 
+# --- Generated finance reports (local artifacts, personal financial data) ---
+state/finance_reports/
+
+# --- Stray debug log capture ---
+claude-debug.log
+
 # --- MCP config (may embed endpoints/config; keep out of git) ---
 .mcp.json
 
