@@ -1,9 +1,0 @@
-{
-  "name": "scheduler-channel",
-  "version": "0.0.1",
-  "private": true,
-  "description": "One-way local MCP channel that delivers due scheduled-task prompts into the orchestrator's running session.",
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
-  }
-}

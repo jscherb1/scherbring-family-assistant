@@ -14,8 +14,8 @@ render-time tools") and never recovers on its own - only a full process
 restart has reliably fixed it.
 
 This script is meant to be called every ~2 minutes (piggybacked on the
-existing scheduler poller's Task Scheduler cadence via run_scheduler_poll.ps1)
-so detection-to-heal is minutes, not hours.
+watchdog Scheduled Task's cadence via run_watchdog.ps1) so detection-to-heal
+is minutes, not hours.
 
 Detection: inspect the tail of the most-recently-modified debug log under
 ~/.claude/debug/*.txt (expected to be the live orchestrator's log) for
