@@ -24,9 +24,19 @@ after the process has had a few minutes to arm it counts the same way (the loop
 never armed in the first place).
 
 To avoid restarting on a single transient blip (e.g. a slow turn pushing one tick a
-few minutes late), an unhealthy reading must persist across two checks at least 3
+few minutes late), an unhealthy reading must persist across two checks at least 5
 minutes apart (tracked in state/scheduler_watchdog.json) before this script acts,
 mirroring watchdog_telegram_health.ps1's debounce pattern.
+
+2026-08-12: raised StaleThresholdMinutes 10->20 and DebounceMinutes 3->5 after
+observing a self-perpetuating restart loop - a restart itself introduces startup
+latency (MCP/channel reconnect, session resume) before the cron loop resumes
+ticking, and the original ~13-minute total threshold (10 stale + 3 debounce) wasn't
+enough headroom for that latency plus a normal tick cadence. Each restart was
+resetting the clock without ever letting the loop stabilize, causing repeated
+restarts and repeated Telegram alerts within minutes of each other. The looser
+threshold trades slower detection of a genuinely dead loop for not restarting into
+itself.
 
 On confirmed persistent staleness:
   1. Force-kill the orchestrator so start_orchestrator.ps1's wrapper restarts it
@@ -46,9 +56,9 @@ $LoopStateFile = Join-Path $RepoRoot "state\scheduler_loop_state.json"
 $ConfigFile = Join-Path $RepoRoot "scripts\scheduler.config.json"
 $TelegramEnvFile = Join-Path $env:USERPROFILE ".claude\channels\telegram\.env"
 $MatchPattern = '*channels*plugin:telegram*'
-$StaleThresholdMinutes = 10
+$StaleThresholdMinutes = 20
 $ArmGraceMinutes = 5
-$DebounceMinutes = 3
+$DebounceMinutes = 5
 
 function Get-WatchdogState {
     if (Test-Path $StateFile) {
