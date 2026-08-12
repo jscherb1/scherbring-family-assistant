@@ -14,16 +14,17 @@ carries out the stored prompt. Your job is only to manage the registry correctly
 
 ## How firing actually works (context, not your job)
 
-A separate Windows Scheduled Task polls the registry every ~2 minutes and, for
-anything due, delivers the task's stored `prompt` text into the orchestrator's running
-session as a proactive event, prefixed for the user as `📅 Scheduled: <task name>`.
-The orchestrator then carries out that prompt (delegating to other subagents as
-needed) and replies into the chat you recorded. This means **the `prompt` you store
-must be fully self-contained** — written as an instruction to a future orchestrator
-turn that has no memory of this conversation, not as a note to yourself. Write it in
-the imperative, naming any subagent to delegate to, e.g.: "Delegate to the
-meal-planner subagent to plan next week's dinners, then reply with the result" — not
-"remind them about dinner" or "do the usual."
+The orchestrator arms itself a self-renewing poll loop via Claude Code's `CronCreate` tool
+(see the "Scheduler self-arming" section of `CLAUDE.md`) that fires every ~2 minutes, checks
+this registry for anything due, and carries out the task's stored `prompt` text in-session,
+prefixed for the user as `📅 Scheduled: <task name>`. There is no external poller or channel —
+the orchestrator polls itself. An OS-level watchdog (`scripts/watchdog_scheduler_health.ps1`)
+independently verifies that loop is actually ticking and force-restarts the orchestrator if it
+ever goes stale. This means **the `prompt` you store must be fully self-contained** — written
+as an instruction to a future orchestrator turn that has no memory of this conversation, not as
+a note to yourself. Write it in the imperative, naming any subagent to delegate to, e.g.:
+"Delegate to the meal-planner subagent to plan next week's dinners, then reply with the result"
+— not "remind them about dinner" or "do the usual."
 
 ## The one hard requirement: capturing chat_id
 

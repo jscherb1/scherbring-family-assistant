@@ -11,10 +11,10 @@ copies polling Telegram at the same time. Otherwise it launches the orchestrator
 if it ever exits (crash, update, etc.), restarts it after a short delay. Minimize this
 window to get it out of the way; closing it stops the assistant.
 
-Restarts pass --continue so a restart (including one triggered by
-watchdog_telegram_health.ps1, which force-kills this process on a persistent
-broken Telegram MCP connection) resumes the same conversation instead of
-starting a blank one.
+Every launch resumes the orchestrator's own named conversation
+("Scherbring-Family-Bot-Task-v1", via --resume) instead of starting a blank
+one, including a restart triggered by watchdog_telegram_health.ps1 or
+watchdog_scheduler_health.ps1 force-killing this process.
 
 2026-08-11: a force-kill (Stop-Process -Force) doesn't give claude a chance
 to run its normal exit cleanup, which includes disabling the xterm mouse-
@@ -31,39 +31,53 @@ looping.
 back to fuzzy name-matching, which becomes ambiguous the moment more than one
 past session shares this name - confirmed this had regressed to hitting an
 interactive "multiple sessions match" disambiguation picker on every restart,
-a second unhandled prompt on top of the dev-channels warning below, which is
-almost certainly the main reason past restarts silently went missing (the
-picker sits waiting for a keypress no differently than the warning did).
---remote-control is now passed on every launch (labels whatever session is
-starting), and --continue (unambiguous: most recent conversation in this
-directory) is what actually provides restart continuity, not name-based
---resume. This alone should make restarts need a manual keypress far less
-often than before.
+a second unhandled prompt on top of the (now-retired, see below) dev-channels
+warning, which is almost certainly the main reason past restarts silently
+went missing (the picker sits waiting for a keypress no differently than the
+warning did).
+
+2026-08-12: switching to plain --continue (dropping --resume $SessionName
+entirely) turned out to be the wrong fix - --continue resumes "the most
+recent conversation in this directory," which is whatever session was last
+active there, not necessarily the orchestrator's own dedicated conversation
+(e.g. it could grab an ad-hoc dev/implementation session run in this same
+repo). The named --resume is intentional: it guarantees this always resumes
+specifically the orchestrator's own tagged conversation, not just whatever
+happened to run here most recently.
+
+The actual root cause of the ambiguous "multiple sessions match" picker was
+several past sessions all carrying the same custom title
+"Scherbring-Family-Bot-Task-v1" (each restart that hit the picker in the past
+apparently forked a fresh untitled session rather than truly resuming,
+compounding over time). Cleaned up by renaming the stale duplicate(s) out of
+the way (via the same custom-title mechanism /rename uses) so exactly one
+session carries the name - see git history / conversation log around
+2026-08-12 for the cleanup. With only one match, --resume $SessionName
+resolves unambiguously and no picker should appear. If it ever does again,
+that means a duplicate has reappeared and needs the same cleanup - check
+`grep -h '"type":"custom-title"' ~/.claude/projects/<this-project-hash>/*.jsonl`
+for more than one session ending on this name.
+--remote-control is still passed on every launch to label the session for the
+remote-control app.
 
 2026-08-11: --dangerously-load-development-channels (needed for the local
 scheduler channel, which is a hand-written script, not a marketplace plugin,
-so it can never be loaded via the ordinary --channels allowlist path) makes
+so it can never be loaded via the ordinary --channels allowlist path) made
 every launch show an interactive "WARNING: Loading development channels"
-confirmation that needs a keypress, and this has been given up on as
-unautomatable in this environment after two failed approaches:
-  1. A hidden helper process writing an Enter key event into the console's
-     input buffer (WriteConsoleInput/AttachConsole). The Win32 calls report
-     success (AttachConsole ok, WriteConsoleInput ok, 2 events written) but
-     the prompt is unaffected - strongly suggests Windows Terminal's ConPTY
-     layer routes real input through a different pipe than the classic
-     console input buffer this API writes to, so the events land somewhere
-     the TUI never reads.
-  2. Redirecting claude's stdin to a pipe we control, since a non-TTY stdin
-     makes claude silently *skip* the confirmation entirely (verified). But
-     the interactive TUI then never mounts at all - the session just hangs
-     showing nothing, and worse, a human can no longer unstick it by typing
-     into the window either, since real keyboard input no longer reaches a
-     redirected pipe. Reverted same-day.
-Both were reverted. This script now just launches claude directly against a
-real console with real stdin - if the warning appears, type Enter into the
-window yourself. Should be rare given the --continue fix above; if it starts
-happening on every restart again, the --remote-control-name disambiguation
-bug (or something like it) has likely regressed.
+confirmation that needs a keypress, and this had been given up on as
+unautomatable in this environment after two failed approaches (a hidden
+helper process writing a synthetic Enter key event into the console input
+buffer, and redirecting claude's stdin to a controlled pipe - both reverted;
+see git history for details if this is ever revisited elsewhere).
+
+2026-08-12: retired the local scheduler channel entirely rather than continue
+working around its launch-flag prompt. The scheduled-tasks poll loop is now
+armed by the orchestrator itself, in-session, via CronCreate (see the
+"Scheduler self-arming" section of CLAUDE.md and
+scripts/watchdog_scheduler_health.ps1 for the OS-level backstop that verifies
+it's actually ticking). No dev channel, no --dangerously-load-development-channels
+flag, no launch-time confirmation dialog - this should make unattended
+auto-restart actually unattended.
 #>
 
 function Reset-TerminalMouseTracking {
@@ -85,19 +99,11 @@ if ($existing) {
 
 Write-Host "Starting personal-assistant orchestrator from $RepoRoot"
 Write-Host "Minimize this window to keep it running in the background; closing it stops the assistant."
-Write-Host "If a 'WARNING: Loading development channels' prompt appears, press Enter to accept it - this is not automated (see script header)."
 
 $SessionName = "Scherbring-Family-Bot-Task-v1"
 
-$first = $true
 while ($true) {
-    if ($first) {
-        claude --debug --remote-control --resume $SessionName --channels plugin:telegram@claude-plugins-official --dangerously-load-development-channels server:scheduler
-        $first = $false
-    }
-    else {
-        claude --continue --debug --remote-control --resume $SessionName --channels plugin:telegram@claude-plugins-official --dangerously-load-development-channels server:scheduler
-    }
+    claude --resume $SessionName --debug --remote-control --channels plugin:telegram@claude-plugins-official
     Reset-TerminalMouseTracking
     Write-Host ""
     Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"

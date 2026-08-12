@@ -1,5 +1,4 @@
 {
-  "enabledMcpjsonServers": ["scheduler"],
   "permissions": {
     "allow": [
       "mcp__todoist__search",

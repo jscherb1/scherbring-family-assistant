@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Scheduled-tasks registry CLI for the scheduler subagent and poller.
+"""Scheduled-tasks registry CLI for the scheduler subagent and the orchestrator's
+self-armed poll loop.
 
 Zero-dependency (Python stdlib only), same SQLite file as state_store.py
 (state/agent_results.db, schema in state/schema.sql). The `scheduler` subagent calls
-`add`/`list`/`get`/`enable`/`disable`/`delete` to manage tasks conversationally.
-scripts/scheduler_poll.py calls `due` to find what to fire and `mark-dispatched` to
-record it. The orchestrator calls `log-run` after completing a fired task's work, and
-the heartbeat task calls `runs` to look for anything overdue/failed.
+`add`/`list`/`get`/`enable`/`disable`/`delete` to manage tasks conversationally. The
+orchestrator's self-armed CronCreate poll loop (see the "Scheduler self-arming"
+section of CLAUDE.md) calls `due` to find what to fire, `mark-dispatched` to record
+it, and `log-run` after completing a fired task's work. The heartbeat task calls
+`runs` to look for anything overdue/failed.
 
 Cron matching is a hand-rolled 5-field matcher (minute hour day-of-month month
 day-of-week) supporting wildcards, single values, lists, ranges, and steps - the same
