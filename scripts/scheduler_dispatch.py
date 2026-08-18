@@ -104,10 +104,12 @@ def send_failure_alert(task_name: str, run_at: str, reason: str) -> None:
         print(f"scheduler_dispatch: failed to send failure alert: {exc}", flush=True)
 
 
-    # Local wall-clock time with .000Z suffix to match the format previously written
-    # by the in-session cron loop. The watchdog (watchdog_scheduler_health.ps1) reads
-    # this field and compares to local time; keeping the same format avoids drift.
-    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+def _now_local_iso() -> str:
+    # Local wall-clock time, no timezone suffix. PowerShell's [datetime] cast treats
+    # a bare ISO string as local time, which is correct for the watchdog comparison.
+    # Do NOT add a Z suffix — Z causes PowerShell to convert UTC→local, making the
+    # tick appear ~UTC-offset hours stale (e.g. 5 hours old on CDT = UTC-5).
+    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def update_heartbeat() -> None:
