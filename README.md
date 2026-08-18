@@ -41,12 +41,15 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
-| `scripts/scheduler_store.py` | Zero-dep CLI for the scheduled-tasks registry (add/list/enable/disable/delete/due/log-run); the orchestrator's self-armed `CronCreate` poll loop calls this directly |
+| `scripts/scheduler_store.py` | Zero-dep CLI for the scheduled-tasks registry (add/list/enable/disable/delete/due/log-run); called by `scheduler_dispatch.py` to find and dispatch due tasks |
+| `scripts/scheduler_dispatch.py` | Zero-token external poller — writes a heartbeat tick, checks for due tasks, and dispatches each via `claude --print` as a one-shot subprocess. Exits silently when nothing is due. |
+| `scripts/run_scheduler_hidden.vbs` | VBS launcher so the Windows Task Scheduler trigger runs without a console flash (same pattern as `run_watchdog_hidden.vbs`) |
+| `scripts/register_scheduler_task.ps1` | One-time setup for the `PersonalAssistantScheduler` Scheduled Task (fires every ~2 min, runs `scheduler_dispatch.py`) |
 | `scripts/start_orchestrator.ps1` | Idempotent launcher — skips if already running, restarts on exit |
 | `scripts/orchestrator_status.ps1` | Read-only check for whether the orchestrator is running |
 | `scripts/register_orchestrator_task.ps1` | One-time setup for the auto-start-at-logon Scheduled Task |
 | `scripts/watchdog_telegram_health.ps1` | Detects a stuck Telegram MCP connection and force-restarts the orchestrator |
-| `scripts/watchdog_scheduler_health.ps1` | Detects a stalled self-armed scheduler poll loop, force-restarts the orchestrator, and sends a direct Telegram alert |
+| `scripts/watchdog_scheduler_health.ps1` | Detects a stalled `PersonalAssistantScheduler` dispatch task (via heartbeat file), triggers recovery, and sends a direct Telegram alert |
 | `scripts/run_watchdog.ps1` | Wrapper the watchdog Scheduled Task invokes; logs to `state/logs/` |
 | `scripts/register_watchdog_task.ps1` | One-time setup for the watchdog Scheduled Task (fires every ~2 min) |
 | `scripts/kid_memories_store.py` | Zero-dep CLI for kid memories (add/update/get/list/mark-drive-synced/mark-drive-failed/add-trigger/triggers) |
@@ -166,70 +169,50 @@ powershell -ExecutionPolicy Bypass -File scripts\register_orchestrator_task.ps1
 
 Lets you ask the orchestrator to do something on a schedule — "every Sunday at 9am,
 plan next week's dinners and post it" — and have the result posted into this same
-Telegram chat, clearly marked `📅 Scheduled: <name>` so it's never mistaken for a
-reply to something you said. Architecture: the orchestrator arms itself a recurring
-in-session poll loop via Claude Code's `CronCreate` tool (see the "Scheduler
-self-arming" section of `CLAUDE.md`) — every ~2 minutes it checks the SQLite registry
-(`scripts/scheduler_store.py`) for anything due and, if so, does the work and replies
-using the Telegram connection it already holds. There's no external poller or channel
-involved. A separate OS-level watchdog (`scripts/watchdog_scheduler_health.ps1`)
-independently verifies that loop is actually ticking (via a heartbeat file) and
-force-restarts the orchestrator — plus sends you a direct Telegram alert, bypassing
-Claude Code entirely — if it ever goes stale. Adding a **new** scheduled task
-afterward is just a conversation with the `scheduler` subagent (or a row in the
-registry) — it never touches Windows Task Scheduler.
+Telegram chat. Adding a new scheduled task is just a conversation with the `scheduler`
+subagent (or a row in the registry via `scheduler_store.py`) — it never touches
+Windows Task Scheduler.
 
-*(History: an earlier version of this feature used a hand-written local MCP "channel"
-server to push due tasks into the session from an external Windows-Task-driven
-poller. That required `--dangerously-load-development-channels` at launch, which
-showed an unautomatable interactive confirmation dialog on every start — including
-unattended crash/logon restarts — and caused a real multi-hour outage. It's been
-retired in favor of the self-arming loop described above.)*
+**Architecture:** A dedicated Windows Scheduled Task (`PersonalAssistantScheduler`)
+runs `scripts/scheduler_dispatch.py` every 2 minutes. That script:
+1. Writes a heartbeat tick to `state/scheduler_loop_state.json` (monitors health).
+2. Runs `scheduler_store.py due` to check the SQLite registry for anything due.
+3. **If nothing is due — exits immediately. Zero Claude API calls, zero tokens.**
+4. If tasks are due — dispatches each via `claude --print "<prompt>" --channels
+   plugin:telegram@claude-plugins-official` as a one-shot subprocess (fresh context,
+   no accumulated session state), then logs the result.
+5. If a task fails — sends a direct Telegram alert via the Bot API (no Claude involved).
 
-**Known limitation (2026-08-12, confirmed live, not yet resolved):** arming is
-instruction-driven (the orchestrator is told, in `CLAUDE.md`, to check/arm the loop at
-the start of every turn) rather than something Claude Code guarantees will happen. In
-testing immediately after this change shipped, the orchestrator missed the check
-entirely on its first post-restart message, and on a second attempt (after
-strengthening the wording) called `CronList` but didn't follow through with
-`CronCreate` when the list came back empty. The OS-level watchdog only catches a loop
-that *was* armed and then died — not one that was never armed in the first place — so
-right now there's a real chance a restart leaves scheduled tasks silently un-dispatched
-until some other trigger (a heartbeat task run, a later message, a watchdog-forced
-restart giving it another chance) happens to succeed. Treat this as open follow-up
-work, not a solved problem — worth a periodic manual check of
-`state/scheduler_loop_state.json` (should exist and have a `last_tick` within the last
-~2 minutes) until it's made more reliable.
+A separate OS-level watchdog (`scripts/watchdog_scheduler_health.ps1`) verifies the
+heartbeat is ticking and triggers recovery if it goes stale, suppressing alerts caused
+by machine sleep (both heartbeat and task last-run equally stale = silent recovery).
+
+*(History: v1 used a hand-written local MCP channel server requiring
+`--dangerously-load-development-channels`, which caused a multi-hour outage from
+unautomatable interactive confirmation dialogs. v2 used an in-session `CronCreate`
+poll loop that consumed ~720 idle Claude turns/day even when nothing was scheduled.
+The current external-dispatch approach eliminates both problems.)*
 
 One-time setup:
 
-1. **Register the watchdog Scheduled Task** (Telegram-connection health check +
-   scheduler-loop health check, run every ~2 minutes):
+1. **Register the scheduler Scheduled Task** (fires every ~2 minutes, zero tokens
+   when idle):
+   ```
+   powershell -ExecutionPolicy Bypass -File scripts\register_scheduler_task.ps1
+   ```
+2. **Register the watchdog Scheduled Task** (Telegram-connection health check +
+   scheduler heartbeat health check, runs every ~2 minutes):
    ```
    powershell -ExecutionPolicy Bypass -File scripts\register_watchdog_task.ps1
    ```
-   If you have the older `PersonalAssistantSchedulerPoller` task registered from
-   before this change, remove it first:
-   ```
-   Unregister-ScheduledTask -TaskName PersonalAssistantSchedulerPoller -Confirm:$false
-   ```
-2. **Set the alert chat ID** the scheduler watchdog uses for direct Telegram alerts
-   (independent of the orchestrator session) — edit `scripts/scheduler.config.json`:
+3. **Set the alert chat ID** the watchdog uses for direct Telegram alerts — edit
+   `scripts/scheduler.config.json`:
    ```json
    { "alert_chat_id": "<your chat_id>" }
    ```
-3. **Seed the daily heartbeat task** (optional but recommended) — reviews recent run
-   history and posts a digest only if something is overdue or failed. Needs your
-   Telegram `chat_id` (visible in the orchestrator's transcript from any message
-   you've sent it, or ask it "what's my chat_id"):
-   ```
-   python scripts/scheduler_store.py add --name "daily-heartbeat" \
-     --prompt "Review scripts/scheduler_store.py runs from the last 24 hours for any status of dispatch_failed or failed, or any enabled task with no run in the last 24 hours that should have fired. If everything is healthy, reply nothing. Otherwise post a short digest of what needs attention." \
-     --cron "0 8 * * *" --target-chat-id "<your chat_id>"
-   ```
 4. Try it: message the bot "every day at [a couple minutes from now], say hello" and
-   confirm the scheduled reply arrives prefixed `📅 Scheduled:` — no manual channel
-   setup, no `bun install`, no confirmation dialogs.
+   confirm the scheduled reply arrives — no manual channel setup, no `bun install`,
+   no confirmation dialogs.
 
 ## Kids memory keeper
 
