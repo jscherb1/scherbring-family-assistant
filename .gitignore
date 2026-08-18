@@ -36,6 +36,11 @@ venv/
 # --- Scheduler poller logs ---
 state/logs/
 
+# --- Runtime watchdog debounce + scheduler heartbeat state (timestamps only) ---
+state/telegram_watchdog.json
+state/scheduler_watchdog.json
+state/scheduler_loop_state.json
+
 # --- Hy-Vee cart automation (local session + debug screenshot) ---
 state/hyvee_session.json
 scripts/hyvee/last_error.png
