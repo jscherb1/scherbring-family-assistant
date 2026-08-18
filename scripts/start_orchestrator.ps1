@@ -11,10 +11,11 @@ copies polling Telegram at the same time. Otherwise it launches the orchestrator
 if it ever exits (crash, update, etc.), restarts it after a short delay. Minimize this
 window to get it out of the way; closing it stops the assistant.
 
-Every launch resumes the orchestrator's own named conversation
-("Scherbring-Family-Bot-Task-v1", via --resume) instead of starting a blank
-one, including a restart triggered by watchdog_telegram_health.ps1 or
-watchdog_scheduler_health.ps1 force-killing this process.
+Every launch starts a fresh session — no --resume flag — so context never
+accumulates across restarts. Each restart (including those triggered by
+watchdog_telegram_health.ps1 or watchdog_scheduler_health.ps1) begins with a
+clean slate. Session names are not tracked; --remote-control is still passed
+so the in-session CronCreate/CronList tools are available.
 
 2026-08-11: a force-kill (Stop-Process -Force) doesn't give claude a chance
 to run its normal exit cleanup, which includes disabling the xterm mouse-
@@ -26,39 +27,6 @@ this loop badly enough to block the next restart. So after every claude exit
 (for any reason), reset the terminal's mouse-tracking/cursor state before
 looping.
 
-2026-08-11: the remote-control app identifies sessions by the name passed to
---remote-control, NOT --resume. --resume expects a session ID and only falls
-back to fuzzy name-matching, which becomes ambiguous the moment more than one
-past session shares this name - confirmed this had regressed to hitting an
-interactive "multiple sessions match" disambiguation picker on every restart,
-a second unhandled prompt on top of the (now-retired, see below) dev-channels
-warning, which is almost certainly the main reason past restarts silently
-went missing (the picker sits waiting for a keypress no differently than the
-warning did).
-
-2026-08-12: switching to plain --continue (dropping --resume $SessionName
-entirely) turned out to be the wrong fix - --continue resumes "the most
-recent conversation in this directory," which is whatever session was last
-active there, not necessarily the orchestrator's own dedicated conversation
-(e.g. it could grab an ad-hoc dev/implementation session run in this same
-repo). The named --resume is intentional: it guarantees this always resumes
-specifically the orchestrator's own tagged conversation, not just whatever
-happened to run here most recently.
-
-The actual root cause of the ambiguous "multiple sessions match" picker was
-several past sessions all carrying the same custom title
-"Scherbring-Family-Bot-Task-v1" (each restart that hit the picker in the past
-apparently forked a fresh untitled session rather than truly resuming,
-compounding over time). Cleaned up by renaming the stale duplicate(s) out of
-the way (via the same custom-title mechanism /rename uses) so exactly one
-session carries the name - see git history / conversation log around
-2026-08-12 for the cleanup. With only one match, --resume $SessionName
-resolves unambiguously and no picker should appear. If it ever does again,
-that means a duplicate has reappeared and needs the same cleanup - check
-`grep -h '"type":"custom-title"' ~/.claude/projects/<this-project-hash>/*.jsonl`
-for more than one session ending on this name.
---remote-control is still passed on every launch to label the session for the
-remote-control app.
 
 2026-08-11: --dangerously-load-development-channels (needed for the local
 scheduler channel, which is a hand-written script, not a marketplace plugin,
@@ -100,10 +68,8 @@ if ($existing) {
 Write-Host "Starting personal-assistant orchestrator from $RepoRoot"
 Write-Host "Minimize this window to keep it running in the background; closing it stops the assistant."
 
-$SessionName = "Scherbring-Family-Bot-Task-v1"
-
 while ($true) {
-    claude --resume $SessionName --debug --remote-control --channels plugin:telegram@claude-plugins-official
+    claude --debug --remote-control --channels plugin:telegram@claude-plugins-official
     Reset-TerminalMouseTracking
     Write-Host ""
     Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"

@@ -1,53 +1,31 @@
 <#
 .SYNOPSIS
-Detects a stalled scheduled-tasks poll loop inside the running orchestrator and
-force-restarts it so start_orchestrator.ps1's loop (with --continue) can bring it
-back up, then alerts directly over Telegram - independent of the orchestrator
-session or any MCP connection.
+Detects a stalled external scheduler dispatch task and recovers it, then alerts
+directly over Telegram - independent of the orchestrator session or any MCP
+connection.
 
 .DESCRIPTION
-Background: the scheduled-tasks poll loop (see the "Scheduler self-arming" section
-of CLAUDE.md) is a self-armed, session-only Claude Code CronCreate job - the
-orchestrator arms it in-session and there is no external process driving it. That
-makes it a "soft" mechanism: if the model ever fails to re-arm it (a dropped
-instruction, a context issue, a bug), nothing else would notice until a scheduled
-task silently failed to fire. This script is the deterministic backstop: it does
-not trust the orchestrator's word for it, and needs no AI cooperation to detect a
-stalled loop or to recover from one.
+The scheduled-tasks dispatcher is scripts/scheduler_dispatch.py, run every 2 minutes
+by the PersonalAssistantScheduler Windows Task Scheduler task (registered by
+register_scheduler_task.ps1). On each run it writes state/scheduler_loop_state.json
+`last_tick`. This script checks whether that tick is fresh. If `last_tick` goes stale
+beyond a threshold, the Task Scheduler job has likely stopped running.
 
-Detection: the self-armed loop writes state/scheduler_loop_state.json, updating its
-`last_tick` field every time it fires (~2 min cadence) and `armed_at`/`job_id`
-whenever it (re-)arms. If the orchestrator process is running but `last_tick` is
-stale beyond a tolerant threshold, that's a live process with a dead internal loop -
-a failure mode invisible to a simple process-is-running check. A missing state file
-after the process has had a few minutes to arm it counts the same way (the loop
-never armed in the first place).
+Note: the scheduler is now independent of the orchestrator. A stale heartbeat does
+NOT mean the orchestrator is broken - it means the PersonalAssistantScheduler task
+needs attention. Recovery targets that task directly rather than restarting the
+orchestrator.
 
-To avoid restarting on a single transient blip (e.g. a slow turn pushing one tick a
-few minutes late), an unhealthy reading must persist across two checks at least 5
-minutes apart (tracked in state/scheduler_watchdog.json) before this script acts,
-mirroring watchdog_telegram_health.ps1's debounce pattern.
-
-2026-08-12: raised StaleThresholdMinutes 10->20 and DebounceMinutes 3->5 after
-observing a self-perpetuating restart loop - a restart itself introduces startup
-latency (MCP/channel reconnect, session resume) before the cron loop resumes
-ticking, and the original ~13-minute total threshold (10 stale + 3 debounce) wasn't
-enough headroom for that latency plus a normal tick cadence. Each restart was
-resetting the clock without ever letting the loop stabilize, causing repeated
-restarts and repeated Telegram alerts within minutes of each other. The looser
-threshold trades slower detection of a genuinely dead loop for not restarting into
-itself.
+To avoid acting on a single transient blip, an unhealthy reading must persist across
+two checks at least 5 minutes apart (tracked in state/scheduler_watchdog.json)
+before this script acts.
 
 On confirmed persistent staleness:
-  1. Force-kill the orchestrator so start_orchestrator.ps1's wrapper restarts it
-     with --continue, giving the CLAUDE.md re-arm check a fresh shot on the next turn.
-  2. Send a direct alert straight to the Telegram Bot API using the bot token from
-     ~/.claude/channels/telegram/.env and the alert_chat_id from
-     scripts/scheduler.config.json - this never goes through Claude Code or any MCP
-     connection, so it still gets through even if the orchestrator was fully wedged.
+  1. Run scheduler_dispatch.py once directly to immediately restore the heartbeat.
+  2. Trigger the PersonalAssistantScheduler task and re-enable it if disabled.
+  3. Send a direct alert to Telegram via the Bot API (no Claude/MCP dependency).
 
-Meant to be called every ~2 minutes (piggybacked on the same Task Scheduler cadence
-as watchdog_telegram_health.ps1 via run_watchdog.ps1).
+Meant to be called every ~2 minutes via run_watchdog.ps1 / PersonalAssistantWatchdog.
 #>
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -55,9 +33,9 @@ $StateFile = Join-Path $RepoRoot "state\scheduler_watchdog.json"
 $LoopStateFile = Join-Path $RepoRoot "state\scheduler_loop_state.json"
 $ConfigFile = Join-Path $RepoRoot "scripts\scheduler.config.json"
 $TelegramEnvFile = Join-Path $env:USERPROFILE ".claude\channels\telegram\.env"
-$MatchPattern = '*channels*plugin:telegram*'
+$DispatchScript = Join-Path $RepoRoot "scripts\scheduler_dispatch.py"
+$SchedulerTaskName = "PersonalAssistantScheduler"
 $StaleThresholdMinutes = 20
-$ArmGraceMinutes = 5
 $DebounceMinutes = 5
 
 function Get-WatchdogState {
@@ -94,24 +72,16 @@ function Send-TelegramAlert([string]$Text) {
     }
 }
 
-# Nothing to heal if the orchestrator isn't even running - process-level restart is
-# already start_orchestrator.ps1's job.
-$proc = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like $MatchPattern } | Select-Object -First 1
-if (-not $proc) {
-    exit 0
-}
-
 $now = Get-Date
-$procAgeMinutes = ($now - $proc.CreationDate).TotalMinutes
 
 $isUnhealthy = $false
 $reason = $null
 
 if (-not (Test-Path $LoopStateFile)) {
-    if ($procAgeMinutes -ge $ArmGraceMinutes) {
-        $isUnhealthy = $true
-        $reason = "scheduler poll loop never armed (no state/scheduler_loop_state.json $ArmGraceMinutes+ min after orchestrator start)"
-    }
+    # Grace period: the task runs every 2 min so it should exist within 4 minutes
+    # of the task being registered. Only flag as unhealthy after 5 minutes.
+    $isUnhealthy = $true
+    $reason = "scheduler heartbeat file missing (state/scheduler_loop_state.json not found)"
 }
 else {
     try {
@@ -141,12 +111,53 @@ if ($isUnhealthy) {
 
     $firstSeen = [datetime]$state.first_unhealthy_at
     if (($now - $firstSeen).TotalMinutes -ge $DebounceMinutes) {
-        Write-Host "watchdog: persistent scheduler-loop stall confirmed ($reason) - restarting orchestrator (pid $($proc.ProcessId))"
-        Stop-Process -Id $proc.ProcessId -Force
+        Write-Host "watchdog: persistent scheduler stall confirmed ($reason) - recovering"
+
+        # Run dispatch script directly once to immediately restore the heartbeat
+        # and fire any overdue tasks.
+        try {
+            & python $DispatchScript 2>&1 | Out-Null
+            Write-Host "watchdog: ran scheduler_dispatch.py directly"
+        }
+        catch {
+            Write-Host "watchdog: failed to run scheduler_dispatch.py directly: $_"
+        }
+
+        # Re-enable and trigger the Task Scheduler task if it exists.
+        try {
+            $task = Get-ScheduledTask -TaskName $SchedulerTaskName -ErrorAction SilentlyContinue
+            if ($task) {
+                if ($task.State -eq 'Disabled') {
+                    Enable-ScheduledTask -TaskName $SchedulerTaskName | Out-Null
+                    Write-Host "watchdog: re-enabled $SchedulerTaskName task"
+                }
+                Start-ScheduledTask -TaskName $SchedulerTaskName -ErrorAction SilentlyContinue
+                Write-Host "watchdog: triggered $SchedulerTaskName task"
+            }
+            else {
+                Write-Host "watchdog: $SchedulerTaskName task not found - run scripts\register_scheduler_task.ps1"
+            }
+        }
+        catch {
+            Write-Host "watchdog: error managing $SchedulerTaskName task: $_"
+        }
+
         $state.first_unhealthy_at = $null
         $state.last_restart_at = $now.ToString("o")
         Save-WatchdogState $state
-        Send-TelegramAlert "⚠️ Scheduler poll loop went stale ($reason). Orchestrator was force-restarted to recover."
+
+        # Only alert if the Task Scheduler task itself ran recently but last_tick is
+        # still stale - that's a real bug in the dispatch script. If the task also
+        # hasn't run recently (same staleness), the machine was simply asleep; recover
+        # silently so the user isn't woken up after every sleep cycle.
+        $taskInfo = Get-ScheduledTaskInfo -TaskName $SchedulerTaskName -ErrorAction SilentlyContinue
+        $taskAlsoStale = (-not $taskInfo) -or (($now - $taskInfo.LastRunTime).TotalMinutes -ge $StaleThresholdMinutes)
+        if (-not $taskAlsoStale) {
+            Send-TelegramAlert "⚠️ Scheduler dispatch stalled ($reason). External task was triggered to recover."
+        }
+        else {
+            Write-Host "watchdog: stale tick correlates with stale task (machine was likely asleep) - recovered silently"
+        }
     }
 }
 else {
