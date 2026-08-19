@@ -185,16 +185,29 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
     task_id = str(task.get("id", ""))
     name = task.get("name", task_id)
     prompt = task.get("prompt", "")
+    chat_id = str(task.get("target_chat_id", "") or "")
 
     if not prompt:
         return False, "no prompt defined on task"
 
     print(f"scheduler_dispatch: dispatching '{name}' (id={task_id})", flush=True)
 
+    # This is a one-shot headless run with no inbound Telegram message, so there is
+    # no chat_id in context for the reply tool unless we state it explicitly here.
+    # Without this, the agent has nothing to address a reply to and previously fell
+    # back to just printing its answer to stdout — logged as "ok" but never delivered.
+    full_prompt = (
+        f"{prompt}\n\n"
+        "(You are running as a one-shot scheduled task with no inbound Telegram "
+        f"message. When replying, use the telegram reply tool with chat_id=\"{chat_id}\".)"
+        if chat_id
+        else prompt
+    )
+
     try:
         # Prompt MUST come before --channels because --channels is variadic.
         result = subprocess.run(
-            [CLAUDE_EXE, "--print", prompt, "--channels", CLAUDE_CHANNELS],
+            [CLAUDE_EXE, "--print", full_prompt, "--channels", CLAUDE_CHANNELS],
             capture_output=True,
             text=True,
             cwd=str(REPO_ROOT),
