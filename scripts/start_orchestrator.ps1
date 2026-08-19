@@ -64,6 +64,10 @@ again just inherits whatever account is currently logged in via
 `claude auth login` on this machine. Practical effect: mainly use the
 personal account for interactive logins on this machine when Remote Control
 on the orchestrator is needed.
+
+2026-08-19: every launch now passes --permission-mode auto so the
+orchestrator always starts in auto mode instead of whatever mode was left
+over interactively.
 #>
 
 function Reset-TerminalMouseTracking {
@@ -88,7 +92,7 @@ Write-Host "Minimize this window to keep it running in the background; closing i
 
 while ($true) {
     $SessionName = "Scherbring-Family-Bot-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-    claude --debug --remote-control $SessionName --name $SessionName --channels plugin:telegram@claude-plugins-official
+    claude --debug --remote-control $SessionName --name $SessionName --permission-mode auto --channels plugin:telegram@claude-plugins-official
     Reset-TerminalMouseTracking
     Write-Host ""
     Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"
