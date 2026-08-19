@@ -14,8 +14,11 @@ window to get it out of the way; closing it stops the assistant.
 Every launch starts a fresh session — no --resume flag — so context never
 accumulates across restarts. Each restart (including those triggered by
 watchdog_telegram_health.ps1 or watchdog_scheduler_health.ps1) begins with a
-clean slate. Session names are not tracked; --remote-control is still passed
-so the in-session CronCreate/CronList tools are available.
+clean slate. Each launch gets a unique display/Remote Control name of the
+form "Scherbring-Family-Bot-yyyyMMdd-HHmmss" (never reused, never resumed)
+so a specific run is identifiable in the prompt box, /resume picker, and
+terminal title. --remote-control is still passed so the in-session
+CronCreate/CronList tools are available.
 
 2026-08-11: a force-kill (Stop-Process -Force) doesn't give claude a chance
 to run its normal exit cleanup, which includes disabling the xterm mouse-
@@ -46,6 +49,21 @@ scripts/watchdog_scheduler_health.ps1 for the OS-level backstop that verifies
 it's actually ticking). No dev channel, no --dangerously-load-development-channels
 flag, no launch-time confirmation dialog - this should make unattended
 auto-restart actually unattended.
+
+2026-08-19: discovered the orchestrator was running under an org-managed
+Claude account (Remote Control disabled by org policy) because auth is a
+single shared ~/.claude/.credentials.json for the whole Windows profile -
+whichever account last ran `claude auth login` wins, everywhere, including
+here. Tried loading a personal-account long-lived token (`claude setup-token`)
+into CLAUDE_CODE_OAUTH_TOKEN to decouple the orchestrator's identity from
+whatever's logged in interactively elsewhere - but long-lived tokens are
+inference-only and Remote Control refuses to enable under one at all
+("Remote Control requires a full-scope login token"). Reverted: Remote
+Control matters more here than account isolation, so the orchestrator once
+again just inherits whatever account is currently logged in via
+`claude auth login` on this machine. Practical effect: mainly use the
+personal account for interactive logins on this machine when Remote Control
+on the orchestrator is needed.
 #>
 
 function Reset-TerminalMouseTracking {
@@ -69,7 +87,8 @@ Write-Host "Starting personal-assistant orchestrator from $RepoRoot"
 Write-Host "Minimize this window to keep it running in the background; closing it stops the assistant."
 
 while ($true) {
-    claude --debug --remote-control --channels plugin:telegram@claude-plugins-official
+    $SessionName = "Scherbring-Family-Bot-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    claude --debug --remote-control $SessionName --name $SessionName --channels plugin:telegram@claude-plugins-official
     Reset-TerminalMouseTracking
     Write-Host ""
     Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"
