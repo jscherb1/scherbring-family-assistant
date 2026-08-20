@@ -27,6 +27,8 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/profile.md` | Profile subagent — captures/recalls structured facts about the user, family, and friends; other subagents read the store directly |
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
+| `.claude/agents/home-assistant.md` | Home-assistant subagent (Phases 1-3) — ad-hoc smart-home control/query via the hosted Home Assistant connector plus a local `ha` MCP server (vendor/ha-mcp) for automation/script/scene/helper/dashboard authoring and history/log debugging; proactive monitoring is a later phase |
+| `vendor/ha-mcp/` | Vendored [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) (PyPI package, `.venv`) — runs as a loopback-only local HTTP server (`scripts/start_ha_mcp.ps1`) that Claude connects to via the `ha` entry in `.mcp.json` |
 | `.claude/agents/finance.md` | Finance subagent (Phase 1) — Monarch transaction review + WHO tagging, rule proposals, historical sweeps |
 | `.claude/agents/finance-reporter.md` | Finance-reporter subagent (Phases 2 & 4) — weekly/monthly/annual spending-summary HTML reports to Drive + Telegram brief |
 | `.claude/agents/retirement.md` | Retirement subagent (Phase 3) — Monte Carlo projection + editable `.xlsx` modeling workbook to Drive; owns "can we afford X" what-ifs |
@@ -48,6 +50,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/start_orchestrator.ps1` | Idempotent launcher — skips if already running, restarts on exit |
 | `scripts/orchestrator_status.ps1` | Read-only check for whether the orchestrator is running |
 | `scripts/register_orchestrator_task.ps1` | One-time setup for the auto-start-at-logon Scheduled Task |
+| `scripts/start_ha_mcp.ps1` | Idempotent launcher for the local `ha-mcp` HTTP server (loopback-only, port 8086) — skips if already running, restarts on exit |
+| `scripts/run_ha_mcp_hidden.vbs` | VBS launcher so the ha-mcp auto-start-at-logon task runs without a console flash |
+| `scripts/register_ha_mcp_task.ps1` | One-time setup for the `PersonalAssistantHaMcp` auto-start-at-logon Scheduled Task |
 | `scripts/watchdog_telegram_health.ps1` | Detects a stuck Telegram MCP connection and force-restarts the orchestrator |
 | `scripts/watchdog_scheduler_health.ps1` | Detects a stalled `PersonalAssistantScheduler` dispatch task (via heartbeat file), triggers recovery, and sends a direct Telegram alert |
 | `scripts/run_watchdog.ps1` | Wrapper the watchdog Scheduled Task invokes; logs to `state/logs/` |
@@ -361,6 +366,43 @@ python scripts/scheduler_store.py add --name "home-maintenance-weekly-check" \
   --cron "0 9 * * 0" --target-chat-id "<your chat_id>"
 ```
 
+## Home Assistant agent
+
+Controls and queries Home Assistant (lights, climate, media, covers, locks) and, since
+Phase 2/3, authors/edits automations, scripts, scenes, helpers, and dashboards, plus
+history/log debugging ("why didn't X automation run"). The `home-assistant` subagent
+uses two connections:
+
+- The Anthropic-hosted Home Assistant connector (`mcp__claude_ai_Home_Assistant__*`,
+  `Hass*` tools + `GetLiveContext`) for ordinary, low-friction control/query — no setup
+  needed.
+- A local, vendored **`ha-mcp`** server ([`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp),
+  installed from PyPI into `vendor/ha-mcp/.venv`) for everything the hosted connector
+  can't do — automation/script/scene/helper/dashboard CRUD, arbitrary entity search,
+  and history/traces/logs. It runs as a **loopback-only local HTTP server**
+  (`127.0.0.1:8086`, no LAN exposure) and is registered as `ha` in `.mcp.json`.
+
+**Security-sensitive actuators** (locks, garage doors, door/garage-classed covers)
+always require explicit confirmation before the subagent acts, even on a direct
+chat request — stricter than most other subagents here, which only gate proactive
+writes. Automation/script/scene/dashboard writes always follow propose-then-confirm.
+
+One-time setup for the local `ha` server:
+```
+# 1. Home Assistant -> Profile -> Security -> Long-lived access tokens -> Create Token
+# 2. Add to .env (gitignored, never commit):
+#      HOMEASSISTANT_URL=http://homeassistant.local:8123
+#      HOMEASSISTANT_TOKEN=<paste token>
+# 3. Install the vendored package once:
+python -m venv vendor/ha-mcp/.venv
+./vendor/ha-mcp/.venv/Scripts/python.exe -m pip install ha-mcp
+# 4. Register auto-start-at-logon (mirrors register_orchestrator_task.ps1):
+powershell -ExecutionPolicy Bypass -File scripts\register_ha_mcp_task.ps1
+# 5. Start it now without logging off/on:
+powershell -ExecutionPolicy Bypass -File scripts\start_ha_mcp.ps1
+```
+Verify with `claude mcp list` — the `ha` entry should show **Connected**.
+
 ## Personal profile
 
 A single source of truth for structured facts about the user, family, and friends —
@@ -589,9 +631,24 @@ own brainstorm/spec before being built.
       is reachable from Google Chat too.
 - [ ] **Grocery list from pantry/fridge photos** — snap a picture of what's on hand and
       generate the grocery list from what's actually missing.
-- [ ] **Smart home agent** — the Home Assistant MCP server is already connected but unused
-      (lights, climate, media). Combine with the calendar for routines like "goodnight" or
-      "leaving for school."
+- [x] **Smart home agent (Phases 1-3)** — `.claude/agents/home-assistant.md` handles
+      ad-hoc control/query (lights, climate, media, covers, locks) via the hosted Home
+      Assistant connector, plus automation/script/scene/helper/dashboard authoring and
+      history/log debugging via the local `ha` MCP server (see the "Home Assistant
+      agent" section above).
+      - [ ] **Phase 4 — proactive monitoring:** watch device/sensor state (e.g. garage
+            door left open, entity unavailable) via the existing `scheduler` engine,
+            with a presence-based dedup log (`ha_alerts` table / `scripts/ha_store.py`,
+            not yet built) so an alert clears and can re-fire once its condition
+            resolves and recurs — same silent-when-healthy, propose-then-confirm
+            pattern as `weather-reminders`/`home-maintenance`.
+      - [ ] **Phase 5 — ambient HA context for other agents:** document (no new
+            subsystem) that other subagents can be granted a read-only `mcp__ha__*` or
+            `GetLiveContext` tool directly, or delegate a one-off question to
+            `home-assistant`, to enable combined routines like "goodnight" or "leaving
+            for school" that blend the calendar + HA state.
+      - See `docs/superpowers/specs/2026-08-19-home-assistant-integration-design.md`
+        for the full phased design.
 - [ ] **Email triage / inbox digest** — the Gmail MCP server is also already connected but
       unused. A daily/weekly digest of what needs action (school notices, bills, appointment
       confirmations), same proactive shape as the heartbeat skill above.
