@@ -11,8 +11,11 @@ Usage:
         Reads a JSON array of {coros_workout_id, name, workout_type,
         sets_desc, target_distance, target_time, estimated_load} from
         stdin (the exact shape scripts/fitness/library_sync.py prints) and
-        upserts each into fitness_workout_library, keyed on
-        coros_workout_id. Prints {"synced": N, "workouts": [...]}.
+        treats it as the FULL current Coros library: upserts every item,
+        keyed on coros_workout_id, and deletes any existing
+        fitness_workout_library row whose coros_workout_id is absent from
+        the input (it was removed/renamed in Coros since the last sync).
+        Prints {"added": N, "updated": N, "removed": N, "workouts": [...]}.
 
     python scripts/fitness_store.py workout list [--type outrun]
         [--search "peloton"]
@@ -71,6 +74,8 @@ def cmd_workout_sync(args: argparse.Namespace) -> int:
     now = _local_now_iso()
     conn = _connect()
     synced = []
+    added = 0
+    updated = 0
     try:
         for item in items:
             coros_id = item["coros_workout_id"]
@@ -78,6 +83,10 @@ def cmd_workout_sync(args: argparse.Namespace) -> int:
                 "SELECT id FROM fitness_workout_library WHERE coros_workout_id = ?",
                 (coros_id,),
             ).fetchone()
+            if existing:
+                updated += 1
+            else:
+                added += 1
             row_id = existing["id"] if existing else str(uuid.uuid4())
             conn.execute(
                 """
@@ -109,16 +118,34 @@ def cmd_workout_sync(args: argparse.Namespace) -> int:
                 ),
             )
             synced.append(coros_id)
+
+        removed = 0
+        existing_ids = [
+            r["coros_workout_id"]
+            for r in conn.execute("SELECT coros_workout_id FROM fitness_workout_library").fetchall()
+        ]
+        stale_ids = [cid for cid in existing_ids if cid not in synced]
+        if stale_ids:
+            conn.execute(
+                "DELETE FROM fitness_workout_library WHERE coros_workout_id IN ({})".format(
+                    ",".join("?" * len(stale_ids))
+                ),
+                stale_ids,
+            )
+            removed = len(stale_ids)
+
         conn.commit()
-        rows = conn.execute(
-            "SELECT * FROM fitness_workout_library WHERE coros_workout_id IN ({})".format(
-                ",".join("?" * len(synced))
-            ),
-            synced,
-        ).fetchall() if synced else []
+        rows = conn.execute("SELECT * FROM fitness_workout_library ORDER BY name").fetchall()
     finally:
         conn.close()
-    _print({"synced": len(synced), "workouts": [dict(r) for r in rows]})
+    _print(
+        {
+            "added": added,
+            "updated": updated,
+            "removed": removed,
+            "workouts": [dict(r) for r in rows],
+        }
+    )
     return 0
 
 

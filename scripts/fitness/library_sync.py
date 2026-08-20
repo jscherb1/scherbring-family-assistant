@@ -105,12 +105,42 @@ def ensure_logged_in(page) -> None:
 
 
 def fetch_library(page) -> list[dict]:
+    """Open the Workout Library panel and collect every card.
+
+    The panel's card list is virtualized (confirmed live 2026-08-20): only
+    ~20 cards are ever mounted in the DOM at once, older ones unmount as
+    you scroll past them, and it ignores direct `scrollTop` assignment —
+    it only responds to real wheel events. So this scrolls in small steps
+    via `page.mouse.wheel`, re-extracting and merging (by
+    coros_workout_id) after every step, and stops once several consecutive
+    scrolls stop turning up anything new.
+    """
     toggle = page.locator(SCHEDULE_SELECTORS["workouts_panel_toggle"])
     if page.locator(SCHEDULE_SELECTORS["workouts_panel"]).count() == 0:
         toggle.click()
     page.wait_for_selector(SCHEDULE_SELECTORS["workout_card"], timeout=15000)
     page.wait_for_timeout(500)
-    return page.evaluate(EXTRACT_JS)
+
+    panel = page.locator(SCHEDULE_SELECTORS["workouts_panel"])
+    box = panel.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+
+    collected: dict[str, dict] = {}
+    stable_rounds = 0
+    for item in page.evaluate(EXTRACT_JS):
+        collected[item["coros_workout_id"]] = item
+
+    for _ in range(60):  # hard safety cap on scroll steps
+        page.mouse.wheel(0, 600)
+        page.wait_for_timeout(400)
+        before = len(collected)
+        for item in page.evaluate(EXTRACT_JS):
+            collected[item["coros_workout_id"]] = item
+        stable_rounds = stable_rounds + 1 if len(collected) == before else 0
+        if stable_rounds >= 4:
+            break
+
+    return list(collected.values())
 
 
 def run(args) -> int:
