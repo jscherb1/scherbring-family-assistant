@@ -1,9 +1,13 @@
 {
-  "_comment": "Copy to .mcp.json (gitignored). Official Todoist MCP: hosted HTTP + OAuth. No token stored here; OAuth sign-in happens in-browser on first tool use. Do NOT also run `claude mcp add todoist ...` if this file exists — duplicate entries cause OAuth sign-in loops. (The scheduled-tasks feature no longer needs an MCP entry here — it's delivered by a self-armed in-session CronCreate loop; see the 'Scheduler self-arming' section of CLAUDE.md.)",
+  "_comment": "Copy to .mcp.json (gitignored). Official Todoist MCP: hosted HTTP + OAuth. No token stored here; OAuth sign-in happens in-browser on first tool use. Do NOT also run `claude mcp add todoist ...` if this file exists — duplicate entries cause OAuth sign-in loops. (The scheduled-tasks feature no longer needs an MCP entry here — it's delivered by a self-armed in-session CronCreate loop; see the 'Scheduler self-arming' section of CLAUDE.md.) The 'ha' entry points at the local ha-mcp HTTP server (vendor/ha-mcp) started by scripts/start_ha_mcp.ps1 / scripts/register_ha_mcp_task.ps1 — it binds loopback-only (127.0.0.1:8086), so no token is embedded in this URL; the token lives in the gitignored .env instead.",
   "mcpServers": {
     "todoist": {
       "type": "http",
       "url": "https://ai.todoist.net/mcp"
+    },
+    "ha": {
+      "type": "http",
+      "url": "http://127.0.0.1:8086/mcp"
     }
   }
 }
