@@ -403,3 +403,41 @@ CREATE TABLE IF NOT EXISTS finance_report_log (
     summary       TEXT                -- the Telegram brief that was sent
 );
 CREATE INDEX IF NOT EXISTS idx_finance_report_log_period ON finance_report_log (period, range_end DESC);
+
+-- Local cache of the COROS Training Hub Workout Library (t.coros.com), synced
+-- periodically by scripts/fitness/library_sync.py + scripts/fitness_store.py.
+-- Source of truth for the fitness subagent's weekly plan: reuse an existing
+-- row here before asking Coros to build a brand-new custom workout.
+CREATE TABLE IF NOT EXISTS fitness_workout_library (
+    id                TEXT PRIMARY KEY,      -- uuid4
+    coros_workout_id  TEXT NOT NULL UNIQUE,  -- Coros's own numeric id (data-id on the card)
+    name              TEXT NOT NULL,         -- e.g. "Peloton - 45 min", "800m Speed Workout"
+    workout_type      TEXT NOT NULL,         -- Coros sport-icon slug: 'outrun' | 'strength' | 'cycle' | etc.
+    sets_desc         TEXT,                  -- e.g. "15 set(s)"
+    target_distance   TEXT,                  -- e.g. "4.8 mi", NULL if not applicable
+    target_time       TEXT,                  -- e.g. "45 min"
+    estimated_load    TEXT,                  -- Coros "Estimated load" TL figure, NULL if not shown
+    last_synced_at    TEXT NOT NULL,
+    created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fitness_workout_library_type ON fitness_workout_library (workout_type);
+
+-- One row per workout the fitness subagent has planned for a given week,
+-- written after the user approves a proposed weekly plan. completion_status
+-- is set later (not yet by any automation) so a future history-informed
+-- planning phase has real data to read without needing a schema change.
+CREATE TABLE IF NOT EXISTS fitness_weekly_plans (
+    id                  TEXT PRIMARY KEY,     -- uuid4
+    week_start_date     TEXT NOT NULL,        -- YYYY-MM-DD, Monday of the planned week
+    day_of_week         TEXT NOT NULL,        -- 'Mon' | 'Tue' | ... | 'Sun'
+    workout_type        TEXT NOT NULL,        -- 'run' | 'strength' | 'peloton' | 'other'
+    subtype             TEXT,                 -- e.g. 'lower_body', 'tempo', free text
+    matched_library_id  TEXT REFERENCES fitness_workout_library (id),
+    is_custom           INTEGER NOT NULL DEFAULT 0,  -- 0/1 — built as a new Coros workout rather than reused
+    planned_time        TEXT,                 -- HH:MM local
+    coros_status        TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'created' | 'manual_needed' | 'failed'
+    calendar_event_id   TEXT,                 -- Google Calendar event id once created
+    completion_status   TEXT NOT NULL DEFAULT 'planned',  -- 'planned' | 'completed' | 'skipped'
+    created_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fitness_weekly_plans_week ON fitness_weekly_plans (week_start_date);

@@ -38,13 +38,47 @@ SELECTORS = {
 }
 
 # --- Schedule page (t.coros.com/admin/views/schedule) ---
-# Discovered and exercised manually 2026-08-20 (workout library panel,
-# drag-to-schedule, delete, and the "+" add-menu all confirmed working),
-# but the underlying CSS classes were not yet extracted via DOM inspection
-# — that + the "Create Workouts" custom-workout builder form fields are
-# scoped to Phase 2 (library sync + read-only schedule inspection), not
-# this Phase 1 (login/session) delivery. Recorded here as findings, not
-# selectors, so Phase 2 starts from a known map instead of re-discovering:
+# Verified live 2026-08-20 via DOM inspection (see coros_web.py history /
+# the Phase 2 design doc for how these were found).
+SCHEDULE_SELECTORS = {
+    # Top-right icon-rail toggle that opens the Workout Library panel. No
+    # visible label — a hover tooltip reads "Workouts". Toggling it closed
+    # is the same selector (it's a stateful open/close button).
+    # Two `.side-panel-toggle-btn` icons exist ("Workouts" and "Training
+    # Plans" / "View plan") — must be disambiguated by their text.
+    "workouts_panel_toggle": ".side-panel-toggle-btn:has-text('Workouts')",
+    # Root of the opened panel.
+    "workouts_panel": ".training-group",
+    "workouts_panel_search": ".training-group input[placeholder='Search by name']",
+    "create_workout_button": ".training-group button:has-text('Create Workouts')",
+    # One draggable card per library workout. Carries `data-id` (Coros's
+    # numeric workout id) and `data-name` directly as DOM attributes —
+    # no need to parse them out of text. The sport-type icon is a
+    # `.iconfont-sport.icon-<slug>` element inside the card (slugs seen so
+    # far: 'outrun' = Run, 'strength' = Strength, 'cycle' = Bike/Peloton).
+    "workout_card": ".training-group-item.card-dragable",
+    "workout_card_sport_icon": "[class*='iconfont-sport']",
+
+    # Calendar grid day cells — `data-weekindex` (0-2, the 3 visible weeks)
+    # and `data-dayindex` (0-6, Mon-Sun) locate a specific cell within the
+    # *currently displayed* 3-week window; there is no absolute-date
+    # attribute, so navigating to the right week first (via the date
+    # textbox) and reading the visible day-number text is required to
+    # target a specific calendar date.
+    "calendar_day_cell": ".calender-day",
+    "calendar_date_picker": "input[placeholder='Please select date']",
+
+    # "+" add-menu that appears on hovering an empty calendar day.
+    "add_menu_workouts_option": "text=Workouts",
+
+    # Scheduled workout card actions (visible on hover): trash (delete)
+    # and copy icons, in that order, via iconfont classes containing the
+    # Chinese words for "delete" (删除/shanchu) and "copy" (复制/fuzhi).
+    "scheduled_card_delete_icon": "[class*='iconicon_jichutubiao_shanchu']",
+    "delete_confirm_ok": "button:has-text('OK')",
+}
+
+# --- Findings not yet turned into selectors (scoped to a later phase) ---
 #
 # - A toggle button in the top-right icon rail above the calendar grid
 #   (no visible label, hover tooltip reads "Workouts") opens a right-hand
