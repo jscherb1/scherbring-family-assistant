@@ -17,6 +17,7 @@ t.coros.com/login and redirects back to `?lastUrl=` on success.
 # --- URLs ---
 LOGIN_URL = "https://t.coros.com/login"
 SCHEDULE_URL = "https://t.coros.com/admin/views/schedule"
+TEAMAPI_BASE = "https://teamapi.coros.com"
 
 # --- Selectors: login page (t.coros.com/login) ---
 # Verified live 2026-08-20 via login_test.py. Arco Design inputs have no
@@ -50,6 +51,13 @@ SCHEDULE_SELECTORS = {
     # Root of the opened panel.
     "workouts_panel": ".training-group",
     "workouts_panel_search": ".training-group input[placeholder='Search by name']",
+    # The search box only actually filters the card list once the
+    # magnifying-glass suffix icon is clicked — typing alone (even with an
+    # Enter keypress) leaves the list unfiltered. Verified live 2026-08-21.
+    # Click the `.arco-icon-hover` wrapper span, not the inner <svg> —
+    # the svg's class list is inconsistent (sometimes carries
+    # `arco-icon-search`, sometimes not) and isn't the actual click target.
+    "workouts_panel_search_icon": ".training-group .arco-input-search .arco-icon-hover",
     "create_workout_button": ".training-group button:has-text('Create Workouts')",
     # One draggable card per library workout. Carries `data-id` (Coros's
     # numeric workout id) and `data-name` directly as DOM attributes —
@@ -57,6 +65,11 @@ SCHEDULE_SELECTORS = {
     # `.iconfont-sport.icon-<slug>` element inside the card (slugs seen so
     # far: 'outrun' = Run, 'strength' = Strength, 'cycle' = Bike/Peloton).
     "workout_card": ".training-group-item.card-dragable",
+    # The drag MUST start from this small grip handle (top-left of the
+    # card) — starting a mousedown anywhere else on the card body does not
+    # register as a drag (verified live 2026-08-21: dragging from the card
+    # center left no drag-preview and dropped nothing).
+    "workout_card_drag_handle": ".cursor-move",
     "workout_card_sport_icon": "[class*='iconfont-sport']",
 
     # Calendar grid day cells — `data-weekindex` (0-2, the 3 visible weeks)
@@ -75,7 +88,11 @@ SCHEDULE_SELECTORS = {
     # and copy icons, in that order, via iconfont classes containing the
     # Chinese words for "delete" (删除/shanchu) and "copy" (复制/fuzhi).
     "scheduled_card_delete_icon": "[class*='iconicon_jichutubiao_shanchu']",
-    "delete_confirm_ok": "button:has-text('OK')",
+    # Scoped to the delete-confirm modal specifically — an unscoped
+    # `button:has-text('OK')` matches multiple OK buttons elsewhere on the
+    # page (e.g. the Week Events modal), some of which are hidden and hang
+    # a bare `.click()`/`wait_for_selector` on visibility.
+    "delete_confirm_ok": ":text('Are you sure you want to delete this workout?') >> xpath=ancestor::*[contains(@class,'arco-modal')] >> button:has-text('OK')",
 }
 
 # --- Findings not yet turned into selectors (scoped to a later phase) ---
