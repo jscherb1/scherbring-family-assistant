@@ -31,3 +31,19 @@ then send the result.
   requests.
 - Skip the ack for quick requests that answer in a few seconds — it's only for genuinely
   long-running work.
+
+**If the Telegram reply tool errors or isn't available.** The `mcp__plugin_telegram_telegram__reply`
+tool's binding can go stale mid-session (a known failure mode after an SSE stream reconnect —
+the MCP server stays connected but the tool silently drops out of the render-time tool list).
+If a call to it errors, or it's simply missing when you go to use it, do not give up or just
+answer in plain text — fall back immediately to:
+
+    python scripts/telegram_send.py "<message text>"
+
+This sends directly via the Telegram Bot API, bypassing the broken tool binding, so the user
+still gets the reply. It also stamps a state file that the `watchdog_telegram_health.ps1` task
+picks up as an explicit unhealthy signal and uses to restart the orchestrator with a fresh,
+working tool binding — so use this fallback every single time the real tool fails, not just
+once. Restarting drops conversation context, so the watchdog sends its own heads-up before
+doing so; you don't need to warn the user yourself, just keep using the fallback until it's
+healed.
