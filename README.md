@@ -29,6 +29,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.claude/agents/home-assistant.md` | Home-assistant subagent (Phases 1-3) — ad-hoc smart-home control/query via the hosted Home Assistant connector plus a local `ha` MCP server (vendor/ha-mcp) for automation/script/scene/helper/dashboard authoring and history/log debugging; proactive monitoring is a later phase |
 | `vendor/ha-mcp/` | Vendored [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) (PyPI package, `.venv`) — runs as a loopback-only local HTTP server (`scripts/start_ha_mcp.ps1`) that Claude connects to via the `ha` entry in `.mcp.json` |
+| `.claude/agents/fitness.md` | Fitness subagent (Phases 1-3) — plans weekly workouts by reusing the COROS Training Hub library, gated on approval, writes to Coros + the "Running" Google Calendar |
+| `scripts/fitness_store.py` | Zero-dep CLI for fitness data (workout-library cache sync/list, weekly-plan add/list/update sub-commands) |
+| `scripts/fitness/` | Playwright + API browser layer for COROS Training Hub — `login_test.py` (session), `library_sync.py` (Workout Library scrape), `schedule_ops.py` (list-week / add-existing-workout / remove-workout, via the real Coros API, not drag-and-drop), `coros_web.py` (selector/URL/endpoint constants), `coros_session.py` (shared helpers) |
 | `.claude/agents/finance.md` | Finance subagent (Phase 1) — Monarch transaction review + WHO tagging, rule proposals, historical sweeps |
 | `.claude/agents/finance-reporter.md` | Finance-reporter subagent (Phases 2 & 4) — weekly/monthly/annual spending-summary HTML reports to Drive + Telegram brief |
 | `.claude/agents/retirement.md` | Retirement subagent (Phase 3) — Monte Carlo projection + editable `.xlsx` modeling workbook to Drive; owns "can we afford X" what-ifs |
@@ -39,7 +42,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
@@ -403,6 +406,53 @@ powershell -ExecutionPolicy Bypass -File scripts\start_ha_mcp.ps1
 ```
 Verify with `claude mcp list` — the `ha` entry should show **Connected**.
 
+## Fitness agent
+
+Plans weekly workouts (3-4 runs, 2 strength — including one lower-body-focused, 1
+Peloton) by reusing existing workouts from the user's COROS Training Hub
+(t.coros.com) library, gates the draft plan on user approval, then writes each
+approved slot to both Coros and the "Running" Google Calendar. The `fitness`
+subagent checks every calendar (not just "Running") for conflicts in a default
+5:30-7:30am window before proposing times.
+
+Coros has no public API, so `scripts/fitness/` automates it directly:
+
+- `login_test.py` — logs in (Arco Design form, no separate identity subdomain) and
+  persists a session to `state/coros_session.json`; falls back to fresh login with
+  `COROS_USERNAME`/`COROS_PASSWORD` from `.env`. **Coros enforces a single active web
+  session per account** — a fresh automated login will sign the user out of Coros
+  elsewhere (phone, browser), and vice versa. Accepted as a known limitation; the
+  automation self-heals via `.env` credentials either way.
+- `library_sync.py` — scrapes the (virtualized — scrolls and merges, not a single
+  query) Workout Library panel into `fitness_workout_library`
+  (`scripts/fitness_store.py workout sync`), the source of truth for what can be
+  scheduled without building anything new.
+- `schedule_ops.py` — `list-week` (read-only), `add-existing-workout`,
+  `remove-workout`. Scheduling deliberately does **not** use drag-and-drop — it was
+  flaky (~2/8 success rate across both Playwright and real OS-level input, failing
+  silently) — and instead replays the real API Coros's own frontend uses:
+  `GET /training/program/detail` + `POST /training/schedule/update`, authenticated
+  via an `accessToken` header sourced from the `CPL-coros-token` cookie (plain
+  cookies alone 401). The next safe `idInPlan` is queried live from
+  `GET /training/schedule/query`'s `maxIdInPlan` field rather than tracked locally,
+  so it self-corrects even if the user schedules something via the Coros app
+  directly.
+
+Custom Coros workout creation (the "Create Workouts" interval builder) isn't
+automated — the agent flags a gap and asks the user to build it manually rather than
+guessing at a structure. History-informed planning (using
+`fitness_weekly_plans.completion_status` to adjust future weeks) is schema-ready but
+not yet built.
+
+One-time setup: add `COROS_USERNAME`/`COROS_PASSWORD` to `.env`, then
+`pip install -r scripts/fitness/requirements.txt && playwright install chromium`.
+Weekly trigger: `weekly-fitness-plan` scheduled task, Sundays 6pm — see **Scheduled
+tasks** above.
+
+See `docs/superpowers/specs/2026-08-20-fitness-agent-coros-login-design.md` and its
+two follow-on specs in the same directory for the full phased design and live
+investigation notes.
+
 ## Personal profile
 
 A single source of truth for structured facts about the user, family, and friends —
@@ -622,11 +672,21 @@ own brainstorm/spec before being built.
       above.
 - [ ] **Shopping assistant (deal-watching)** — watches for deals on non-urgent wanted items
       across stores, Craigslist, Facebook Marketplace, etc.
-- [ ] **Fitness coach agent** — design training protocols and plans, set goals, recommend
-      workouts, and analyze progress by pulling activity data from Strava (and possibly other
-      sources — Garmin, Apple Health, Whoop). Adapts the plan to actual training load and
-      reports on trends over time. Needs a Strava API integration (OAuth) as the primary
-      data source.
+- [x] **Fitness coach agent (Phases 1-3)** — plans weekly workouts (3-4 runs, 2 strength
+      incl. one lower-body, 1 Peloton) by reusing existing COROS Training Hub library
+      workouts, gated on user approval, then writes them to both Coros and the
+      "Running" Google Calendar. Built: `fitness` subagent, see **Fitness agent**
+      above. Weekly trigger: `weekly-fitness-plan` scheduled task, Sundays 6pm.
+      - [ ] **Custom workout creation** — the "Create Workouts" interval builder isn't
+            automated yet; the agent flags a gap and asks the user to build it manually
+            in Coros rather than guessing at a structure.
+      - [ ] **History-informed planning** — `fitness_weekly_plans.completion_status` is
+            tracked but nothing yet reads recent weeks' adherence to adjust the next
+            plan.
+      - See `docs/superpowers/specs/2026-08-20-fitness-agent-coros-login-design.md`
+        and the two follow-on specs in the same directory for the full phased design,
+        including why drag-and-drop scheduling was abandoned for a reverse-engineered
+        API call.
 - [ ] **Google Chat bridge** — a second chat channel (alongside Telegram) so the assistant
       is reachable from Google Chat too.
 - [ ] **Grocery list from pantry/fridge photos** — snap a picture of what's on hand and
