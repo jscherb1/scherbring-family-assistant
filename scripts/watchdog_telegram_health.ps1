@@ -42,10 +42,23 @@ with garbage input and likely contributed to a ~10hr outage. The actual
 terminal-reset mitigation lives in start_orchestrator.ps1 (the process that
 owns that console) - this script runs headless via Task Scheduler with its
 own console, so it can't reach the visible window directly.
+
+2026-08-21: the debug-log grep above only fires AFTER something actually
+tries to call the reply tool and fails - a stale binding that nothing has
+attempted to use yet produces no error line at all, so it can sit broken
+silently (this is exactly what happened: SSE reconnects dropped the tool
+mid-day and it went undetected because no reply attempt had occurred since).
+scripts/telegram_send.py is now the orchestrator's instructed fallback
+whenever the reply tool errors or isn't found - it delivers the message
+directly via the Bot API AND stamps state/telegram_fallback_used.json,
+since being invoked at all means the real tool was unreachable. That file
+is now a second, more reliable unhealthy signal alongside the log grep:
+an explicit self-report instead of a heuristic over log text.
 #>
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $StateFile = Join-Path $RepoRoot "state\telegram_watchdog.json"
+$FallbackUsedFile = Join-Path $RepoRoot "state\telegram_fallback_used.json"
 $DebugDir = Join-Path $env:USERPROFILE ".claude\debug"
 $MatchPattern = '*channels*plugin:telegram*'
 
@@ -83,22 +96,59 @@ $lastHealthy = $tail | Select-String -Pattern $healthyPattern | Select-Object -L
 $state = Get-WatchdogState
 $now = Get-Date
 
-$isUnhealthy = $lastUnhealthy -and (-not $lastHealthy -or $lastUnhealthy.LineNumber -gt $lastHealthy.LineNumber)
+$logSignalUnhealthy = $lastUnhealthy -and (-not $lastHealthy -or $lastUnhealthy.LineNumber -gt $lastHealthy.LineNumber)
+
+# Second, independent unhealthy signal: scripts/telegram_send.py stamps this
+# file every time it's invoked, and it's only ever invoked as a fallback when
+# the real reply tool was unreachable - so any timestamp newer than our last
+# restart means the binding was (recently) broken, regardless of whether the
+# log grep above happened to catch a matching error line.
+$fallbackSignalUnhealthy = $false
+$fallbackReason = $null
+if (Test-Path $FallbackUsedFile) {
+    try {
+        $fallbackState = Get-Content $FallbackUsedFile -Raw | ConvertFrom-Json
+        $fallbackUsedAt = [datetime]$fallbackState.last_used_at
+        $sinceLastRestart = -not $state.last_restart_at -or $fallbackUsedAt -gt [datetime]$state.last_restart_at
+        if ($sinceLastRestart) {
+            $fallbackSignalUnhealthy = $true
+            $fallbackReason = $fallbackState.reason
+        }
+    } catch { }
+}
+
+$isUnhealthy = $logSignalUnhealthy -or $fallbackSignalUnhealthy
 
 if ($isUnhealthy) {
     if (-not $state.first_unhealthy_at) {
         $state.first_unhealthy_at = $now.ToString("o")
         Save-WatchdogState $state
-        Write-Host "watchdog: unhealthy signal seen, starting 3-minute confirmation window"
+        $source = if ($fallbackSignalUnhealthy) { "fallback-script signal ($fallbackReason)" } else { "log grep" }
+        Write-Host "watchdog: unhealthy signal seen via $source, starting 3-minute confirmation window"
         exit 0
     }
 
     $firstSeen = [datetime]$state.first_unhealthy_at
     if (($now - $firstSeen).TotalMinutes -ge 3) {
         Write-Host "watchdog: persistent broken Telegram connection confirmed - restarting orchestrator (pid $($proc.ProcessId))"
+        # Restarting wipes conversation context (start_orchestrator.ps1 launches a
+        # fresh session, no --continue, by design - see its 2026-08-12 note). If the
+        # user is mid-conversation via the fallback script, a silent reset would look
+        # like the assistant forgot everything with zero warning. Tell them first,
+        # via the same direct-Bot-API path (independent of whatever is broken in the
+        # dying session's own tool binding).
+        try {
+            & python (Join-Path $RepoRoot "scripts\telegram_send.py") `
+                "Restarting to fix a stuck Telegram connection - one moment. If we were mid-conversation, I won't remember it after this; just resend your last message." `
+                --reason "pre-restart heads-up" 2>&1 | Out-Null
+        } catch { }
         Stop-Process -Id $proc.ProcessId -Force
         $state.first_unhealthy_at = $null
-        $state.last_restart_at = $now.ToString("o")
+        # Captured AFTER the heads-up send above (which re-stamps
+        # telegram_fallback_used.json itself) so that stamp doesn't look
+        # "newer than last_restart_at" and falsely re-trigger on the very
+        # next pass against the freshly-restarted, healthy session.
+        $state.last_restart_at = (Get-Date).ToString("o")
         Save-WatchdogState $state
     }
 }
