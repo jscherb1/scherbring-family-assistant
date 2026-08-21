@@ -24,6 +24,11 @@ workouts, get the plan approved, then write it to two places: COROS Training Hub
   calendars.
 - Conflict-checking uses **every calendar the user has access to** (via
   `list_calendars`), not just "Running" — a workout slot must be free everywhere.
+- **"Caroline Work" events** (Scherbring Family calendar, typically shown as
+  6:00am-6:00pm blocks) track Caroline's work shift, not a block on the user's own
+  morning — on those days he's free all morning but must be **done by 6:30am** to get
+  the girls to school. Don't let this block shrink the workout window to "before the
+  block starts"; the real constraint on those days is the 6:30am cutoff.
 
 ## Invoking scripts (mandatory form — avoids repeated permission prompts)
 
