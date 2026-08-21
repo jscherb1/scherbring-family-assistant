@@ -188,6 +188,7 @@ def get_due_tasks() -> list[dict]:
         [sys.executable, str(SCRIPTS_DIR / "scheduler_store.py"), "due"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(REPO_ROOT),
     )
     if result.returncode != 0:
@@ -219,6 +220,7 @@ def mark_dispatched(task_id: str, run_at: str) -> bool:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(REPO_ROOT),
     )
     return result.returncode == 0
@@ -235,7 +237,7 @@ def log_run(task_id: str, run_at: str, status: str, summary: str = "") -> None:
     ]
     if summary:
         args += ["--summary", summary[:500]]
-    subprocess.run(args, capture_output=True, text=True, cwd=str(REPO_ROOT))
+    subprocess.run(args, capture_output=True, text=True, encoding="utf-8", cwd=str(REPO_ROOT))
 
 
 def dispatch_task(task: dict) -> tuple[bool, str]:
@@ -286,6 +288,7 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
             [CLAUDE_EXE, "--print", full_prompt],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             cwd=str(REPO_ROOT),
             timeout=TASK_TIMEOUT_SECONDS,
         )
