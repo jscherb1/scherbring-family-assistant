@@ -436,6 +436,7 @@ CREATE TABLE IF NOT EXISTS fitness_weekly_plans (
     is_custom           INTEGER NOT NULL DEFAULT 0,  -- 0/1 — built as a new Coros workout rather than reused
     planned_time        TEXT,                 -- HH:MM local
     coros_status        TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'created' | 'manual_needed' | 'failed'
+    coros_scheduled_id  TEXT,                 -- schedule_ops.py's scheduled_id, for later removal/rescheduling
     calendar_event_id   TEXT,                 -- Google Calendar event id once created
     completion_status   TEXT NOT NULL DEFAULT 'planned',  -- 'planned' | 'completed' | 'skipped'
     created_at          TEXT NOT NULL

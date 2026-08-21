@@ -20,6 +20,22 @@ Usage:
     python scripts/fitness_store.py workout list [--type outrun]
         [--search "peloton"]
 
+    python scripts/fitness_store.py plan add --week-start 2026-08-24 \
+        --day Mon --workout-type run [--subtype tempo] \
+        [--matched-library-id <fitness_workout_library.id>] [--is-custom 0|1] \
+        [--planned-time 06:00] [--coros-status created] \
+        [--coros-scheduled-id <id>] [--calendar-event-id <id>]
+        Records one workout in a week's plan. Prints the created row.
+
+    python scripts/fitness_store.py plan list --week-start 2026-08-24
+        All rows for that week, ordered by day.
+
+    python scripts/fitness_store.py plan update --id <id> \
+        [--coros-status ...] [--coros-scheduled-id ...] \
+        [--calendar-event-id ...] [--completion-status planned|completed|skipped]
+        Patches one plan row (e.g. after the calendar event is created, or
+        marking a workout done/skipped later).
+
 All commands print JSON to stdout.
 """
 
@@ -169,6 +185,103 @@ def cmd_workout_list(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# plan
+# ---------------------------------------------------------------------------
+
+
+def cmd_plan_add(args: argparse.Namespace) -> int:
+    now = _local_now_iso()
+    new_id = str(uuid.uuid4())
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO fitness_weekly_plans
+                (id, week_start_date, day_of_week, workout_type, subtype,
+                 matched_library_id, is_custom, planned_time, coros_status,
+                 coros_scheduled_id, calendar_event_id, completion_status,
+                 created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?)
+            """,
+            (
+                new_id,
+                args.week_start,
+                args.day,
+                args.workout_type,
+                args.subtype,
+                args.matched_library_id,
+                1 if args.is_custom else 0,
+                args.planned_time,
+                args.coros_status,
+                args.coros_scheduled_id,
+                args.calendar_event_id,
+                now,
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM fitness_weekly_plans WHERE id = ?", (new_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    _print(dict(row))
+    return 0
+
+
+def cmd_plan_list(args: argparse.Namespace) -> int:
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT * FROM fitness_weekly_plans WHERE week_start_date = ?
+            ORDER BY CASE day_of_week
+                WHEN 'Mon' THEN 1 WHEN 'Tue' THEN 2 WHEN 'Wed' THEN 3
+                WHEN 'Thu' THEN 4 WHEN 'Fri' THEN 5 WHEN 'Sat' THEN 6
+                WHEN 'Sun' THEN 7 ELSE 8 END
+            """,
+            (args.week_start,),
+        ).fetchall()
+    finally:
+        conn.close()
+    _print([dict(r) for r in rows])
+    return 0
+
+
+def cmd_plan_update(args: argparse.Namespace) -> int:
+    fields, params = [], []
+    for col, val in (
+        ("coros_status", args.coros_status),
+        ("coros_scheduled_id", args.coros_scheduled_id),
+        ("calendar_event_id", args.calendar_event_id),
+        ("completion_status", args.completion_status),
+    ):
+        if val is not None:
+            fields.append(f"{col} = ?")
+            params.append(val)
+    if not fields:
+        print(json.dumps({"error": "no fields to update"}), file=sys.stderr)
+        return 2
+    params.append(args.id)
+
+    conn = _connect()
+    try:
+        conn.execute(
+            f"UPDATE fitness_weekly_plans SET {', '.join(fields)} WHERE id = ?", params
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM fitness_weekly_plans WHERE id = ?", (args.id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        print(json.dumps({"error": f"no plan row with id {args.id}"}), file=sys.stderr)
+        return 1
+    _print(dict(row))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fitness planning store.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -183,6 +296,34 @@ def build_parser() -> argparse.ArgumentParser:
     wl.add_argument("--type", default=None, help="filter by workout_type (e.g. outrun, strength, cycle)")
     wl.add_argument("--search", default=None, help="substring match on name")
     wl.set_defaults(func=cmd_workout_list)
+
+    plan = sub.add_parser("plan", help="Weekly workout plan log.")
+    plan_sub = plan.add_subparsers(dest="subcommand", required=True)
+
+    pa = plan_sub.add_parser("add")
+    pa.add_argument("--week-start", required=True, help="YYYY-MM-DD, Monday of the planned week")
+    pa.add_argument("--day", required=True, choices=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+    pa.add_argument("--workout-type", required=True, help="run | strength | peloton | other")
+    pa.add_argument("--subtype", default=None)
+    pa.add_argument("--matched-library-id", default=None, help="fitness_workout_library.id")
+    pa.add_argument("--is-custom", type=int, default=0, choices=[0, 1])
+    pa.add_argument("--planned-time", default=None, help="HH:MM local")
+    pa.add_argument("--coros-status", default="pending", choices=["pending", "created", "manual_needed", "failed"])
+    pa.add_argument("--coros-scheduled-id", default=None)
+    pa.add_argument("--calendar-event-id", default=None)
+    pa.set_defaults(func=cmd_plan_add)
+
+    pl = plan_sub.add_parser("list")
+    pl.add_argument("--week-start", required=True, help="YYYY-MM-DD, Monday of the planned week")
+    pl.set_defaults(func=cmd_plan_list)
+
+    pu = plan_sub.add_parser("update")
+    pu.add_argument("--id", required=True)
+    pu.add_argument("--coros-status", default=None, choices=["pending", "created", "manual_needed", "failed"])
+    pu.add_argument("--coros-scheduled-id", default=None)
+    pu.add_argument("--calendar-event-id", default=None)
+    pu.add_argument("--completion-status", default=None, choices=["planned", "completed", "skipped"])
+    pu.set_defaults(func=cmd_plan_update)
 
     return parser
 
