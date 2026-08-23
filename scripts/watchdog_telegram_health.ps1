@@ -17,16 +17,18 @@ This script is meant to be called every ~2 minutes (piggybacked on the
 watchdog Scheduled Task's cadence via run_watchdog.ps1) so detection-to-heal
 is minutes, not hours.
 
-Detection: inspect the tail of the most-recently-modified debug log under
-~/.claude/debug/*.txt (expected to be the live orchestrator's log) for
-whichever of these signals appears LAST:
-  - unhealthy: "Tool mcp__plugin_telegram_telegram__reply not found in
+Detection: inspect the tail of the orchestrator's dedicated debug log
+(state/logs/orchestrator_debug.log - see 2026-08-23 note below) for three
+independent unhealthy signals, any one of which is sufficient:
+  - reply-tool grep: "Tool mcp__plugin_telegram_telegram__reply not found in
     render-time tools" or "Filtering out tool_reference for unavailable tool:
-    mcp__plugin_telegram_telegram__reply"
-  - healthy:   MCP server "plugin:telegram:telegram": Successfully connected,
-               or ...: Tool 'reply' completed successfully
+    mcp__plugin_telegram_telegram__reply" appearing more recently than the
+    last healthy connection line
+  - fallback self-report: state/telegram_fallback_used.json stamped more
+    recently than the last restart
+  - heartbeat staleness: no "CCRClient: Heartbeat sent" line in 10+ minutes
 
-If neither signal is present (fresh session, or the wrong log file got picked),
+If none of these fire (fresh session, or the log file doesn't exist yet),
 treat it as unknown and take NO action - absence of data never triggers a
 restart, only an explicit unhealthy signal does.
 
@@ -54,12 +56,39 @@ directly via the Bot API AND stamps state/telegram_fallback_used.json,
 since being invoked at all means the real tool was unreachable. That file
 is now a second, more reliable unhealthy signal alongside the log grep:
 an explicit self-report instead of a heuristic over log text.
+
+2026-08-23: found the orchestrator had gone fully silent for 40+ hours
+(no "CCRClient: Heartbeat sent" lines at all since 2026-08-21T19:04, right
+after a tool-not-found error and an event-loop-stall warning) while the OS
+process stayed alive/"Responding", and neither existing signal caught it -
+nobody had tried to message it, so the reply tool was never exercised and
+never errored. Two compounding bugs, both fixed:
+  (a) Log-file selection here used to pick "whatever debug log in
+      ~/.claude/debug was most recently modified", which silently breaks
+      the moment ANY other Claude Code session on the machine (e.g. an
+      interactive terminal session used to investigate the very outage)
+      writes to its own debug log more recently than the orchestrator's -
+      the watchdog ends up grepping the wrong session's log entirely and
+      finds nothing wrong because there's nothing wrong with IT. Fixed at
+      the source: start_orchestrator.ps1 now launches with
+      `--debug-file state\logs\orchestrator_debug.log`, a fixed path
+      dedicated to the orchestrator, so this script just reads that file
+      directly - no guessing, no correlation heuristics, no ambiguity even
+      if another session starts within the same second.
+  (b) The only "unhealthy" signals both require an attempted Telegram send
+      to ever fire. A fully wedged orchestrator that isn't crashing but has
+      simply stopped pumping its event loop produces neither. Fixed by
+      adding a third, generic liveness signal: "CCRClient: Heartbeat sent"
+      lines appear roughly every ~1-5 min under normal operation (observed
+      max gap 326s across a full session); no heartbeat for 10+ minutes
+      while the process is still running means the loop is wedged,
+      independent of whether Telegram is involved at all.
 #>
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $StateFile = Join-Path $RepoRoot "state\telegram_watchdog.json"
 $FallbackUsedFile = Join-Path $RepoRoot "state\telegram_fallback_used.json"
-$DebugDir = Join-Path $env:USERPROFILE ".claude\debug"
+$DebugLogFile = Join-Path $RepoRoot "state\logs\orchestrator_debug.log"
 $MatchPattern = '*channels*plugin:telegram*'
 
 function Get-WatchdogState {
@@ -80,11 +109,13 @@ if (-not $proc) {
     exit 0
 }
 
-$logFile = Get-ChildItem $DebugDir -Filter *.txt -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $logFile) { exit 0 }
+# start_orchestrator.ps1 launches with --debug-file pointed at this fixed
+# path, so there's no ambiguity about which log belongs to the orchestrator
+# (see 2026-08-23 note above for why dir-wide "most recently modified" used
+# to silently pick the wrong session's log).
+if (-not (Test-Path $DebugLogFile)) { exit 0 }
 
-$tail = Get-Content $logFile.FullName -Tail 3000 -ErrorAction SilentlyContinue
+$tail = Get-Content $DebugLogFile -Tail 3000 -ErrorAction SilentlyContinue
 if (-not $tail) { exit 0 }
 
 $unhealthyPattern = 'Tool mcp__plugin_telegram_telegram__reply not found in render-time tools|Filtering out tool_reference for unavailable tool: mcp__plugin_telegram_telegram__reply'
@@ -117,13 +148,28 @@ if (Test-Path $FallbackUsedFile) {
     } catch { }
 }
 
-$isUnhealthy = $logSignalUnhealthy -or $fallbackSignalUnhealthy
+# Third, independent signal: generic process-liveness via heartbeat recency.
+# "CCRClient: Heartbeat sent" lines appear every ~1-5 min under normal
+# operation regardless of any Telegram activity, so their absence catches a
+# fully wedged event loop even when nobody ever tried to send a message
+# (the failure mode the two signals above both miss - see 2026-08-23 note).
+$heartbeatSignalUnhealthy = $false
+$lastHeartbeatLine = $tail | Select-String -Pattern 'CCRClient: Heartbeat sent' | Select-Object -Last 1
+if ($lastHeartbeatLine -and $lastHeartbeatLine.Line -match '^(\S+)Z') {
+    $lastHeartbeatAt = [datetime]::Parse($Matches[1], $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
+    $minutesSinceHeartbeat = ($now.ToUniversalTime() - $lastHeartbeatAt).TotalMinutes
+    if ($minutesSinceHeartbeat -ge 10) {
+        $heartbeatSignalUnhealthy = $true
+    }
+}
+
+$isUnhealthy = $logSignalUnhealthy -or $fallbackSignalUnhealthy -or $heartbeatSignalUnhealthy
 
 if ($isUnhealthy) {
     if (-not $state.first_unhealthy_at) {
         $state.first_unhealthy_at = $now.ToString("o")
         Save-WatchdogState $state
-        $source = if ($fallbackSignalUnhealthy) { "fallback-script signal ($fallbackReason)" } else { "log grep" }
+        $source = if ($fallbackSignalUnhealthy) { "fallback-script signal ($fallbackReason)" } elseif ($heartbeatSignalUnhealthy) { "no heartbeat for $([math]::Round($minutesSinceHeartbeat,1)) min" } else { "log grep" }
         Write-Host "watchdog: unhealthy signal seen via $source, starting 3-minute confirmation window"
         exit 0
     }

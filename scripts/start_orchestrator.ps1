@@ -90,9 +90,21 @@ if ($existing) {
 Write-Host "Starting personal-assistant orchestrator from $RepoRoot"
 Write-Host "Minimize this window to keep it running in the background; closing it stops the assistant."
 
+$DebugLogFile = Join-Path $RepoRoot "state\logs\orchestrator_debug.log"
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $DebugLogFile) | Out-Null
+
 while ($true) {
     $SessionName = "Scherbring-Family-Bot-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-    claude --debug --remote-control $SessionName --name $SessionName --permission-mode auto --channels plugin:telegram@claude-plugins-official
+    # --debug-file pins the orchestrator's debug log to a fixed, known path
+    # instead of a random UUID under ~/.claude/debug alongside every other
+    # concurrent Claude Code session on this machine. 2026-08-23: the
+    # watchdog used to guess which debug log belonged to the orchestrator
+    # (most-recently-modified in that shared dir), and an unrelated
+    # interactive terminal session writing to ITS OWN debug log more
+    # recently silently made the watchdog check the wrong file for 40+
+    # hours. A fixed, dedicated path removes the guesswork entirely - see
+    # scripts/watchdog_telegram_health.ps1 for the reader side.
+    claude --debug-file $DebugLogFile --remote-control $SessionName --name $SessionName --permission-mode auto --channels plugin:telegram@claude-plugins-official
     Reset-TerminalMouseTracking
     Write-Host ""
     Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"
