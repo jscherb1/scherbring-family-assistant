@@ -32,6 +32,15 @@ then send the result.
 - Skip the ack for quick requests that answer in a few seconds — it's only for genuinely
   long-running work.
 
+**Always ask and reply through Telegram, never through `AskUserQuestion`.** For a
+request that arrived via the Telegram channel, the user only sees messages sent with
+`mcp__plugin_telegram_telegram__reply` (or the `telegram_send.py` fallback below) — they
+are not attached to this terminal session, so `AskUserQuestion` never reaches them and
+will silently hang or get skipped. This applies to every reply, not just clarifying
+questions: acknowledgements, results, and any question you need answered mid-task must
+all go out via the Telegram reply tool (or its fallback). Only use `AskUserQuestion` for
+requests that originated in the terminal.
+
 **If the Telegram reply tool errors or isn't available.** The `mcp__plugin_telegram_telegram__reply`
 tool's binding can go stale mid-session (a known failure mode after an SSE stream reconnect —
 the MCP server stays connected but the tool silently drops out of the render-time tool list).

@@ -57,6 +57,25 @@ since being invoked at all means the real tool was unreachable. That file
 is now a second, more reliable unhealthy signal alongside the log grep:
 an explicit self-report instead of a heuristic over log text.
 
+2026-08-24: found the reply tool had gone stale silently for ~13 hours
+(23:05 restart -> 12:09 next day) with zero Telegram traffic in between to
+trip either existing signal - 13 SSE reconnects happened in that window, any
+one of which could have dropped the binding per the 2026-08-23 SSE-reconnect
+finding below, but nothing had tried to reply so nothing errored. Justin
+noticed before the watchdog did. All three existing signals require an
+*attempted* Telegram send to ever fire; none of them proactively probe.
+Fixed by adding a fourth, proactive signal: track the last time a reply was
+*verified* to work (either "Tool 'reply' completed successfully" or the
+"Successfully connected" line right after a restart), and if at least one
+SSE reconnect/liveness-timeout has happened since that last-verified point
+AND $StaleSilentThresholdMinutes (60) have elapsed with no fresh
+verification, treat it as unhealthy and let the existing 3-minute
+confirmation + restart flow handle it - same as the other signals. This
+only fires during genuinely quiet windows (no Telegram traffic to reset the
+"last verified" clock), which is exactly when a restart is cheapest: no
+in-progress conversation to lose. A real message succeeding at any point
+resets the clock and skips the restart entirely.
+
 2026-08-23: found the orchestrator had gone fully silent for 40+ hours
 (no "CCRClient: Heartbeat sent" lines at all since 2026-08-21T19:04, right
 after a tool-not-found error and an event-loop-stall warning) while the OS
@@ -163,13 +182,44 @@ if ($lastHeartbeatLine -and $lastHeartbeatLine.Line -match '^(\S+)Z') {
     }
 }
 
-$isUnhealthy = $logSignalUnhealthy -or $fallbackSignalUnhealthy -or $heartbeatSignalUnhealthy
+# Fourth, proactive signal: catch a stale binding during a quiet window, before
+# anyone notices. Find the last point the reply tool was *verified* to work -
+# either a successful reply completion, or the "Successfully connected" line
+# right after a restart (also proof-of-life). If an SSE reconnect/liveness-
+# timeout has happened since that point AND it's been $StaleSilentThresholdMinutes
+# with no fresh verification, the binding may have silently dropped with nobody
+# the wiser - see 2026-08-24 note above. A real successful reply at any time
+# resets this clock, so this only ever fires in windows with zero Telegram
+# traffic, which is also when a restart is cheapest (nothing mid-conversation
+# to lose).
+$StaleSilentThresholdMinutes = 60
+$staleSilentUnhealthy = $false
+$verifiedPattern = "Tool 'reply' completed successfully|plugin:telegram:telegram`": Successfully connected"
+$reconnectPattern = 'SSETransport: Stream read error|SSETransport: Liveness timeout, reconnecting'
+
+$lastVerified = $tail | Select-String -Pattern $verifiedPattern | Select-Object -Last 1
+if ($lastVerified -and $lastVerified.Line -match '^(\S+)Z') {
+    $lastVerifiedAt = [datetime]::Parse($Matches[1], $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
+    $minutesSinceVerified = ($now.ToUniversalTime() - $lastVerifiedAt).TotalMinutes
+    if ($minutesSinceVerified -ge $StaleSilentThresholdMinutes) {
+        $reconnectSinceVerified = $tail | Select-String -Pattern $reconnectPattern |
+            Where-Object {
+                $_.Line -match '^(\S+)Z' -and
+                ([datetime]::Parse($Matches[1], $null, [System.Globalization.DateTimeStyles]::RoundtripKind)) -gt $lastVerifiedAt
+            }
+        if ($reconnectSinceVerified) {
+            $staleSilentUnhealthy = $true
+        }
+    }
+}
+
+$isUnhealthy = $logSignalUnhealthy -or $fallbackSignalUnhealthy -or $heartbeatSignalUnhealthy -or $staleSilentUnhealthy
 
 if ($isUnhealthy) {
     if (-not $state.first_unhealthy_at) {
         $state.first_unhealthy_at = $now.ToString("o")
         Save-WatchdogState $state
-        $source = if ($fallbackSignalUnhealthy) { "fallback-script signal ($fallbackReason)" } elseif ($heartbeatSignalUnhealthy) { "no heartbeat for $([math]::Round($minutesSinceHeartbeat,1)) min" } else { "log grep" }
+        $source = if ($fallbackSignalUnhealthy) { "fallback-script signal ($fallbackReason)" } elseif ($heartbeatSignalUnhealthy) { "no heartbeat for $([math]::Round($minutesSinceHeartbeat,1)) min" } elseif ($staleSilentUnhealthy) { "no verified reply for $([math]::Round($minutesSinceVerified,1)) min with a reconnect since" } else { "log grep" }
         Write-Host "watchdog: unhealthy signal seen via $source, starting 3-minute confirmation window"
         exit 0
     }
