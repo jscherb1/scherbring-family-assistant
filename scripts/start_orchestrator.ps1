@@ -93,8 +93,20 @@ Write-Host "Minimize this window to keep it running in the background; closing i
 $DebugLogFile = Join-Path $RepoRoot "state\logs\orchestrator_debug.log"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $DebugLogFile) | Out-Null
 
+$IsFirstIteration = $true
 while ($true) {
     $SessionName = "Scherbring-Family-Bot-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    # 2026-08-25: log every session launch so restart counts stay queryable -
+    # see scripts/orchestrator_restart_log.py. "wrapper-start" is the first
+    # launch of this wrapper process (fresh logon or a manual full restart);
+    # "loop-restart" is claude.exe exiting and this while loop bringing it
+    # back up on its own (crash, watchdog-triggered kill, etc). This is the
+    # only call site that records launches, so watchdog-triggered restarts
+    # are captured automatically without the watchdog scripts logging anything.
+    $RestartReason = if ($IsFirstIteration) { "wrapper-start" } else { "loop-restart" }
+    python (Join-Path $PSScriptRoot "orchestrator_restart_log.py") record --session-name $SessionName --reason $RestartReason | Out-Null
+    $IsFirstIteration = $false
+
     # --debug-file pins the orchestrator's debug log to a fixed, known path
     # instead of a random UUID under ~/.claude/debug alongside every other
     # concurrent Claude Code session on this machine. 2026-08-23: the
