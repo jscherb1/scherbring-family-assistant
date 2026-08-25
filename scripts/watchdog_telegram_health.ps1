@@ -227,15 +227,16 @@ if ($isUnhealthy) {
     $firstSeen = [datetime]$state.first_unhealthy_at
     if (($now - $firstSeen).TotalMinutes -ge 3) {
         Write-Host "watchdog: persistent broken Telegram connection confirmed - restarting orchestrator (pid $($proc.ProcessId))"
-        # Restarting wipes conversation context (start_orchestrator.ps1 launches a
-        # fresh session, no --continue, by design - see its 2026-08-12 note). If the
-        # user is mid-conversation via the fallback script, a silent reset would look
-        # like the assistant forgot everything with zero warning. Tell them first,
-        # via the same direct-Bot-API path (independent of whatever is broken in the
-        # dying session's own tool binding).
+        # Restarting still launches a fresh session (start_orchestrator.ps1, no
+        # --continue, by design - see its 2026-08-12 note), so there's a brief gap
+        # while it comes back up. Tell them first, via the same direct-Bot-API path
+        # (independent of whatever is broken in the dying session's own tool
+        # binding). As of 2026-08-24 this no longer warns "I won't remember" -
+        # telegram_context_bridge.py's SessionStart hook replays the rolling
+        # conversation log into the fresh session, so context actually survives now.
         try {
             & python (Join-Path $RepoRoot "scripts\telegram_send.py") `
-                "Restarting to fix a stuck Telegram connection - one moment. If we were mid-conversation, I won't remember it after this; just resend your last message." `
+                "Restarting to fix a stuck Telegram connection - one moment, I'll pick back up automatically." `
                 --reason "pre-restart heads-up" 2>&1 | Out-Null
         } catch { }
         Stop-Process -Id $proc.ProcessId -Force
