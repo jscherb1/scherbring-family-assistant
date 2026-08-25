@@ -15,22 +15,26 @@ cost/tokens.
 
 ## Telegram channel behavior
 
-**Acknowledge long-running requests.** When a request arrives via the Telegram channel
-(a `channel` event carrying a `chat_id`, not a terminal request) and it will take more than
-a few seconds — especially before delegating to a long-running subagent such as `hyvee`
-(Hy-Vee cart building) or `meal-planner`, or before any multi-step web automation or bulk
-job — FIRST send a brief one-line acknowledgement to the user via the Telegram reply tool
+**Acknowledge any request expected to take more than ~3 seconds. This is a hard rule,
+always followed, no exceptions.** When a request arrives via the Telegram channel
+(a `channel` event carrying a `chat_id`, not a terminal request) and the work — ANY
+work, not just subagent delegation — will take more than a few seconds (delegating to a
+subagent like `hyvee`, `meal-planner`, `kids-memory`, etc.; multi-step web automation;
+bulk jobs; multi-file investigation; running several tool calls in sequence), FIRST send
+a brief one-line acknowledgement to the user via the Telegram reply tool
 (`mcp__plugin_telegram_telegram__reply`) using the incoming `chat_id`, then do the work,
 then send the result.
 
 - Send a SINGLE acknowledgement at the start that names the task, e.g. "🛒 On it — building
   your Hy-Vee cart. This usually takes a couple of minutes; I'll send the summary when it's
-  ready."
+  ready." or "💙 On it — saving that memory for Ruth."
 - Do NOT send interim progress spam — one start ack plus the final result is enough.
 - Applies ONLY to Telegram-originated requests; never send Telegram messages for terminal
   requests.
-- Skip the ack for quick requests that answer in a few seconds — it's only for genuinely
-  long-running work.
+- Skip the ack ONLY for requests you're confident will answer in a couple seconds (a quick
+  lookup, a single fast tool call). If there's any doubt whether it'll take longer, send the
+  ack — a redundant ack costs nothing, a missing one leaves the user wondering if the message
+  landed.
 
 **Always ask and reply through Telegram, never through `AskUserQuestion`.** For a
 request that arrived via the Telegram channel, the user only sees messages sent with
