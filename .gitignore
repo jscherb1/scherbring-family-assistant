@@ -39,6 +39,7 @@ state/logs/
 # --- Runtime watchdog debounce + scheduler heartbeat state (timestamps only) ---
 state/telegram_watchdog.json
 state/telegram_fallback_used.json
+state/telegram_conversation_log.jsonl
 state/scheduler_watchdog.json
 state/scheduler_loop_state.json
 
