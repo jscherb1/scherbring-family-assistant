@@ -227,24 +227,13 @@ if ($isUnhealthy) {
     $firstSeen = [datetime]$state.first_unhealthy_at
     if (($now - $firstSeen).TotalMinutes -ge 3) {
         Write-Host "watchdog: persistent broken Telegram connection confirmed - restarting orchestrator (pid $($proc.ProcessId))"
-        # Restarting still launches a fresh session (start_orchestrator.ps1, no
-        # --continue, by design - see its 2026-08-12 note), so there's a brief gap
-        # while it comes back up. Tell them first, via the same direct-Bot-API path
-        # (independent of whatever is broken in the dying session's own tool
-        # binding). As of 2026-08-24 this no longer warns "I won't remember" -
-        # telegram_context_bridge.py's SessionStart hook replays the rolling
-        # conversation log into the fresh session, so context actually survives now.
-        try {
-            & python (Join-Path $RepoRoot "scripts\telegram_send.py") `
-                "Restarting to fix a stuck Telegram connection - one moment, I'll pick back up automatically." `
-                --reason "pre-restart heads-up" 2>&1 | Out-Null
-        } catch { }
+        # 2026-08-25: no pre-restart heads-up message anymore, by design. The
+        # goal is a restart the user never notices - context_bridge.py's
+        # SessionStart hook replays the rolling conversation log into the
+        # fresh session, so there's nothing to warn about losing. A visible
+        # "restarting..." ping was itself the tell that undermined seamlessness.
         Stop-Process -Id $proc.ProcessId -Force
         $state.first_unhealthy_at = $null
-        # Captured AFTER the heads-up send above (which re-stamps
-        # telegram_fallback_used.json itself) so that stamp doesn't look
-        # "newer than last_restart_at" and falsely re-trigger on the very
-        # next pass against the freshly-restarted, healthy session.
         $state.last_restart_at = (Get-Date).ToString("o")
         Save-WatchdogState $state
     }
