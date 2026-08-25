@@ -58,5 +58,51 @@
       "Write(state/hyvee_tmp/**)",
       "Write(//c/Users/JustinScherbring/Projects/personal-assistant/state/hyvee_tmp/**)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__plugin_telegram_telegram__reply",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/telegram_context_bridge.py hook-post-reply",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/telegram_context_bridge.py hook-post-bash",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/telegram_context_bridge.py hook-user-prompt",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python scripts/telegram_context_bridge.py hook-session-start",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
   }
 }
