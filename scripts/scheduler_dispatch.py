@@ -38,7 +38,20 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOOP_STATE_FILE = REPO_ROOT / "state" / "scheduler_loop_state.json"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
+DISPATCH_DEBUG_DIR = REPO_ROOT / "state" / "logs" / "scheduler_dispatch_debug"
 TASK_TIMEOUT_SECONDS = 300  # 5 minutes per task
+
+# The local `monarch` MCP server is a stdio server spawned fresh per process
+# (Python venv cold start + heavy monarchmoney/gql imports + a live Windows
+# keyring round-trip probe). Observed cold-start connect times in
+# state/logs/orchestrator_debug.log range from ~3s to ~24.5s, with at least one
+# documented outright failure at Claude Code's default ~30000ms MCP connect
+# timeout ("Connection timeout triggered after 30022ms (limit: 30000ms)"). A
+# one-shot `claude --print` dispatch process races against that same default
+# timeout every run, and losing the race silently drops the monarch tools
+# before the finance subagent is delegated to — see memory:
+# finance_subagent_missing_monarch_tools_gap. Give it real headroom.
+MCP_TIMEOUT_MS = "60000"
 
 
 def _resolve_claude() -> str:
@@ -246,6 +259,7 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
     name = task.get("name", task_id)
     prompt = task.get("prompt", "")
     chat_id = str(task.get("target_chat_id", "") or "")
+    run_at = str(task.get("due_run_at", "") or "")
 
     if not prompt:
         return False, "no prompt defined on task"
@@ -284,13 +298,21 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         # non-deterministically, every time. Without --channels there is no tool
         # to reach for, and the subagent reliably emits the markers instead, which
         # we then deliver ourselves via direct Bot API call below.
+        env = os.environ.copy()
+        env["MCP_TIMEOUT_MS"] = MCP_TIMEOUT_MS
+        env["MCP_CONNECT_TIMEOUT_MS"] = MCP_TIMEOUT_MS
+
+        DISPATCH_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        safe_run_at = run_at.replace(":", "-") or "unknown"
+        debug_log = DISPATCH_DEBUG_DIR / f"{task_id or 'unknown'}_{safe_run_at}.log"
         result = subprocess.run(
-            [CLAUDE_EXE, "--print", full_prompt],
+            [CLAUDE_EXE, "--print", "--debug-file", str(debug_log), full_prompt],
             capture_output=True,
             text=True,
             encoding="utf-8",
             cwd=str(REPO_ROOT),
             timeout=TASK_TIMEOUT_SECONDS,
+            env=env,
         )
         output = (result.stdout or "").strip()
         process_ok = result.returncode == 0
