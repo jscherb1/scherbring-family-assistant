@@ -14,11 +14,21 @@ window to get it out of the way; closing it stops the assistant.
 Every launch starts a fresh session — no --resume flag — so context never
 accumulates across restarts. Each restart (including those triggered by
 watchdog_telegram_health.ps1 or watchdog_scheduler_health.ps1) begins with a
-clean slate. Each launch gets a unique display/Remote Control name of the
-form "Scherbring-Family-Bot-yyyyMMdd-HHmmss" (never reused, never resumed)
-so a specific run is identifiable in the prompt box, /resume picker, and
-terminal title. --remote-control is still passed so the in-session
-CronCreate/CronList tools are available.
+clean slate. Each launch gets a unique display name of the form
+"Scherbring-Family-Bot-yyyyMMdd-HHmmss" (never reused, never resumed) so a
+specific run is identifiable in the prompt box, /resume picker, and
+terminal title.
+
+2026-09-20: dropped --remote-control. It was pushing a "session has
+restarted" notification to Justin's phone on every crash/watchdog restart,
+which fights the whole point of this loop being invisible (see the
+2026-08-25 note in watchdog_telegram_health.ps1 and
+orchestrator_restart_log.py, both explicit that the user should have no
+visibility into restarts). Its only stated justification here ("so the
+in-session CronCreate/CronList tools are available") was already stale -
+that self-arming approach was retired 2026-08-12 in favor of the external
+Task Scheduler + scheduler_dispatch.py mechanism, so nothing in the live
+architecture uses CronCreate/CronList anymore.
 
 2026-08-11: a force-kill (Stop-Process -Force) doesn't give claude a chance
 to run its normal exit cleanup, which includes disabling the xterm mouse-
@@ -116,7 +126,7 @@ while ($true) {
     # recently silently made the watchdog check the wrong file for 40+
     # hours. A fixed, dedicated path removes the guesswork entirely - see
     # scripts/watchdog_telegram_health.ps1 for the reader side.
-    claude --debug-file $DebugLogFile --remote-control $SessionName --name $SessionName --permission-mode auto --channels plugin:telegram@claude-plugins-official
+    claude --debug-file $DebugLogFile --name $SessionName --permission-mode auto --channels plugin:telegram@claude-plugins-official
     Reset-TerminalMouseTracking
     Write-Host ""
     Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"
