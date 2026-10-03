@@ -127,8 +127,19 @@ while ($true) {
     # hours. A fixed, dedicated path removes the guesswork entirely - see
     # scripts/watchdog_telegram_health.ps1 for the reader side.
     claude --debug-file $DebugLogFile --name $SessionName --permission-mode auto --channels plugin:telegram@claude-plugins-official
+    $ExitCode = $LASTEXITCODE
     Reset-TerminalMouseTracking
     Write-Host ""
-    Write-Host "Orchestrator exited (exit code $LASTEXITCODE). Restarting in 10 seconds... (Ctrl+C to stop)"
+    Write-Host "Orchestrator exited (exit code $ExitCode). Restarting in 10 seconds... (Ctrl+C to stop)"
+
+    # 2026-10-03: this exit code previously only ever reached the console
+    # window - nobody watches that, so after an unattended restart there was
+    # no way to tell a self-crash apart from a watchdog force-kill (both just
+    # show up as the next session's "Prior session exited uncleanly" line).
+    # Logging it here closes that gap with a one-line append.
+    $ExitLogFile = Join-Path $RepoRoot "state\logs\orchestrator_exits.log"
+    $ExitTimestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $ExitLogFile -Value "[$ExitTimestamp] session=$SessionName exit_code=$ExitCode"
+
     Start-Sleep -Seconds 10
 }

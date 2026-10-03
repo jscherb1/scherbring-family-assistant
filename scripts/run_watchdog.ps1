@@ -34,6 +34,13 @@ $LogFile = Join-Path $LogDir ("watchdog_{0}.log" -f (Get-Date -Format "yyyy-MM-d
 
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 Add-Content -Path $LogFile -Value "[$timestamp] --- watchdog pass ---"
-& (Join-Path $PSScriptRoot "watchdog_telegram_health.ps1") 2>&1 | Tee-Object -FilePath $LogFile -Append
-& (Join-Path $PSScriptRoot "watchdog_scheduler_health.ps1") 2>&1 | Tee-Object -FilePath $LogFile -Append
-python (Join-Path $PSScriptRoot "telegram_context_bridge.py") prune 2>&1 | Tee-Object -FilePath $LogFile -Append
+# 2026-10-03: was "2>&1", which only merges the Error stream into stdout.
+# Write-Host writes to the Information stream (6) in PowerShell 5.1+, which
+# "2>&1" does NOT capture - every Write-Host line in the watchdog scripts
+# (including the "restarting orchestrator" kill message) was silently
+# discarded before reaching this log file, even though the kill itself was
+# actually happening (confirmed via state/telegram_watchdog.json). "*>&1"
+# merges ALL streams so nothing gets lost again.
+& (Join-Path $PSScriptRoot "watchdog_telegram_health.ps1") *>&1 | Tee-Object -FilePath $LogFile -Append
+& (Join-Path $PSScriptRoot "watchdog_scheduler_health.ps1") *>&1 | Tee-Object -FilePath $LogFile -Append
+python (Join-Path $PSScriptRoot "telegram_context_bridge.py") prune *>&1 | Tee-Object -FilePath $LogFile -Append

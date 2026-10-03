@@ -26,7 +26,14 @@ independent unhealthy signals, any one of which is sufficient:
     last healthy connection line
   - fallback self-report: state/telegram_fallback_used.json stamped more
     recently than the last restart
-  - heartbeat staleness: no "CCRClient: Heartbeat sent" line in 10+ minutes
+  - stale-silent: no verified reply/connection in 60+ minutes AND an SSE
+    reconnect/liveness-timeout since the last verification (see 2026-08-24
+    note below)
+
+(A fourth signal, heartbeat staleness via "CCRClient: Heartbeat sent" line
+recency, was removed 2026-10-03 - see that note further below. It turned out
+to be matching this repo's own permission-reload log lines instead of any
+real heartbeat, and was the confirmed cause of a 3.5-day restart loop.)
 
 If none of these fire (fresh session, or the log file doesn't exist yet),
 treat it as unknown and take NO action - absence of data never triggers a
@@ -167,22 +174,26 @@ if (Test-Path $FallbackUsedFile) {
     } catch { }
 }
 
-# Third, independent signal: generic process-liveness via heartbeat recency.
-# "CCRClient: Heartbeat sent" lines appear every ~1-5 min under normal
-# operation regardless of any Telegram activity, so their absence catches a
-# fully wedged event loop even when nobody ever tried to send a message
-# (the failure mode the two signals above both miss - see 2026-08-23 note).
-$heartbeatSignalUnhealthy = $false
-$lastHeartbeatLine = $tail | Select-String -Pattern 'CCRClient: Heartbeat sent' | Select-Object -Last 1
-if ($lastHeartbeatLine -and $lastHeartbeatLine.Line -match '^(\S+)Z') {
-    $lastHeartbeatAt = [datetime]::Parse($Matches[1], $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
-    $minutesSinceHeartbeat = ($now.ToUniversalTime() - $lastHeartbeatAt).TotalMinutes
-    if ($minutesSinceHeartbeat -ge 10) {
-        $heartbeatSignalUnhealthy = $true
-    }
-}
+# 2026-10-03: the "third, independent signal" (generic process-liveness via
+# "CCRClient: Heartbeat sent" recency) was removed. That log line does not
+# genuinely exist anywhere in the installed Claude Code version (v2.1.215) -
+# the feature it was meant to observe is gone/renamed. Worse than inert: this
+# repo's own debug log dumps the full settings.local.json permission-rule
+# list on every reload ("Replacing all allow rules for destination ... with
+# N rule(s): [...]"), and an old investigation command whose text happened to
+# contain the literal string "CCRClient: Heartbeat sent" got permanently
+# saved as an approved permission rule - so this check's unanchored
+# Select-String was matching THAT line instead, using "last time any session
+# reloaded permissions" as a fake heartbeat. Whenever ~10+ minutes passed
+# without a new command getting approved anywhere in this repo, the fake
+# clock went stale and this signal force-killed a perfectly healthy
+# orchestrator. Confirmed as the cause of the 2026-09-29 to 2026-10-03
+# restart-loop (every ~13-16 min) via the watchdog's own now-visible log line
+# ("no heartbeat for 10 min") lining up exactly with state/telegram_watchdog.json's
+# last_restart_at. Removed outright rather than re-anchored, since there is no
+# genuine log line left for it to validly detect.
 
-# Fourth, proactive signal: catch a stale binding during a quiet window, before
+# Third, proactive signal: catch a stale binding during a quiet window, before
 # anyone notices. Find the last point the reply tool was *verified* to work -
 # either a successful reply completion, or the "Successfully connected" line
 # right after a restart (also proof-of-life). If an SSE reconnect/liveness-
@@ -213,13 +224,13 @@ if ($lastVerified -and $lastVerified.Line -match '^(\S+)Z') {
     }
 }
 
-$isUnhealthy = $logSignalUnhealthy -or $fallbackSignalUnhealthy -or $heartbeatSignalUnhealthy -or $staleSilentUnhealthy
+$isUnhealthy = $logSignalUnhealthy -or $fallbackSignalUnhealthy -or $staleSilentUnhealthy
 
 if ($isUnhealthy) {
     if (-not $state.first_unhealthy_at) {
         $state.first_unhealthy_at = $now.ToString("o")
         Save-WatchdogState $state
-        $source = if ($fallbackSignalUnhealthy) { "fallback-script signal ($fallbackReason)" } elseif ($heartbeatSignalUnhealthy) { "no heartbeat for $([math]::Round($minutesSinceHeartbeat,1)) min" } elseif ($staleSilentUnhealthy) { "no verified reply for $([math]::Round($minutesSinceVerified,1)) min with a reconnect since" } else { "log grep" }
+        $source = if ($fallbackSignalUnhealthy) { "fallback-script signal ($fallbackReason)" } elseif ($staleSilentUnhealthy) { "no verified reply for $([math]::Round($minutesSinceVerified,1)) min with a reconnect since" } else { "log grep" }
         Write-Host "watchdog: unhealthy signal seen via $source, starting 3-minute confirmation window"
         exit 0
     }
