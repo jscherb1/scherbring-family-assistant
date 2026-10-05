@@ -1,0 +1,22 @@
+[Unit]
+Description=Scherbring family assistant orchestrator (Claude Code in tmux)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+# claude is an interactive TUI, so it runs inside a detached tmux session.
+# Attach with: tmux attach -t assistant   (detach with Ctrl-b d)
+Type=forking
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=TERM=xterm-256color
+ExecStart=/usr/bin/tmux new-session -d -s assistant @REPO_ROOT@/scripts/start_orchestrator.sh
+ExecStop=-/usr/bin/tmux kill-session -t assistant
+# The tmux server exits when the script exits, which is a clean exit for
+# systemd, so restart regardless of exit status.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
