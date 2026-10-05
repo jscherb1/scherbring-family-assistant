@@ -55,3 +55,18 @@ def test_load_env_merges_with_priority_and_warns_on_loose_mode(monkeypatch, tmp_
     env_file.chmod(0o600)
     paths.load_env()
     assert capsys.readouterr().err == ""
+
+
+def test_alert_chat_id_precedence_and_placeholder(monkeypatch, tmp_path):
+    monkeypatch.setenv("SCHERBRING_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("TELEGRAM_ALERT_CHAT_ID", raising=False)
+    monkeypatch.setattr(paths, "REPO_ROOT", tmp_path)
+    assert paths.alert_chat_id() is None
+    cfg = tmp_path / "scripts"
+    cfg.mkdir()
+    (cfg / "scheduler.config.json").write_text('{"alert_chat_id": "REDACTED_TELEGRAM_CHAT_ID"}')
+    assert paths.alert_chat_id() is None
+    (cfg / "scheduler.config.json").write_text('{"alert_chat_id": "111"}')
+    assert paths.alert_chat_id() == "111"
+    (tmp_path / ".env").write_text("TELEGRAM_ALERT_CHAT_ID=222\n")
+    assert paths.alert_chat_id() == "222"

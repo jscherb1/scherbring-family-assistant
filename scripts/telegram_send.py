@@ -28,9 +28,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
-from paths import REPO_ROOT, get_env, secrets_dir, telegram_env_path
+from paths import REPO_ROOT, alert_chat_id, get_env, secrets_dir, telegram_env_path
 
-CONFIG_FILE = REPO_ROOT / "scripts" / "scheduler.config.json"
 TELEGRAM_ENV_FILE = telegram_env_path()
 FALLBACK_STATE_FILE = REPO_ROOT / "state" / "telegram_fallback_used.json"
 MAX_CHARS = 4000
@@ -43,17 +42,7 @@ def _read_token() -> str | None:
 
 
 def _default_chat_id() -> str | None:
-    from_env = get_env("TELEGRAM_ALERT_CHAT_ID")
-    if from_env:
-        return from_env
-    try:
-        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        chat_id = config.get("alert_chat_id")
-        if not chat_id or str(chat_id).startswith("REDACTED"):
-            return None
-        return str(chat_id)
-    except Exception:  # noqa: BLE001
-        return None
+    return alert_chat_id()
 
 
 def _send_raw(token: str, chat_id: str, text: str) -> None:

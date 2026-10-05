@@ -8,6 +8,7 @@ on sys.path).
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -100,3 +101,22 @@ def load_env() -> dict[str, str]:
     merged.update({k: v for k, v in _parse_env_file(secrets_file).items() if v})
     merged.update({k: v for k, v in os.environ.items() if v})
     return merged
+
+
+def alert_chat_id() -> str | None:
+    """Telegram chat id for alerts and fallback sends.
+
+    TELEGRAM_ALERT_CHAT_ID (process env or a .env file) wins; the legacy
+    scripts/scheduler.config.json `alert_chat_id` is a fallback. Placeholder
+    values left by the history scrub (REDACTED_*) count as unset.
+    """
+    chat_id = get_env("TELEGRAM_ALERT_CHAT_ID")
+    if not chat_id:
+        try:
+            config = json.loads((REPO_ROOT / "scripts" / "scheduler.config.json").read_text(encoding="utf-8"))
+            chat_id = config.get("alert_chat_id")
+        except (OSError, ValueError):
+            chat_id = None
+    if not chat_id or str(chat_id).startswith("REDACTED"):
+        return None
+    return str(chat_id)

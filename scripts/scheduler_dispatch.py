@@ -33,7 +33,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
-from paths import REPO_ROOT, find_claude, get_env, telegram_env_path  # noqa: E402
+from paths import REPO_ROOT, alert_chat_id, find_claude, get_env, telegram_env_path  # noqa: E402
 
 LOOP_STATE_FILE = REPO_ROOT / "state" / "scheduler_loop_state.json"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -67,7 +67,6 @@ def _resolve_claude() -> str:
 CLAUDE_EXE = _resolve_claude()
 
 
-CONFIG_FILE = REPO_ROOT / "scripts" / "scheduler.config.json"
 TELEGRAM_ENV_FILE = telegram_env_path()
 
 
@@ -77,13 +76,10 @@ def _read_telegram_creds() -> tuple[str, str] | tuple[None, None]:
         token = get_env("TELEGRAM_BOT_TOKEN", (TELEGRAM_ENV_FILE,))
         if not token:
             return None, None
-        chat_id = get_env("TELEGRAM_ALERT_CHAT_ID")
+        chat_id = alert_chat_id()
         if not chat_id:
-            config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            chat_id = config.get("alert_chat_id")
-        if not chat_id or str(chat_id).startswith("REDACTED"):
             return None, None
-        return token, str(chat_id)
+        return token, chat_id
     except Exception:  # noqa: BLE001
         return None, None
 

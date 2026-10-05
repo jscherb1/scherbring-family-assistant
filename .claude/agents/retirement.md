@@ -135,12 +135,14 @@ firing" for the self-gate).
    been done — tell the user to run `python scripts/drive_upload.py auth` in a terminal
    (see `docs/retirement-drive-setup.md`) and stop; don't try to fall back to the MCP path.
 
-   Workbooks live in a `Retirement/` subfolder of the finance working folder
-   `REDACTED_DRIVE_FOLDER_ID`. Resolve the folder id (cached, else find-or-create):
+   Workbooks live in a `Retirement/` subfolder of the finance working folder.
+   Get its id first (`python scripts/finance_store.py config get --key finance_drive_folder_id`);
+   wherever this document says `<finance_drive_folder_id>`, use that value, and stop and
+   ask the user if it isn't set. Resolve the Retirement folder id (cached, else find-or-create):
    ```
    python scripts/finance_store.py config get --key retirement_drive_folder_id
    # if absent:
-   python scripts/drive_upload.py find-folder --parent REDACTED_DRIVE_FOLDER_ID --name Retirement
+   python scripts/drive_upload.py find-folder --parent <finance_drive_folder_id> --name Retirement
    python scripts/finance_store.py config set --key retirement_drive_folder_id --value "<id from find-folder>"
    ```
 

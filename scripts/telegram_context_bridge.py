@@ -44,11 +44,10 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from paths import REPO_ROOT, alert_chat_id
+
 LOG_FILE = REPO_ROOT / "state" / "telegram_conversation_log.jsonl"
-CONFIG_FILE = REPO_ROOT / "scripts" / "scheduler.config.json"
 WINDOW_MINUTES = 60
 
 for _stream in (sys.stdout, sys.stderr):
@@ -128,12 +127,7 @@ def _read_stdin_json() -> dict:
 
 
 def _default_chat_id() -> str | None:
-    try:
-        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        chat_id = config.get("alert_chat_id")
-        return str(chat_id) if chat_id else None
-    except Exception:  # noqa: BLE001
-        return None
+    return alert_chat_id()
 
 
 def cmd_hook_post_reply() -> int:
