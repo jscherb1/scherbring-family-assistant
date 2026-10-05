@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Scherbring assistant watchdog every 2 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

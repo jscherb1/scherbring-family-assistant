@@ -1,0 +1,10 @@
+[Unit]
+Description=Scherbring assistant health watchdog (Telegram and scheduler)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@REPO_ROOT@/scripts/run_watchdog.sh
+TimeoutStartSec=120
