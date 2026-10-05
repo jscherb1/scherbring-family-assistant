@@ -160,17 +160,17 @@ Applies identically whether triggered on-demand or by a scheduled firing (see
 
 5. **Upload to Google Drive.** The reports live in a `Reports` subfolder of the shared
    finance working folder. Get its id with
-   `python scripts/finance_store.py config get --key finance_drive_folder_id`; wherever this
-   document says `<finance_drive_folder_id>`, use that value, and stop and ask the user if it
+   `python scripts/finance_store.py config get --key drive_folder_id`; wherever this
+   document says `<drive_folder_id>`, use that value, and stop and ask the user if it
    isn't set.
    - Check for a cached folder id first: `python scripts/finance_store.py config get --key reports_drive_folder_id`.
    - If not cached, find-or-create it:
      ```
-     search_files(query: "parentId = '<finance_drive_folder_id>' and title = 'Reports' and mimeType = 'application/vnd.google-apps.folder'")
+     search_files(query: "parentId = '<drive_folder_id>' and title = 'Reports' and mimeType = 'application/vnd.google-apps.folder'")
      ```
      If no result:
      ```
-     create_file(title: "Reports", parentId: "<finance_drive_folder_id>", mimeType: "application/vnd.google-apps.folder")
+     create_file(title: "Reports", parentId: "<drive_folder_id>", mimeType: "application/vnd.google-apps.folder")
      ```
      Cache it: `python scripts/finance_store.py config set --key reports_drive_folder_id --value "<folder id>"`.
    - Upload the HTML (**must** disable Google-type conversion or Drive silently turns
