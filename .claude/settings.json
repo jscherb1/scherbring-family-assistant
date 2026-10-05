@@ -19,44 +19,28 @@
       "mcp__claude_ai_Google_Calendar__update_event",
       "mcp__claude_ai_Google_Calendar__delete_event",
       "Bash(python scripts/recipes_store.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/recipes_store.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/recipes_store.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/state_store.py query *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/state_store.py query *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/state_store.py write *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/state_store.py write *)",
       "Bash(python scripts/scheduler_store.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/scheduler_store.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/scheduler_store.py *)",
       "Bash(python scripts/hyvee/cart_ops.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/hyvee/cart_ops.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/hyvee/cart_ops.py *)",
       "Bash(python scripts/hyvee_store.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/hyvee_store.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/hyvee_store.py *)",
       "Bash(python scripts/finance_store.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/finance_store.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/finance_store.py *)",
       "Bash(python scripts/finance_report.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/finance_report.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/finance_report.py *)",
       "Bash(python scripts/retirement_model.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/retirement_model.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/retirement_model.py *)",
       "Bash(python scripts/retirement_workbook.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/retirement_workbook.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/retirement_workbook.py *)",
       "Bash(python scripts/drive_upload.py find-folder *)",
       "Bash(python scripts/drive_upload.py upload *)",
       "Bash(python scripts/drive_upload.py update *)",
       "Bash(python scripts/drive_upload.py status)",
       "Bash(python scripts/profile_store.py *)",
-      "Bash(cd \"C:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/profile_store.py *)",
-      "Bash(cd \"c:\\Users\\USER\\Projects\\personal-assistant\" && python scripts/profile_store.py *)",
       "Edit(state/hyvee_tmp/**)",
-      "Edit(//c/Users/USER/Projects/personal-assistant/state/hyvee_tmp/**)",
       "Write(state/hyvee_tmp/**)",
-      "Write(//c/Users/USER/Projects/personal-assistant/state/hyvee_tmp/**)"
+      "Bash(python scripts/lawn_garden_store.py *)",
+      "Bash(python scripts/weather_store.py *)",
+      "Bash(python scripts/home_maintenance_store.py *)",
+      "Bash(python scripts/kid_memories_store.py *)",
+      "Bash(python scripts/fitness_store.py *)",
+      "Bash(python scripts/fitness/library_sync.py *)",
+      "Bash(python scripts/fitness/schedule_ops.py *)",
+      "Bash(python scripts/telegram_send.py *)"
     ]
   },
   "hooks": {
@@ -66,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/telegram_context_bridge.py hook-post-reply",
+            "command": ".venv/bin/python scripts/telegram_context_bridge.py hook-post-reply",
             "timeout": 10
           }
         ]
@@ -76,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/telegram_context_bridge.py hook-post-bash",
+            "command": ".venv/bin/python scripts/telegram_context_bridge.py hook-post-bash",
             "timeout": 10
           }
         ]
@@ -87,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/telegram_context_bridge.py hook-user-prompt",
+            "command": ".venv/bin/python scripts/telegram_context_bridge.py hook-user-prompt",
             "timeout": 10
           }
         ]
@@ -98,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/telegram_context_bridge.py hook-session-start",
+            "command": ".venv/bin/python scripts/telegram_context_bridge.py hook-session-start",
             "timeout": 10
           }
         ]
