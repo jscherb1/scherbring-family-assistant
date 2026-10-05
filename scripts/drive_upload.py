@@ -65,6 +65,7 @@ def _token_path() -> Path:
 def _load_credentials(interactive: bool):
     """Load stored credentials, refreshing or (if interactive) running the OAuth
     flow as needed. Raises RuntimeError with an actionable message otherwise."""
+    from google.auth.exceptions import RefreshError
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
 
@@ -76,9 +77,19 @@ def _load_credentials(interactive: bool):
     if creds and creds.valid:
         return creds
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        token_path.write_text(creds.to_json(), encoding="utf-8")
-        return creds
+        try:
+            creds.refresh(Request())
+        except RefreshError as exc:
+            # Revoked or expired refresh token (invalid_grant). Interactive
+            # callers fall through to a fresh consent flow below.
+            if not interactive:
+                raise RuntimeError(
+                    f"Google Drive token was rejected ({exc}). Run "
+                    "`python scripts/drive_upload.py auth` in a terminal to re-authorize."
+                ) from exc
+        else:
+            token_path.write_text(creds.to_json(), encoding="utf-8")
+            return creds
 
     if not interactive:
         raise RuntimeError(
@@ -96,7 +107,13 @@ def _load_credentials(interactive: bool):
             "or set GOOGLE_DRIVE_CLIENT_SECRET."
         )
     flow = InstalledAppFlow.from_client_secrets_file(str(secret), SCOPES)
-    creds = flow.run_local_server(port=0)
+    # No browser is launched from here (there usually isn't one in WSL); open the
+    # printed URL in any browser. The redirect to localhost reaches this process.
+    creds = flow.run_local_server(
+        port=0,
+        open_browser=False,
+        authorization_prompt_message="\nOpen this URL in your browser to authorize Google Drive:\n\n{url}\n",
+    )
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(creds.to_json(), encoding="utf-8")
     return creds
