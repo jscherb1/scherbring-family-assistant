@@ -32,7 +32,6 @@
       "Bash(python scripts/drive_upload.py status)",
       "Bash(python scripts/profile_store.py *)",
       "Edit(state/hyvee_tmp/**)",
-      "Write(state/hyvee_tmp/**)",
       "Bash(python scripts/lawn_garden_store.py *)",
       "Bash(python scripts/weather_store.py *)",
       "Bash(python scripts/home_maintenance_store.py *)",
