@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orchestrator Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="page-header">
+    <h1>Orchestrator Dashboard</h1>
+    <p class="subtitle" id="generated-at">Loading…</p>
+  </header>
+
+  <main class="grid" id="grid">
+    <section class="card" id="card-uptime">
+      <h2>Uptime</h2>
+      <div class="card-body">Loading…</div>
+    </section>
+
+    <section class="card" id="card-success">
+      <h2>Task Success Rate</h2>
+      <div class="card-body">Loading…</div>
+    </section>
+
+    <section class="card" id="card-watchdogs">
+      <h2>Watchdog Health</h2>
+      <div class="card-body">Loading…</div>
+    </section>
+
+    <section class="card" id="card-fallback">
+      <h2>Telegram Fallback</h2>
+      <div class="card-body">Loading…</div>
+    </section>
+
+    <section class="card card-wide" id="card-failures">
+      <h2>Recent Failures</h2>
+      <div class="card-body">Loading…</div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>
