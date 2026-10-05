@@ -35,4 +35,21 @@ else
     echo "warning: uv not found; skipping ha-mcp (install uv, then re-run this script)" >&2
 fi
 
+# Monarch MCP server (community, replaces Monarch's paused official MCP).
+# Pinned to the commit in use and installed from its uv.lock, because the
+# newest resolvable mcp release is a different major version than it targets.
+MONARCH_MCP_COMMIT="ca6c1598c99a0ff1f7b7effbb2c9f518224eab44"
+if command -v uv >/dev/null 2>&1 && command -v git >/dev/null 2>&1; then
+    if [[ ! -x vendor/monarch-mcp-server/.venv/bin/monarch-mcp-server ]]; then
+        if [[ ! -d vendor/monarch-mcp-server/.git ]]; then
+            git clone --quiet https://github.com/robcerda/monarch-mcp-server.git vendor/monarch-mcp-server
+        fi
+        git -C vendor/monarch-mcp-server checkout --quiet "$MONARCH_MCP_COMMIT"
+        (cd vendor/monarch-mcp-server &&
+            UV_PROJECT_ENVIRONMENT="$PWD/.venv" uv sync --frozen --python 3.12 --quiet)
+    fi
+else
+    echo "warning: uv/git not found; skipping monarch-mcp-server" >&2
+fi
+
 echo "OK: .venv ready at $REPO_ROOT/.venv"
