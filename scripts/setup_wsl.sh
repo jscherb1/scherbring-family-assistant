@@ -22,4 +22,17 @@ else
 fi
 .venv/bin/playwright install chromium
 
+# Home Assistant MCP server. ha-mcp needs Python >= 3.13, newer than Ubuntu
+# 24.04's 3.12, so it gets its own uv-managed venv. Pinned to the version in use.
+HA_MCP_VERSION="8.3.0"
+if command -v uv >/dev/null 2>&1; then
+    if [[ ! -x vendor/ha-mcp/.venv/bin/ha-mcp-web ]]; then
+        mkdir -p vendor/ha-mcp
+        uv venv --python 3.13 vendor/ha-mcp/.venv
+        VIRTUAL_ENV="$REPO_ROOT/vendor/ha-mcp/.venv" uv pip install --quiet "ha-mcp==$HA_MCP_VERSION"
+    fi
+else
+    echo "warning: uv not found; skipping ha-mcp (install uv, then re-run this script)" >&2
+fi
+
 echo "OK: .venv ready at $REPO_ROOT/.venv"

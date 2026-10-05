@@ -1,0 +1,19 @@
+[Unit]
+Description=Home Assistant MCP server (ha-mcp, loopback only)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=@REPO_ROOT@
+# Provides HOMEASSISTANT_URL and HOMEASSISTANT_TOKEN.
+EnvironmentFile=%h/.config/scherbring-assistant/.env
+# Loopback only, so the default /mcp path needs no secret path segment.
+Environment=MCP_HOST=127.0.0.1
+Environment=MCP_PORT=8086
+ExecStart=@REPO_ROOT@/vendor/ha-mcp/.venv/bin/ha-mcp-web
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
