@@ -3,6 +3,7 @@ Description=Run the Scherbring assistant scheduler every 2 minutes
 
 [Timer]
 OnBootSec=1min
+OnActiveSec=1min
 OnUnitActiveSec=2min
 # AccuracySec default (1 min) is too coarse for a 2 minute cadence.
 AccuracySec=5s
