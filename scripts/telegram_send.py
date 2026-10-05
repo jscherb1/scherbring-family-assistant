@@ -27,7 +27,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
-from pathlib import Path
 
 from paths import REPO_ROOT, get_env, secrets_dir, telegram_env_path
 

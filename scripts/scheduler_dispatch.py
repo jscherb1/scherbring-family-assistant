@@ -26,16 +26,15 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from paths import REPO_ROOT, find_claude, get_env, telegram_env_path  # noqa: E402
+
 LOOP_STATE_FILE = REPO_ROOT / "state" / "scheduler_loop_state.json"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 DISPATCH_DEBUG_DIR = REPO_ROOT / "state" / "logs" / "scheduler_dispatch_debug"
@@ -55,32 +54,13 @@ MCP_TIMEOUT_MS = "60000"
 
 
 def _resolve_claude() -> str:
-    """Find the claude executable, preferring the real .exe over the npm .cmd shim.
-
-    npm's generated claude.cmd on Windows forwards args via a bare `%*`, which
-    mangles/truncates multi-line prompt arguments when invoked through
-    subprocess.run's list-argv form (confirmed by direct testing: the same
-    multi-line prompt reliably lost its marker instructions through claude.cmd
-    but worked every time through the underlying claude.exe). This is the root
-    cause of scheduled tasks' Telegram replies never arriving despite "ok"
-    status — see memory: scheduler_dispatch_false_ok_gap.
-    """
-    npm_dir = Path(os.environ.get("APPDATA", "")) / "npm"
-    exe_candidate = npm_dir / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
-    if exe_candidate.exists():
-        return str(exe_candidate)
-    # shutil.which respects PATHEXT so it finds .cmd/.exe on Windows.
-    found = shutil.which("claude")
+    """Find the claude executable via PATH, falling back to ~/.local/bin."""
+    found = find_claude()
     if found:
         return found
-    # Fallback: npm global install location for the current user.
-    for name in ("claude.cmd", "claude.exe", "claude"):
-        candidate = npm_dir / name
-        if candidate.exists():
-            return str(candidate)
     raise FileNotFoundError(
-        "claude executable not found. Ensure @anthropic-ai/claude-code is installed "
-        "globally via npm and the npm bin directory is in PATH."
+        "claude executable not found on PATH or in ~/.local/bin. Set PATH in the "
+        "systemd unit (Environment=PATH=...) or install Claude Code."
     )
 
 
@@ -88,22 +68,20 @@ CLAUDE_EXE = _resolve_claude()
 
 
 CONFIG_FILE = REPO_ROOT / "scripts" / "scheduler.config.json"
-TELEGRAM_ENV_FILE = Path(os.environ.get("USERPROFILE", "")) / ".claude" / "channels" / "telegram" / ".env"
+TELEGRAM_ENV_FILE = telegram_env_path()
 
 
 def _read_telegram_creds() -> tuple[str, str] | tuple[None, None]:
     """Return (bot_token, chat_id) from env file + config, or (None, None) if unavailable."""
     try:
-        token = None
-        if TELEGRAM_ENV_FILE.exists():
-            for line in TELEGRAM_ENV_FILE.read_text(encoding="utf-8").splitlines():
-                if line.startswith("TELEGRAM_BOT_TOKEN="):
-                    token = line.split("=", 1)[1].strip()
+        token = get_env("TELEGRAM_BOT_TOKEN", (TELEGRAM_ENV_FILE,))
         if not token:
             return None, None
-        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        chat_id = config.get("alert_chat_id")
+        chat_id = get_env("TELEGRAM_ALERT_CHAT_ID")
         if not chat_id:
+            config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            chat_id = config.get("alert_chat_id")
+        if not chat_id or str(chat_id).startswith("REDACTED"):
             return None, None
         return token, str(chat_id)
     except Exception:  # noqa: BLE001
