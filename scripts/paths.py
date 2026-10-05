@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -74,3 +75,28 @@ def get_env(key: str, extra_files: tuple[Path, ...] = ()) -> str | None:
         if value:
             return value
     return None
+
+
+def _warn_if_loose(path: Path) -> None:
+    try:
+        if path.stat().st_mode & 0o077:
+            print(
+                f"warning: {path} is readable by other users; run chmod 600 {path}",
+                file=sys.stderr,
+            )
+    except OSError:
+        pass
+
+
+def load_env() -> dict[str, str]:
+    """All settings as one dict. Priority: process env, secrets_dir()/.env, repo .env.
+
+    Warns on stderr when the secrets file is group- or world-accessible.
+    """
+    secrets_file = secrets_dir() / ".env"
+    if secrets_file.exists():
+        _warn_if_loose(secrets_file)
+    merged = _parse_env_file(REPO_ROOT / ".env")
+    merged.update({k: v for k, v in _parse_env_file(secrets_file).items() if v})
+    merged.update({k: v for k, v in os.environ.items() if v})
+    return merged

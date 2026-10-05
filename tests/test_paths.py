@@ -40,3 +40,18 @@ def test_get_env_order_and_parsing(monkeypatch, tmp_path):
 def test_find_claude_returns_str_or_none():
     result = paths.find_claude()
     assert result is None or os.path.exists(result)
+
+
+def test_load_env_merges_with_priority_and_warns_on_loose_mode(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("SCHERBRING_CONFIG_DIR", str(tmp_path))
+    env_file = tmp_path / ".env"
+    env_file.write_text("K1=secrets\nK2=secrets\n")
+    env_file.chmod(0o644)
+    monkeypatch.setenv("K2", "process")
+    merged = paths.load_env()
+    assert merged["K1"] == "secrets"
+    assert merged["K2"] == "process"
+    assert "chmod 600" in capsys.readouterr().err
+    env_file.chmod(0o600)
+    paths.load_env()
+    assert capsys.readouterr().err == ""
