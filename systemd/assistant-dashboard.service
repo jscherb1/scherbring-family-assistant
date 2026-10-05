@@ -1,0 +1,14 @@
+[Unit]
+Description=Scherbring assistant dashboard (read-only Flask status page)
+After=network-online.target
+
+[Service]
+WorkingDirectory=@REPO_ROOT@
+Environment=DASHBOARD_HOST=127.0.0.1
+Environment=DASHBOARD_PORT=5151
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/dashboard/app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

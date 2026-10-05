@@ -6,28 +6,36 @@ health, and Telegram fallback usage.
 
 This is a proof-of-concept for one specific question: can a small local web app be
 run on this machine and reached from another device over Tailscale, without
-exposing anything to the public internet. It is not a service — there's no Windows
-Scheduled Task wired up to keep it running; start/stop it manually.
+exposing anything to the public internet.
 
 ## Run it
 
+From the repo root, using the shared virtualenv (`scripts/setup_wsl.sh`):
+
 ```
-cd dashboard
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
+.venv/bin/python dashboard/app.py
 ```
 
-This binds to `0.0.0.0:5151` so it's reachable on the Tailscale interface, not just
-`localhost`.
+It binds to `127.0.0.1:5151` by default. Environment variables:
+
+- `DASHBOARD_HOST` - address to bind. Use this machine's Tailscale IP
+  (`tailscale ip -4`) to reach it from other devices; avoid `0.0.0.0`.
+- `DASHBOARD_PORT` - port (default 5151).
+
+To keep it running, install and enable the user unit:
+
+```
+scripts/install_systemd.sh assistant-dashboard.service
+```
+
+(Edit `Environment=DASHBOARD_HOST=...` in the installed unit to change the bind
+address, then `systemctl --user daemon-reload && systemctl --user restart assistant-dashboard`.)
 
 ## Access it
 
 - On this machine: http://localhost:5151
-- From another device on the same Tailscale network: `http://<this-machine's-tailscale-ip>:5151`
-  (find the IP with `tailscale ip -4` on this machine, or look it up in the Tailscale
-  admin console).
+- From another device on the same Tailscale network, once `DASHBOARD_HOST` is set to
+  the Tailscale IP: `http://<tailscale-ip>:5151`.
 
 ## Notes
 
