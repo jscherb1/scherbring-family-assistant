@@ -1,0 +1,11 @@
+# Runtime dependencies for every script, the dashboard, and the hyvee/fitness
+# Playwright automation. Install with scripts/setup_wsl.sh.
+flask~=3.1
+playwright~=1.63
+numpy~=2.5
+xlsxwriter~=3.2
+openpyxl~=3.1
+google-api-python-client~=2.201
+google-auth~=2.60
+google-auth-oauthlib~=1.5
+google-auth-httplib2~=0.4
