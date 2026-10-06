@@ -264,13 +264,14 @@ class BridgeStore:
     def stats(self, now: float | None = None) -> dict:
         ts = now if now is not None else time.time()
         c = self._conn
-        pending = c.execute("SELECT COUNT(*) n, MIN(received_at) oldest FROM inbox WHERE status='pending' AND kind='message'").fetchone()
+        pending = c.execute("SELECT COUNT(*) n FROM inbox WHERE status='pending' AND kind='message'").fetchone()
+        oldest = c.execute("SELECT MIN(received_at) oldest FROM inbox WHERE status IN ('pending','processing') AND kind='message'").fetchone()["oldest"]
         processing = c.execute("SELECT COUNT(*) n FROM inbox WHERE status='processing'").fetchone()["n"]
         out_pending = c.execute("SELECT COUNT(*) n FROM outbox WHERE status='pending'").fetchone()["n"]
         out_failed = c.execute("SELECT COUNT(*) n FROM outbox WHERE status='failed'").fetchone()["n"]
         return {
             "inbox_pending": pending["n"],
-            "oldest_pending_age_s": (ts - pending["oldest"]) if pending["oldest"] else None,
+            "oldest_pending_age_s": (ts - oldest) if oldest else None,  # includes in-progress
             "inbox_processing": processing,
             "outbox_pending": out_pending,
             "outbox_failed": out_failed,

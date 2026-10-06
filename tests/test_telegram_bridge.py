@@ -115,3 +115,11 @@ def test_chunking_and_parse():
     p = parse_update({"update_id": 1, "message": {"message_id": 2, "chat": {"id": 5}, "photo": [{"file_id": "s"}, {"file_id": "big"}], "caption": "pic"}})
     assert p["text"] == "pic" and p["attachments"][0]["file_id"] == "big"
     assert parse_update({"update_id": 2, "callback_query": {}}) is None
+
+
+def test_notice_also_fires_for_message_stuck_in_processing(env):
+    api, store, b = env
+    store.add_inbound("telegram", "1", "hi", external_id="1", now=time.time() - 30)
+    store.claim_next()  # worker took it, then died
+    b.check_agent_notice(store)
+    assert store.stats()["outbox_pending"] == 1

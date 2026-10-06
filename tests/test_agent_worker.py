@@ -56,6 +56,49 @@ def test_turn_replies_and_completes(tmp_path):
     assert (tmp_path / "usage.jsonl").exists() and (tmp_path / "stream.jsonl").exists()
 
 
+def test_empty_result_still_replies(tmp_path):
+    store, w, sessions = make(tmp_path)
+
+    class Empty(FakeSession):
+        async def run_turn(self, prompt, on_event):
+            return TurnResult(text="")
+
+    w.session_factory = lambda key: Empty()
+    store.add_inbound("telegram", "1", "hello", external_id="1")
+    asyncio.run(w.process_one())
+    assert "Done" in store.next_outbound("telegram")["text"]
+
+
+def test_stale_result_before_assistant_output_is_ignored(tmp_path):
+    """SdkSession must skip a leading ResultMessage (e.g. finished background task)."""
+    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+    def result(text):
+        return ResultMessage(subtype="success", duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1, session_id="s", result=text, total_cost_usd=0.0, usage={})
+
+    class FakeClient:
+        async def query(self, prompt):
+            pass
+
+        async def receive_messages(self):
+            yield result("stale background output")
+            yield AssistantMessage(content=[TextBlock(text="real answer")], model="m")
+            yield result("real answer")
+
+    store = BridgeStore(tmp_path / "i.db")
+    s = agent_worker.SdkSession("1", store, "sonnet")
+    s._client = FakeClient()
+
+    async def ready():
+        pass
+
+    s.ensure_ready = ready
+    events = []
+    res = asyncio.run(s.run_turn("hi", events.append))
+    assert res.text == "real answer"
+    assert any(e["type"] == "stale_result_ignored" for e in events)
+
+
 def test_idle_returns_false(tmp_path):
     _, w, _ = make(tmp_path)
     assert asyncio.run(w.process_one()) is False

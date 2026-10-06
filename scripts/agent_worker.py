@@ -130,6 +130,9 @@ class SdkSession:
             permission_mode="auto",
             system_prompt={"type": "preset", "preset": "claude_code", "append": CHANNEL_PROMPT},
             resume=resume,
+            # A background task outlives its turn and its completion has nowhere to be
+            # delivered here; make the agent run things in the foreground instead.
+            env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"},
         )
 
     async def ensure_ready(self) -> None:
@@ -159,8 +162,13 @@ class SdkSession:
         await self.ensure_ready()
         await self._client.query(prompt)
         result = TurnResult(text="")
-        async for m in self._client.receive_response():
+        seen_assistant = False
+        # receive_messages (not receive_response): the latter stops at the FIRST result,
+        # which can be a stale one from earlier out-of-band work (e.g. a background task
+        # finishing) and would end this turn unanswered.
+        async for m in self._client.receive_messages():
             if isinstance(m, AssistantMessage):
+                seen_assistant = True
                 for b in m.content:
                     if isinstance(b, TextBlock):
                         on_event({"type": "text", "text": b.text})
@@ -173,9 +181,13 @@ class SdkSession:
                     if isinstance(b, ToolResultBlock):
                         on_event({"type": "tool_result", "is_error": b.is_error, "content": str(b.content)[:2000]})
             elif isinstance(m, ResultMessage):
+                if not seen_assistant:
+                    on_event({"type": "stale_result_ignored", "text": (m.result or "")[:200]})
+                    continue
                 result = TurnResult(text=m.result or "", session_id=m.session_id, cost_usd=m.total_cost_usd, usage=m.usage or {})
                 if m.session_id:
                     self.store.kv_set(f"session_id:{self.key}", m.session_id)
+                break
         return result
 
     async def close(self) -> None:
@@ -246,8 +258,8 @@ class Worker:
             slow_task.cancel()
             self.store.kv_set("current_turn", "")
 
-        if result.text.strip():
-            self._reply(row, result.text)
+        # Never close a message without telling the user something.
+        self._reply(row, result.text if result.text.strip() else "✅ Done (I had nothing further to report).")
         self.store.complete(row["id"])
         _append_jsonl(USAGE_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "session": row["session_key"], "inbox_id": row["id"], "duration_s": round(time.time() - started, 1), "cost_usd": result.cost_usd, "usage": result.usage})
         _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_end", "duration_s": round(time.time() - started, 1)})

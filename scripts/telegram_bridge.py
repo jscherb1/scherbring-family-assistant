@@ -203,7 +203,7 @@ class Bridge:
         hb = float(store.kv_get("worker_heartbeat", "0") or 0)
         worker_down = time.time() - hb > WORKER_STALE_S
         if age >= NOTICE_AFTER_S and worker_down:
-            oldest = store._conn.execute("SELECT id, chat_ref FROM inbox WHERE status='pending' AND kind='message' ORDER BY id LIMIT 1").fetchone()
+            oldest = store._conn.execute("SELECT id, chat_ref FROM inbox WHERE status IN ('pending','processing') AND kind='message' ORDER BY id LIMIT 1").fetchone()
             if oldest and self._notified_for != oldest["id"]:
                 self._notified_for = oldest["id"]
                 store.enqueue_outbound(CHANNEL, oldest["chat_ref"], "⚠️ The agent is restarting. Your message is saved and will be answered as soon as it's back.")
