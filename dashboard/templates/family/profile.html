@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Family Profile</h1>
+  <p class="subtitle">Who's on file, upcoming birthdays and what's still missing. Fact values (allergies, sizes, address) are not shown here.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.people %}
+  <div class="card"><div class="empty-state">No people are on file yet.</div></div>
+{% else %}
+  <div class="grid stats">
+    <section class="card"><h2>People</h2><div class="metric">{{ data.total }}</div>
+      <div class="metric-sub">{% for k, v in data.relationships.items() %}{{ v }} {{ k }}{{ ', ' if not loop.last }}{% endfor %}</div></section>
+    <section class="card"><h2>Birthdays soon</h2><div class="metric">{{ data.within[30] }}</div><div class="metric-sub">in 30 days · {{ data.within[60] }} in 60 · {{ data.within[90] }} in 90</div></section>
+    <section class="card"><h2>No birthday</h2><div class="metric">{{ data.missing_birthday|length }}</div><div class="metric-sub">{{ data.missing_birthday[:4]|join(', ') }}</div></section>
+    <section class="card"><h2>No facts</h2><div class="metric">{{ data.no_facts|length }}</div><div class="metric-sub">{{ data.no_facts[:4]|join(', ') }}</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Upcoming birthdays</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Name</th><th>Relationship</th><th>Next</th><th>In</th><th>Turning</th></tr></thead>
+        <tbody>
+        {% for p in data.upcoming %}
+          <tr><td>{{ p.name }}</td><td>{{ p.relationship or '' }}</td><td>{{ p.next_birthday }}</td>
+            <td>{{ 'today' if p.days_until_birthday == 0 else p.days_until_birthday ~ ' d' }}</td>
+            <td>{{ p.turning if p.turning is not none else '—' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <h2>Directory</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Name</th><th>Relationship</th><th>Birthday</th><th>Facts on file</th></tr></thead>
+        <tbody>
+        {% for p in data.people %}
+          <tr><td>{{ p.name }}</td><td>{{ p.relationship or '' }}</td><td>{{ p.birthday or '—' }}</td>
+            <td>{% if p.fact_keys %}<div class="chips">{% for k in p.fact_keys %}<span class="chip">{{ k }}</span>{% endfor %}</div>{% else %}<span class="muted">none</span>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {% if data.global_fact_keys %}
+    <h2>Household facts</h2>
+    <section class="card"><div class="chips">{% for g in data.global_fact_keys %}<span class="chip">{{ g.key }}</span>{% endfor %}</div></section>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

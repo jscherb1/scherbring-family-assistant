@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dashboard.app import app  # noqa: E402
-from dashboard.data import home, ops, recipes, restarts, schedule  # noqa: E402
+from dashboard.data import family, home, ops, recipes, restarts, schedule  # noqa: E402
 
 
 @pytest.fixture
@@ -44,9 +44,23 @@ def state(tmp_path, monkeypatch):
         "INSERT INTO recipes (id,title,ingredients_json,steps_json,meal_type) VALUES "
         "('r2','Plain Oatmeal','[]','[]','breakfast')")
     seed_home(conn)
+    seed_family(conn)
     conn.commit()
     conn.close()
     return tmp_path
+
+
+def seed_family(conn):
+    ts = "2026-01-01T00:00:00"
+    soon = (datetime.now() + timedelta(days=10)).strftime("%m-%d")
+    conn.execute("INSERT INTO profile_people VALUES ('pp1','Ruth','child','2022-' || ?,NULL,?,?)", (soon, ts, ts))
+    conn.execute("INSERT INTO profile_people VALUES ('pp2','Friend <i>X</i>','friend',NULL,NULL,?,?)", (ts, ts))
+    conn.execute("INSERT INTO profile_people_facts VALUES ('f1','pp1','allergy','SECRET-PEANUT',?)", (ts,))
+    conn.execute("INSERT INTO profile_facts VALUES ('home_address','SECRET-ADDRESS',?)", (ts,))
+    conn.execute("INSERT INTO kid_memories VALUES ('m1',?,?,'exact',?,?,?,'telegram',?,'text',NULL,'synced',NULL)",
+                 (ts, "2026-03-04", json.dumps(["Ruth", "Claire"]), "SECRET-RAW", "SECRET-TEXT", json.dumps(["funny"])))
+    conn.execute("INSERT INTO kid_memories VALUES ('m2',?,?,'exact',?,?,?,'direct',NULL,'text',NULL,'failed',NULL)",
+                 (ts, "2026-03-09", json.dumps(["Claire"]), "x", "y"))
 
 
 def seed_home(conn):
@@ -195,6 +209,7 @@ def client(state):
     "/home", "/home/lawn", "/home/weather",
     "/api/home/maintenance", "/api/home/lawn", "/api/home/weather",
     "/health/system", "/api/system",
+    "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
 ])
 def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
@@ -305,3 +320,33 @@ def test_heartbeat_and_missing_files(state, monkeypatch, tmp_path):
     (state / "scheduler_loop_state.json").write_text(
         json.dumps({"last_tick": (datetime.now() - timedelta(minutes=45)).isoformat()}))
     assert ops.get_heartbeat()["stale"] is True
+
+
+# ---- people & family (summaries only) ----
+
+def test_profile_summary(state):
+    data = family.get_profile()
+    assert data["total"] == 2 and data["upcoming"][0]["name"] == "Ruth"
+    assert data["upcoming"][0]["days_until_birthday"] == 10 and data["upcoming"][0]["turning"] is not None
+    assert data["missing_birthday"] == ["Friend <i>X</i>"] and data["no_facts"] == ["Friend <i>X</i>"]
+    assert [g["key"] for g in data["global_fact_keys"]] == ["home_address"]
+
+
+def test_memories_summary(state):
+    data = family.get_memories()
+    assert data["total"] == 2 and data["per_child"] == {"Ruth": 1, "Claire": 2}
+    assert data["drive"] == {"synced": 1, "failed": 1} and data["tags"] == [("funny", 1)]
+
+
+def test_family_pages_never_leak_sensitive_text(client):
+    for path in ("/family", "/family/memories", "/api/family/profile", "/api/family/memories"):
+        body = client.get(path).text
+        assert "SECRET" not in body, path
+    assert "<i>X</i>" not in client.get("/family").text
+
+
+def test_birthday_formats():
+    from datetime import date
+    assert family._next_birthday("03-01", date(2026, 3, 1)) == (date(2026, 3, 1), None)
+    assert family._next_birthday("2020-02-29", date(2026, 3, 2))[1] == 7
+    assert family._next_birthday("junk", date(2026, 1, 1)) == (None, None)

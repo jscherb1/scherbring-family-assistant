@@ -34,6 +34,15 @@ SECTIONS = [
         ],
     },
     {
+        "key": "family",
+        "label": "People & Family",
+        "href": "/family",
+        "pages": [
+            {"key": "profile", "label": "Profile", "href": "/family"},
+            {"key": "memories", "label": "Kids Memories", "href": "/family/memories"},
+        ],
+    },
+    {
         "key": "meals",
         "label": "Meal Planner",
         "href": "/meals",
