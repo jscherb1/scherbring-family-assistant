@@ -60,7 +60,7 @@ while true; do
     reason="loop-restart"
 
     "${CLAUDE_BIN:-claude}" --debug-file "$DEBUG_LOG" --name "$session_name" \
-        --permission-mode auto \
+        --permission-mode auto --model sonnet \
         --channels plugin:telegram@claude-plugins-official
     exit_code=$?
 

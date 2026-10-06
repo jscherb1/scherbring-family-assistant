@@ -39,6 +39,9 @@ LOOP_STATE_FILE = REPO_ROOT / "state" / "scheduler_loop_state.json"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 DISPATCH_DEBUG_DIR = REPO_ROOT / "state" / "logs" / "scheduler_dispatch_debug"
 TASK_TIMEOUT_SECONDS = 300  # 5 minutes per task
+# Project policy (CLAUDE.md): scheduled AI usage defaults to Sonnet. Pinned here so
+# it does not depend on a per-machine ~/.claude/settings.json.
+MODEL = "sonnet"
 
 # The local `monarch` MCP server is a stdio server spawned fresh per process
 # (Python venv cold start + heavy monarchmoney/gql imports + a live Windows
@@ -280,7 +283,7 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         safe_run_at = run_at.replace(":", "-") or "unknown"
         debug_log = DISPATCH_DEBUG_DIR / f"{task_id or 'unknown'}_{safe_run_at}.log"
         result = subprocess.run(
-            [CLAUDE_EXE, "--print", "--debug-file", str(debug_log), full_prompt],
+            [CLAUDE_EXE, "--print", "--model", MODEL, "--debug-file", str(debug_log), full_prompt],
             capture_output=True,
             text=True,
             encoding="utf-8",
