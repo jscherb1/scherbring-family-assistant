@@ -62,8 +62,6 @@ update it when you finish or add something. Dates are absolute.
     `/mnt/c/...`, so move the backup target first.
 14. **Known limitation:** COROS allows one web session per account, so each automated login signs the user
     out of COROS elsewhere.
-15. **Unmerged work:** the `wsl-port` branch is in pull request #2 (https://github.com/jscherb1/scherbring-family-assistant/pull/2) and is not merged to `main`. Merging
-    is the user's decision.
 
 ## Not started (ideas, from README "Backlog")
 
