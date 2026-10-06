@@ -9,8 +9,11 @@ Type=simple
 WorkingDirectory=@REPO_ROOT@
 EnvironmentFile=-%h/.config/scherbring-assistant/.env
 Environment=PYTHONUNBUFFERED=1
-# TEST phase uses TELEGRAM_TEST_BOT_TOKEN. At cutover: --token-env TELEGRAM_BOT_TOKEN.
-ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/telegram_bridge.py --token-env TELEGRAM_TEST_BOT_TOKEN
+# Which env var holds the bot token. Test phase = the test bot. At cutover set
+# BRIDGE_TOKEN_ENV=TELEGRAM_BOT_TOKEN in ~/.config/scherbring-assistant/.env (the EnvironmentFile above
+# overrides this default).
+Environment=BRIDGE_TOKEN_ENV=TELEGRAM_TEST_BOT_TOKEN
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/telegram_bridge.py --token-env ${BRIDGE_TOKEN_ENV}
 Restart=always
 RestartSec=1
 
