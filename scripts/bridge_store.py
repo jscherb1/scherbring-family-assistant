@@ -65,11 +65,37 @@ CREATE TABLE IF NOT EXISTS kv (
 """
 
 MAX_OUTBOX_ATTEMPTS = 8
+MAX_FOLDED_NOTES = 20
 
 
 def backoff_seconds(attempts: int) -> float:
     """1s, 2s, 4s ... capped at 30s (attempts is the count already made)."""
     return float(min(30, 2 ** max(0, attempts - 1)))
+
+
+def session_key_for(chat_ref: str) -> str:
+    """Session a chat maps to: its own id unless BRIDGE_SESSION_MAP (JSON) says otherwise."""
+    from paths import get_env
+
+    try:
+        mapping = json.loads(get_env("BRIDGE_SESSION_MAP") or "{}")
+    except ValueError:
+        mapping = {}
+    return mapping.get(str(chat_ref), str(chat_ref))
+
+
+def record_context_note(chat_ref: str, text: str, source: str, *, db: Path | str = DEFAULT_DB) -> None:
+    """Make something delivered to the user outside a conversation turn (a scheduled task result)
+    visible to the main session on its next turn. Best effort: never raises."""
+    try:
+        store = BridgeStore(db)
+        try:
+            store.add_inbound(source, str(chat_ref), text[:4000], kind="context_note",
+                              session_key=session_key_for(str(chat_ref)))
+        finally:
+            store.close()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 class BridgeStore:
@@ -182,13 +208,18 @@ class BridgeStore:
                 "UPDATE inbox SET status='processing', attempts=attempts+1, picked_at=? WHERE id=?",
                 (ts, row["id"]),
             )
+            # Notes are 'folded' into this message (picked_at holds the message id) and only become
+            # 'done' when it completes, so a redelivered message gets the same notes again.
+            c.execute(
+                "UPDATE inbox SET status='folded', picked_at=? WHERE status='pending' AND kind='context_note'"
+                " AND session_key=? AND id<?",
+                (row["id"], row["session_key"], row["id"]),
+            )
             note_rows = c.execute(
-                "SELECT id, text, received_at FROM inbox WHERE status='pending' AND kind='context_note'"
-                " AND session_key=? AND id<? ORDER BY id",
-                (row["session_key"], row["id"]),
-            ).fetchall()
-            for n in note_rows:
-                c.execute("UPDATE inbox SET status='done', done_at=? WHERE id=?", (ts, n["id"]))
+                "SELECT text, received_at FROM inbox WHERE status='folded' AND kind='context_note' AND picked_at=?"
+                " ORDER BY id",
+                (row["id"],),
+            ).fetchall()[-MAX_FOLDED_NOTES:]  # older ones stay folded (and are closed on complete) but aren't shown
         out = dict(row)
         out["attempts"] += 1
         out["payload"] = json.loads(out["payload"])
@@ -196,9 +227,11 @@ class BridgeStore:
         return out
 
     def complete(self, inbox_id: int, now: float | None = None) -> None:
+        ts = now if now is not None else time.time()
+        self._conn.execute("UPDATE inbox SET status='done', done_at=? WHERE id=?", (ts, inbox_id))
         self._conn.execute(
-            "UPDATE inbox SET status='done', done_at=? WHERE id=?",
-            (now if now is not None else time.time(), inbox_id),
+            "UPDATE inbox SET status='done', done_at=? WHERE status='folded' AND kind='context_note' AND picked_at=?",
+            (ts, inbox_id),
         )
 
     def requeue(self, inbox_id: int) -> None:

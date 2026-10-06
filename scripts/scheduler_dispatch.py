@@ -34,6 +34,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from bridge_store import record_context_note  # noqa: E402
 from paths import REPO_ROOT, alert_chat_id, find_claude, get_env, telegram_env_path  # noqa: E402
 
 LOOP_STATE_FILE = REPO_ROOT / "state" / "scheduler_loop_state.json"
@@ -312,6 +313,9 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         message = extract_telegram_message(output) if (process_ok and chat_id) else None
         if message:
             delivered = deliver_telegram_message(chat_id, message)
+            if delivered:
+                # So the main session knows what the user was just told and can discuss it.
+                record_context_note(chat_id, f"Scheduled task '{name}' ran and sent you: {message}", "scheduler")
             success = process_ok and delivered
             summary = message[:500] if delivered else f"telegram delivery failed; message was: {message[:400]}"
         else:

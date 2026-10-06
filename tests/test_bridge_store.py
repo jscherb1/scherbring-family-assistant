@@ -148,3 +148,44 @@ def test_health_distinguishes_alive_from_polling():
     s.kv_set("last_poll_ok", "800")
     snap = s.health_snapshot(now=1000.0)
     assert snap["bridge_up"] is True and snap["polling_ok"] is False
+
+
+def test_notes_survive_redelivery_and_close_on_complete():
+    s = make()
+    s.add_inbound("scheduler", "1", "note A", kind="context_note")
+    s.add_inbound("telegram", "1", "q", external_id="1")
+    first = s.claim_next()
+    assert [n["text"] for n in first["notes"]] == ["note A"]
+    s.recover_in_flight()  # worker crashed mid-turn
+    again = s.claim_next()
+    assert [n["text"] for n in again["notes"]] == ["note A"]  # retry still sees the note
+    s.complete(again["id"])
+    s.add_inbound("telegram", "1", "q2", external_id="2")
+    assert s.claim_next()["notes"] == []  # consumed exactly once
+
+
+def test_note_fold_is_capped_but_all_closed():
+    from bridge_store import MAX_FOLDED_NOTES
+
+    s = make()
+    for i in range(MAX_FOLDED_NOTES + 5):
+        s.add_inbound("scheduler", "1", f"n{i}", kind="context_note")
+    s.add_inbound("telegram", "1", "q", external_id="1")
+    row = s.claim_next()
+    assert len(row["notes"]) == MAX_FOLDED_NOTES and row["notes"][-1]["text"] == f"n{MAX_FOLDED_NOTES + 4}"
+    s.complete(row["id"])
+    assert s._conn.execute("SELECT COUNT(*) FROM inbox WHERE kind='context_note' AND status!='done'").fetchone()[0] == 0
+
+
+def test_record_context_note_helper(tmp_path, monkeypatch):
+    from bridge_store import record_context_note
+
+    monkeypatch.setenv("BRIDGE_SESSION_MAP", '{"2": "household"}')
+    db = tmp_path / "i.db"
+    record_context_note("2", "weekly summary", "scheduler", db=db)
+    record_context_note("3", "other", "scheduler", db=db)
+    s = BridgeStore(db)
+    s.add_inbound("telegram", "2", "q", external_id="1", session_key="household")
+    row = s.claim_next("household")
+    assert [n["text"] for n in row["notes"]] == ["weekly summary"]
+    record_context_note("1", "x", "scheduler", db="/nonexistent-dir/x/i.db")  # never raises
