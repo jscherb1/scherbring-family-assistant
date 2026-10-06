@@ -43,6 +43,15 @@ SECTIONS = [
         ],
     },
     {
+        "key": "finance",
+        "label": "Finance",
+        "href": "/finance",
+        "pages": [
+            {"key": "tagging", "label": "Tagging", "href": "/finance"},
+            {"key": "reports", "label": "Reports & Planning", "href": "/finance/reports"},
+        ],
+    },
+    {
         "key": "hyvee",
         "label": "Hy-Vee",
         "href": "/hyvee",

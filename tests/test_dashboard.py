@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dashboard.app import app  # noqa: E402
-from dashboard.data import family, home, ops, recipes, restarts, schedule, shopping_fitness  # noqa: E402
+from dashboard.data import family, finance, home, ops, recipes, restarts, schedule, shopping_fitness  # noqa: E402
 
 
 @pytest.fixture
@@ -46,9 +46,31 @@ def state(tmp_path, monkeypatch):
     seed_home(conn)
     seed_family(conn)
     seed_shopping_fitness(conn)
+    seed_finance(conn)
     conn.commit()
     conn.close()
     return tmp_path
+
+
+def seed_finance(conn):
+    ts = "2026-10-01T12:00:00"
+    rows = (("tagged_auto", "WHO:Justin", "confirmed", "SECRET-MERCHANT", 9876.54),
+            ("tagged_confirmed", "Kids", "corrected", "SECRET-MERCHANT", 12.0),
+            ("skipped_ambiguous", None, None, "SECRET-MERCHANT", 5.0))
+    for i, (action, tag, decision, merchant, amount) in enumerate(rows):
+        conn.execute("INSERT INTO finance_tag_log VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)",
+                     (f"tl{i}", ts, f"tx{i}", merchant, "a1", amount, "2026-09-30", tag, 0.9, action, decision))
+    conn.execute("INSERT INTO finance_who_map VALUES ('costco','merchant','Family',0.9,2,0,'inferred',?)", (ts,))
+    conn.execute("INSERT INTO finance_who_map VALUES ('acct','account','Kids',0.3,0,0,'inferred',?)", (ts,))
+    conn.execute("INSERT INTO finance_rule_proposals VALUES ('rp1',?,'Target <i>x</i>','Family',NULL,'proposed',NULL,NULL)", (ts,))
+    conn.execute("INSERT INTO finance_report_log VALUES ('fr1',?,'weekly','2026-09-21','2026-09-27','d1',"
+                 "'https://drive.example/x','SECRET-BRIEF $1,234')", (ts,))
+    conn.execute("INSERT INTO finance_report_log VALUES ('fr2',?,'monthly','2026-09-01','2026-09-30','d2','javascript:alert(1)',NULL)", (ts,))
+    conn.execute("INSERT INTO finance_config VALUES ('advisor_profile',?)",
+                 (json.dumps({"filing_status": "SECRET-MFJ", "risk_tolerance": "SECRET-HIGH"}),))
+    conn.execute("INSERT INTO finance_config VALUES ('retirement_assumptions',?)",
+                 (json.dumps({"retirement_age": 62, "retirement_spend": 987654, "scenarios": [{"name": "a"}]}),))
+    conn.execute("INSERT INTO agent_results (agent,task,created_at,summary) VALUES ('retirement','t',?,'s')", ("2026-10-02T00:00:00Z",))
 
 
 def seed_shopping_fitness(conn):
@@ -229,6 +251,7 @@ def client(state):
     "/health/system", "/api/system",
     "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
+    "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
 ])
 def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
@@ -392,3 +415,34 @@ def test_shopping_fitness_escaped_and_missing(client, tmp_path, monkeypatch):
     monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path / "none"))
     assert "error" in shopping_fitness.get_hyvee() and "error" in shopping_fitness.get_fitness()
     assert client.get("/fitness").status_code == 200
+
+
+# ---- finance (summaries only) ----
+
+def test_tagging_summary(state):
+    data = finance.get_tagging()
+    assert data["total"] == 3 and data["decisions"]["pending"] == 1
+    assert data["correction_rate"] == 50
+    assert data["who_map_total"] == 2 and data["who_map_low"] == 1 and data["proposals_pending"] == 1
+
+
+def test_reports_summary(state):
+    data = finance.get_reports()
+    assert data["advisor_filled"] == ["filing_status", "risk_tolerance"]
+    assert data["retirement"] == {"retirement_age": 62} and data["retirement_scenarios"] == 1
+    assert set(data["last_by_period"]) == {"weekly", "monthly"} and "retirement" in data["last_run"]
+
+
+def test_finance_pages_never_leak_sensitive_values(client):
+    for path in ("/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports"):
+        body = client.get(path).text
+        for secret in ("SECRET", "9876", "987654", "1,234"):
+            assert secret not in body, (path, secret)
+    page = client.get("/finance/reports").text
+    assert "https://drive.example/x" in page and "javascript:alert" not in page
+    assert "<i>x</i>" not in client.get("/finance").text
+
+
+def test_finance_missing_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path))
+    assert "error" in finance.get_tagging() and "error" in finance.get_reports()
