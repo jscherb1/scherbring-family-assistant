@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Scheduled Tasks</h1>
+  <p class="subtitle">Recurring tasks the orchestrator runs on a cron schedule. Times are server-local.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.tasks %}
+  <div class="card"><div class="empty-state">No scheduled tasks.</div></div>
+{% else %}
+  <div class="rows">
+    <div class="row-head schedule-cols" aria-hidden="true">
+      <span>Task</span><span>Schedule</span><span>Next run</span><span>Last run</span><span>7 days</span>
+    </div>
+    {% for t in data.tasks %}
+    <details class="row">
+      <summary class="row-summary schedule-cols">
+        <span class="cell cell-main" data-label="Task">
+          {{ t.name }}
+          {% if not t.enabled %}<span class="pill pill-muted">paused</span>{% endif %}
+        </span>
+        <span class="cell" data-label="Schedule">
+          {{ t.schedule }}
+          {% if t.schedule != t.cron %}<span class="muted code">{{ t.cron }}</span>{% endif %}
+        </span>
+        <span class="cell" data-label="Next run">{{ t.next_run|fmt_dt("—") if t.enabled else "—" }}</span>
+        <span class="cell" data-label="Last run">
+          {% if t.last_status %}
+            <span class="pill {{ t.last_status|status_pill }}">{{ t.last_status }}</span>
+            <span class="muted">{{ t.last_run_at|fmt_dt }}</span>
+          {% else %}<span class="muted">never run</span>{% endif %}
+        </span>
+        <span class="cell" data-label="7 days">
+          <span><span class="ok-count">{{ t.ok_7d }} ok</span> ·
+            <span class="{{ 'fail-count' if t.fail_7d else 'muted' }}">{{ t.fail_7d }} failed</span></span>
+        </span>
+      </summary>
+      <div class="row-body">
+        <h3>What it does</h3>
+        <pre class="prompt">{{ t.prompt }}</pre>
+        <h3>Recent runs</h3>
+        {% if t.recent_runs %}
+        <ul class="run-list">
+          {% for r in t.recent_runs %}
+          <li>
+            <div><span class="pill {{ r.status|status_pill }}">{{ r.status }}</span>
+              <span class="muted">{{ r.run_at|fmt_dt }}</span></div>
+            {% if r.summary %}<div class="run-summary">{{ r.summary|truncate(280) }}</div>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}<div class="empty-state">No runs recorded yet.</div>{% endif %}
+        <p class="muted">Last dispatched: {{ t.last_dispatched_at|fmt_dt }}</p>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  <p class="footnote">“ok” means the run process exited successfully; it doesn’t confirm the Telegram message was delivered.</p>
+{% endif %}
+{% endblock %}

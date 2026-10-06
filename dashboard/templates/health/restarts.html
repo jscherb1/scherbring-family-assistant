@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Restart History</h1>
+  <p class="subtitle">Every orchestrator launch, with the cause inferred from exit codes and watchdog logs.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% set s = data.summary %}
+  <div class="grid stats">
+    <section class="card"><h2>Last 24h</h2><div class="metric">{{ s.last_24h }}</div><div class="metric-sub">{{ s.last_7d }} in 7 days</div></section>
+    <section class="card"><h2>Total launches</h2><div class="metric">{{ s.total }}</div><div class="metric-sub">{{ s.wrapper_starts }} wrapper starts · {{ s.loop_restarts }} loop restarts</div></section>
+    <section class="card"><h2>Watchdog-caused</h2><div class="metric">{{ s.watchdog_caused }}</div><div class="metric-sub">of {{ s.total }} launches</div></section>
+  </div>
+
+  <div class="rows">
+    <div class="row-head restart-cols" aria-hidden="true">
+      <span>Restarted</span><span>Likely cause</span><span>Previous exit</span><span>Downtime</span>
+    </div>
+    {% for e in data.events %}
+    <details class="row">
+      <summary class="row-summary restart-cols">
+        <span class="cell cell-main" data-label="Restarted">{{ e.ts|fmt_dt }}</span>
+        <span class="cell" data-label="Likely cause">
+          <span class="pill {{ 'pill-warn' if e.cause_kind in ('watchdog','crash','killed') else 'pill-muted' }}">{{ e.launch_type }}</span>
+          {{ e.cause }}
+        </span>
+        <span class="cell" data-label="Previous exit">
+          {% if e.exit_code is not none %}code {{ e.exit_code }}{% if e.exit_code_note %} <span class="muted">({{ e.exit_code_note }})</span>{% endif %}
+          {% else %}<span class="muted">—</span>{% endif %}
+        </span>
+        <span class="cell" data-label="Downtime">{{ e.downtime_seconds|fmt_duration }}</span>
+      </summary>
+      <div class="row-body">
+        <p class="muted">The cause is inferred by matching timestamps across the launch log, exit log and watchdog logs; only the launch type is recorded directly.</p>
+        <dl class="detail-list">
+          <dt>Session</dt><dd class="code">{{ e.session }}</dd>
+          {% if e.previous_session %}<dt>Previous session</dt><dd class="code">{{ e.previous_session }}</dd>{% endif %}
+        </dl>
+        <h3>Launch record</h3>
+        <pre class="prompt">{{ e.raw_launch }}</pre>
+        {% if e.raw_exit %}<h3>Exit record</h3><pre class="prompt">{{ e.raw_exit }}</pre>{% endif %}
+        {% if e.watchdog_lines %}
+          <h3>Watchdog log ({{ e.watchdog_log }})</h3>
+          <pre class="prompt">{{ e.watchdog_lines|join("\n") }}</pre>
+        {% elif e.cause_kind != 'wrapper' %}
+          <p class="empty-state">No watchdog activity found near this exit.</p>
+        {% endif %}
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}
