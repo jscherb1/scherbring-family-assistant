@@ -29,8 +29,8 @@ update it when you finish or add something. Dates are absolute.
    and PR refs.
 7. **Delete the leftovers that still contain pre-scrub data** once the above is settled:
    `~/backups/scherbring-mirror-20261005.git` (pre-scrub mirror: it still holds the personal data that
-   was scrubbed), `~/work/scrub`, `~/.config/scherbring-assistant/.env.bak`, `/mnt/c/Users/jsche/.wslconfig.bak`.
-8. **Check the Windows backup folder is covered.** Backups land in `C:\Users\jsche\Backups\assistant`.
+   was scrubbed), `~/work/scrub`, `~/.config/scherbring-assistant/.env.bak`, `the .wslconfig.bak next to your Windows .wslconfig`.
+8. **Check the Windows backup folder is covered.** Backups land in `C:\Users\<you>\Backups\assistant`.
    Make sure File History or OneDrive includes it, and consider a periodic `wsl --export` of the distro.
 
 ## Agent follow-ups

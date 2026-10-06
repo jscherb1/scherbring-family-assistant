@@ -115,8 +115,11 @@ Cron times are local time, so `timedatectl` must show America/Chicago.
 ## Backups
 
 `assistant-backup.timer` runs `scripts/backup.py` daily at 03:15 into
-`/mnt/c/Users/jsche/Backups/assistant` (set by `ASSISTANT_BACKUP_DIR` in
-`systemd/assistant-backup.service`). Each run writes two files:
+`/mnt/c/Users/<you>/Backups/assistant`, a Windows-side folder so File History or OneDrive can cover it.
+The folder comes from `ASSISTANT_BACKUP_DIR`, which is set in a local systemd drop-in that is not in the
+repo (`~/.config/systemd/user/assistant-backup.service.d/override.conf`, with
+`[Service]` and `Environment=ASSISTANT_BACKUP_DIR=...`). Without it the script uses `~/backups/assistant`.
+On a new machine, recreate the drop-in, then `systemctl --user daemon-reload`. Each run writes two files:
 
 - `data-YYYYMMDD-HHMMSS.tar.gz`: a consistent SQLite snapshot of `state/agent_results.db`, the Claude
   memory notes, `state/credential_check.json`, `state/schema.sql`, `scripts/scheduler.config.json`. **Not encrypted.**
@@ -137,7 +140,7 @@ next backup uses it; older secrets archives stay unreadable.
 ### Check a backup (restore drill)
 
 ```
-ASSISTANT_BACKUP_DIR=/mnt/c/Users/jsche/Backups/assistant python scripts/backup.py verify
+ASSISTANT_BACKUP_DIR=/mnt/c/Users/<you>/Backups/assistant python scripts/backup.py verify
 ```
 
 It unpacks the newest data archive into a temp folder, runs SQLite `integrity_check`, and counts tables,
