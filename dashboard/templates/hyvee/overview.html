@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Hy-Vee Cart Builder</h1>
+  <p class="subtitle">Purchase history, learned item preferences and recent cart builds. Carts are never checked out automatically.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% set h = data.history %}
+  <div class="grid stats">
+    <section class="card"><h2>Purchase history</h2><div class="metric">{{ h.orders or 0 }}</div><div class="metric-sub">orders · {{ h.lines or 0 }} line items</div></section>
+    <section class="card"><h2>Last synced</h2><div class="metric" style="font-size:22px">{{ h.last_sync|fmt_dt }}</div><div class="metric-sub">last order {{ h.last_order or '—' }}</div></section>
+    <section class="card"><h2>Preferences</h2><div class="metric">{{ data.prefs|length }}</div><div class="metric-sub">{{ data.auto_prefs }} auto-add · {{ data.low_prefs }} ask first</div></section>
+    <section class="card"><h2>Suggestions accepted</h2><div class="metric">{{ (data.acceptance_rate ~ '%') if data.acceptance_rate is not none else '—' }}</div><div class="metric-sub">{% for k, v in data.feedback.items() %}{{ v }} {{ k }}{{ ', ' if not loop.last }}{% else %}no feedback yet{% endfor %}</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Recent cart builds</h2>
+    <section class="card card-table">
+      {% if data.runs %}
+      <table class="tbl">
+        <thead><tr><th>When</th><th class="num">Items</th><th class="num">Auto</th><th class="num">Asked</th><th>Verified</th><th>Summary</th></tr></thead>
+        <tbody>
+        {% for r in data.runs %}
+          <tr><td>{{ r.ts|fmt_dt }}</td><td class="num">{{ r.item_count }}</td><td class="num">{{ r.auto }}</td><td class="num">{{ r.flagged }}</td>
+            <td><span class="pill {{ 'pill-ok' if r.cart_verified else 'pill-muted' }}">{{ 'yes' if r.cart_verified else 'no' }}</span></td><td>{{ r.summary or '' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No carts have been built yet.</div>{% endif %}
+    </section>
+
+    <h2>Most-bought items</h2>
+    <section class="card card-table">
+      {% if data.top_items %}
+      <table class="tbl">
+        <thead><tr><th>Product</th><th class="num">Times</th><th>Last bought</th></tr></thead>
+        <tbody>{% for t in data.top_items %}<tr><td>{{ t.product_name }}</td><td class="num">{{ t.times }}</td><td>{{ t.last_order }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">No purchase history synced.</div>{% endif %}
+    </section>
+
+    <h2>Learned preferences</h2>
+    <section class="card card-table">
+      {% if data.prefs %}
+      <table class="tbl">
+        <thead><tr><th>Item</th><th>Product</th><th class="num">Confidence</th><th>Source</th><th class="num">✓ / ✗</th></tr></thead>
+        <tbody>
+        {% for p in data.prefs %}
+          <tr><td>{{ p.item }}</td><td>{{ p.product_name or '' }}{% if p.size %} <span class="muted">{{ p.size }}</span>{% endif %}</td>
+            <td class="num"><span class="pill {{ 'pill-ok' if p.confidence >= data.threshold else 'pill-muted' }}">{{ '%.0f'|format(p.confidence * 100) }}%</span></td>
+            <td>{{ p.source }}</td><td class="num">{{ p.times_confirmed }} / {{ p.times_rejected }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No preferences learned yet.</div>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Reports &amp; Planning</h1>
+  <p class="subtitle">Generated spending reports, advisor-profile completeness and retirement-model settings. Figures and profile values aren't shown here.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <div class="grid stats">
+    {% for period in ('weekly', 'monthly', 'annual') %}
+      {% set r = data.last_by_period.get(period) %}
+      <section class="card"><h2>Latest {{ period }}</h2>
+        {% if r %}<div class="metric" style="font-size:22px">{{ r.range_end }}</div><div class="metric-sub">covers {{ r.range_start }} → {{ r.range_end }}</div>
+        {% else %}<div class="metric">—</div><div class="metric-sub">none generated</div>{% endif %}
+      </section>
+    {% endfor %}
+    <section class="card"><h2>Advisor profile</h2><div class="metric">{{ data.advisor_filled|length }} / {{ data.advisor_filled|length + data.advisor_missing|length }}</div><div class="metric-sub">fields filled in</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Report history</h2>
+    <section class="card card-table">
+      {% if data.reports %}
+      <table class="tbl">
+        <thead><tr><th>Generated</th><th>Period</th><th>Covers</th><th>Report</th></tr></thead>
+        <tbody>{% for r in data.reports %}<tr><td>{{ r.created_at|fmt_dt }}</td><td>{{ r.period }}</td><td>{{ r.range_start }} → {{ r.range_end }}</td>
+          <td>{% if r.drive_url and r.drive_url.startswith('https://') %}<a href="{{ r.drive_url }}" rel="noopener noreferrer" target="_blank">Open in Drive</a>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">No reports have been generated.</div>{% endif %}
+    </section>
+
+    <h2>Advisor profile completeness</h2>
+    <section class="card">
+      <div class="chips">
+        {% for f in data.advisor_filled %}<span class="chip">✓ {{ f|replace('_', ' ') }}</span>{% endfor %}
+        {% for f in data.advisor_missing %}<span class="chip muted">○ {{ f|replace('_', ' ') }}</span>{% endfor %}
+      </div>
+      <p class="footnote">Missing fields are what the advisor will ask about when they matter.</p>
+    </section>
+
+    <h2>Retirement model</h2>
+    <section class="card">
+      {% if data.retirement %}
+      <dl class="detail-list">
+        {% for k, v in data.retirement.items() %}<dt>{{ k|replace('_', ' ') }}</dt><dd>{{ v }}</dd>{% endfor %}
+        <dt>what-if scenarios</dt><dd>{{ data.retirement_scenarios }}</dd>
+      </dl>
+      {% else %}<div class="empty-state">No retirement assumptions saved yet.</div>{% endif %}
+      {% if data.last_run %}<p class="footnote">Last run:
+        {% for a, t in data.last_run.items() %}{{ a }} {{ t|fmt_dt }}{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

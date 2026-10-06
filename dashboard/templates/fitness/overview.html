@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Fitness Plan</h1>
+  <p class="subtitle">The planned week and whether each workout reached COROS. Planned workouts only; completed-workout tracking isn't automated yet.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <div class="grid stats">
+    <section class="card"><h2>{{ 'This week' if data.is_current_week else 'Latest plan' }}</h2><div class="metric">{{ data.week|length }}</div><div class="metric-sub">workouts · week of {{ data.week_start }}</div></section>
+    <section class="card"><h2>Needs attention</h2><div class="metric {{ 'fail-count' if data.needs_attention }}">{{ data.needs_attention }}</div><div class="metric-sub">failed or manual COROS steps</div></section>
+    <section class="card"><h2>COROS library</h2><div class="metric">{{ data.library_total }}</div><div class="metric-sub">workouts · synced {{ data.last_sync|fmt_dt }}</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Week of {{ data.week_start }}</h2>
+    <section class="card card-table">
+      {% if data.week %}
+      <table class="tbl">
+        <thead><tr><th>Day</th><th>Time</th><th>Type</th><th>Workout</th><th>COROS</th></tr></thead>
+        <tbody>
+        {% for w in data.week %}
+          <tr><td>{{ w.day_of_week }}</td><td>{{ w.planned_time or '' }}</td>
+            <td>{{ w.workout_type }}{% if w.subtype %} <span class="muted">{{ w.subtype|replace('_', ' ') }}</span>{% endif %}</td>
+            <td>{{ w.workout_name or ('custom' if w.is_custom else '—') }}</td>
+            <td><span class="pill {{ w.coros_status|status_pill }}">{{ w.coros_status|replace('_', ' ') }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No workouts have been planned yet.</div>{% endif %}
+    </section>
+
+    {% if data.weeks %}
+    <h2>Recent weeks</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Week of</th><th class="num">Planned</th><th class="num">Custom</th><th class="num">Needs attention</th></tr></thead>
+        <tbody>{% for w in data.weeks %}<tr><td>{{ w.week_start_date }}</td><td class="num">{{ w.planned }}</td><td class="num">{{ w.custom or 0 }}</td><td class="num">{{ w.needs_attention or 0 }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    {% if data.library %}
+    <h2>Library by type</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Type</th><th class="num">Workouts</th></tr></thead>
+        <tbody>{% for l in data.library %}<tr><td>{{ l.workout_type }}</td><td class="num">{{ l.n }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

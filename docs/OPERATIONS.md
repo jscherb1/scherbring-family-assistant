@@ -16,7 +16,7 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
 | `assistant-credential-check.timer` | daily 09:30: warn before Hy-Vee, Drive, Monarch logins expire |
 | `assistant-backup.timer` | daily 03:15: back up the database, memory notes and secrets |
-| `assistant-dashboard.service` | optional web dashboard (`dashboard/README.md`): health, scheduled tasks, restart history, recipes. Binds `DASHBOARD_HOST` (127.0.0.1 unless a drop-in overrides it) |
+| `assistant-dashboard.service` | optional web dashboard (`dashboard/README.md`): health, scheduled tasks, restart history, logins/backups, home & yard, family, finance, Hy-Vee, fitness, meals, activity (all view-only). Binds `DASHBOARD_HOST` (127.0.0.1 unless a drop-in overrides it) |
 
 ## Is it healthy?
 

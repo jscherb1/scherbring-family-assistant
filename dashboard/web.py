@@ -20,7 +20,48 @@ SECTIONS = [
             {"key": "overview", "label": "Overview", "href": "/health"},
             {"key": "schedule", "label": "Scheduled Tasks", "href": "/health/schedule"},
             {"key": "restarts", "label": "Restart History", "href": "/health/restarts"},
+            {"key": "system", "label": "Logins & Backups", "href": "/health/system"},
         ],
+    },
+    {
+        "key": "home",
+        "label": "Home & Yard",
+        "href": "/home",
+        "pages": [
+            {"key": "maintenance", "label": "Maintenance", "href": "/home"},
+            {"key": "lawn", "label": "Lawn & Garden", "href": "/home/lawn"},
+            {"key": "weather", "label": "Weather Alerts", "href": "/home/weather"},
+        ],
+    },
+    {
+        "key": "family",
+        "label": "People & Family",
+        "href": "/family",
+        "pages": [
+            {"key": "profile", "label": "Profile", "href": "/family"},
+            {"key": "memories", "label": "Kids Memories", "href": "/family/memories"},
+        ],
+    },
+    {
+        "key": "finance",
+        "label": "Finance",
+        "href": "/finance",
+        "pages": [
+            {"key": "tagging", "label": "Tagging", "href": "/finance"},
+            {"key": "reports", "label": "Reports & Planning", "href": "/finance/reports"},
+        ],
+    },
+    {
+        "key": "hyvee",
+        "label": "Hy-Vee",
+        "href": "/hyvee",
+        "pages": [{"key": "overview", "label": "Overview", "href": "/hyvee"}],
+    },
+    {
+        "key": "fitness",
+        "label": "Fitness",
+        "href": "/fitness",
+        "pages": [{"key": "overview", "label": "Overview", "href": "/fitness"}],
     },
     {
         "key": "meals",
@@ -28,7 +69,14 @@ SECTIONS = [
         "href": "/meals",
         "pages": [
             {"key": "recipes", "label": "Recipes", "href": "/meals"},
+            {"key": "plan", "label": "Menu & Insights", "href": "/meals/plan"},
         ],
+    },
+    {
+        "key": "activity",
+        "label": "Activity",
+        "href": "/activity",
+        "pages": [{"key": "feed", "label": "Agent Activity", "href": "/activity"}],
     },
 ]
 
@@ -82,8 +130,20 @@ def fmt_minutes(minutes):
 
 
 def status_pill(status):
-    return {"ok": "pill-ok", "failed": "pill-warn", "dispatch_failed": "pill-warn"}.get(
-        status, "pill-muted")
+    return {
+        "ok": "pill-ok", "done": "pill-ok", "synced": "pill-ok", "created": "pill-ok",
+        "failed": "pill-warn", "pending": "pill-muted", "dispatch_failed": "pill-warn", "overdue": "pill-warn",
+        "missed": "pill-warn", "manual_needed": "pill-warn", "expired": "pill-warn",
+        "active": "pill-warn", "warn": "pill-warn",
+    }.get(status, "pill-muted")
+
+
+def fmt_bytes(n):
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
 
 
 def stars(rating):
@@ -93,7 +153,7 @@ def stars(rating):
 
 templates.env.filters.update(
     fmt_dt=fmt_dt, fmt_duration=fmt_duration, fmt_minutes=fmt_minutes,
-    status_pill=status_pill, stars=stars,
+    status_pill=status_pill, stars=stars, fmt_bytes=fmt_bytes,
 )
 templates.env.globals["APP_NAME"] = APP_NAME
 

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Transaction Tagging</h1>
+  <p class="subtitle">How the WHO tagging is going. Amounts, balances and merchants on individual transactions aren't shown here.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% set a = data.actions %}
+  <div class="grid stats">
+    <section class="card"><h2>Transactions handled</h2><div class="metric">{{ data.total }}</div>
+      <div class="metric-sub">{{ a.get('tagged_auto', 0) }} auto · {{ a.get('tagged_confirmed', 0) }} confirmed · {{ a.get('skipped_ambiguous', 0) }} skipped</div></section>
+    <section class="card"><h2>Awaiting decision</h2><div class="metric">{{ data.decisions.get('pending', 0) }}</div><div class="metric-sub">no user decision recorded</div></section>
+    <section class="card"><h2>Corrected</h2><div class="metric">{{ (data.correction_rate ~ '%') if data.correction_rate is not none else '—' }}</div><div class="metric-sub">of decided suggestions</div></section>
+    <section class="card"><h2>Rule proposals</h2><div class="metric {{ 'fail-count' if data.proposals_pending }}">{{ data.proposals_pending }}</div><div class="metric-sub">awaiting approval</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Tags applied</h2>
+    <section class="card card-table">
+      {% if data.by_tag %}
+      <table class="tbl">
+        <thead><tr><th>WHO tag</th><th class="num">Transactions</th></tr></thead>
+        <tbody>{% for t in data.by_tag %}<tr><td>{{ t.tag }}</td><td class="num">{{ t.n }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">Nothing has been tagged yet.</div>{% endif %}
+    </section>
+
+    <h2>Learned mapping <span class="muted">({{ data.who_map_total }} entries, {{ data.who_map_low }} under {{ (data.low_threshold * 100)|int }}% confidence)</span></h2>
+    <section class="card card-table">
+      {% if data.who_map %}
+      <table class="tbl">
+        <thead><tr><th>WHO tag</th><th>Signal</th><th class="num">Entries</th><th class="num">Low confidence</th></tr></thead>
+        <tbody>{% for w in data.who_map %}<tr><td>{{ w.tag }}</td><td>{{ w.signal_type }}</td><td class="num">{{ w.n }}</td><td class="num">{{ w.low or 0 }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">No mappings learned yet.</div>{% endif %}
+    </section>
+
+    <h2>Auto-tagging rule proposals</h2>
+    <section class="card card-table">
+      {% if data.proposals %}
+      <table class="tbl">
+        <thead><tr><th>Proposed</th><th>Merchant</th><th>Tag</th><th>Status</th></tr></thead>
+        <tbody>{% for p in data.proposals %}<tr><td>{{ p.created_at|fmt_dt }}</td><td>{{ p.merchant_name }}</td><td>{{ p.who_tag_name }}</td>
+          <td><span class="pill {{ 'pill-warn' if p.status == 'proposed' else 'pill-ok' if p.status == 'created' else 'pill-muted' }}">{{ p.status }}</span></td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">No rule proposals yet.</div>{% endif %}
+    </section>
+
+    {% if data.daily %}
+    <h2>Activity by day</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Day</th><th class="num">Transactions</th></tr></thead>
+        <tbody>{% for d in data.daily %}<tr><td>{{ d.day }}</td><td class="num">{{ d.n }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

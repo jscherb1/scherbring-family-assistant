@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Menu &amp; Insights</h1>
+  <p class="subtitle">What's planned, what's been cooked lately and which recipes have gone stale.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <div class="grid stats">
+    <section class="card"><h2>Planned meals</h2><div class="metric">{{ data.menu|length }}</div><div class="metric-sub">from today on</div></section>
+    <section class="card"><h2>Recipes</h2><div class="metric">{{ data.recipe_count }}</div><div class="metric-sub">{{ data.rated_count }} rated{% if data.avg_rating %} · avg {{ data.avg_rating }}★{% endif %}</div></section>
+    <section class="card"><h2>Gone stale</h2><div class="metric">{{ data.stale_total }}</div><div class="metric-sub">not cooked in {{ data.stale_days }}+ days (or never)</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Upcoming menu</h2>
+    <section class="card card-table">
+      {% if data.menu %}
+      <table class="tbl">
+        <thead><tr><th>Date</th><th>Meal</th><th>Planned</th></tr></thead>
+        <tbody>{% for m in data.menu %}<tr><td>{{ m.date }}</td>
+          <td>{% if m.recipe_known %}<a href="/meals/{{ m.recipe_id|urlencode }}">{{ m.title }}</a>{% else %}{{ m.title }}{% endif %}</td>
+          <td>{{ m.planned_on|fmt_dt }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">Nothing is planned. Ask the meal planner for next week's dinners.</div>{% endif %}
+    </section>
+
+    <h2>Recently cooked</h2>
+    <section class="card card-table">
+      {% if data.recently_cooked %}
+      <table class="tbl">
+        <thead><tr><th>Recipe</th><th>Rating</th><th>Last cooked</th></tr></thead>
+        <tbody>{% for r in data.recently_cooked %}<tr><td><a href="/meals/{{ r.id|urlencode }}">{{ r.title }}</a></td>
+          <td>{{ r.rating|stars if r.rating else '—' }}</td><td>{{ r.last_cooked_at }} <span class="muted">({{ r.days_since_cooked }} d ago)</span></td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">No cooking history recorded.</div>{% endif %}
+    </section>
+
+    {% if data.stale %}
+    <h2>Worth revisiting</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Recipe</th><th>Type</th><th>Last cooked</th></tr></thead>
+        <tbody>{% for r in data.stale %}<tr><td><a href="/meals/{{ r.id|urlencode }}">{{ r.title }}</a></td><td>{{ r.meal_type or '' }}</td>
+          <td>{% if r.days_since_cooked is none %}<span class="muted">never</span>{% else %}{{ r.days_since_cooked }} d ago{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <h2>Collection</h2>
+    <section class="card">
+      <p><strong>By meal:</strong> {% for k, v in data.by_meal_type %}{{ k }} {{ v }}{{ ' · ' if not loop.last }}{% endfor %}</p>
+      <p><strong>By protein:</strong> {% for k, v in data.by_protein %}{{ k }} {{ v }}{{ ' · ' if not loop.last }}{% endfor %}</p>
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

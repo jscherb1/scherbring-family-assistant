@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Kids Memories</h1>
+  <p class="subtitle">How many memories have been captured and whether they're backed up. The memories themselves aren't shown here.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.total %}
+  <div class="card"><div class="empty-state">No memories have been saved yet.</div></div>
+{% else %}
+  {% set pending = (data.drive.get('pending', 0) + data.drive.get('failed', 0)) %}
+  <div class="grid stats">
+    <section class="card"><h2>Memories</h2><div class="metric">{{ data.total }}</div>
+      <div class="metric-sub">{% for k, v in data.per_child.items() %}{{ v }} {{ k }}{{ ', ' if not loop.last }}{% endfor %}</div></section>
+    <section class="card"><h2>Last logged</h2><div class="metric">{{ data.days_since_last }} d</div><div class="metric-sub">ago · {{ data.last_logged }}</div></section>
+    <section class="card"><h2>Drive sync</h2><div class="metric {{ 'fail-count' if data.drive.get('failed') }}">{{ data.drive.get('synced', 0) }} / {{ data.total }}</div>
+      <div class="metric-sub">{{ data.drive.get('pending', 0) }} pending · {{ data.drive.get('failed', 0) }} failed</div></section>
+    <section class="card"><h2>On this day</h2><div class="metric">{{ data.on_this_day }}</div><div class="metric-sub">from earlier years</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>By month</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Month</th><th class="num">Memories</th></tr></thead>
+        <tbody>{% for m, n in data.per_month %}<tr><td>{{ m }}</td><td class="num">{{ n }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+
+    {% if data.tags %}
+    <h2>Tags</h2>
+    <section class="card"><div class="chips">{% for t, n in data.tags %}<span class="chip">{{ t }} · {{ n }}</span>{% endfor %}</div></section>
+    {% endif %}
+
+    <h2>Sources</h2>
+    <section class="card">
+      {% for k, v in data.sources.items() %}{{ k }}: {{ v }}{{ ' · ' if not loop.last }}{% endfor %}
+      {% if data.triggers %}<p class="footnote">Learned trigger phrases: {% for k, v in data.triggers.items() %}{{ v }} {{ k|replace('_', ' ') }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}
