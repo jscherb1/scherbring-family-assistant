@@ -1,0 +1,11 @@
+[Unit]
+Description=Scherbring assistant daily backup (database, memory notes, encrypted secrets)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Windows-side folder, so File History / OneDrive can cover it. Change if you move it.
+Environment=ASSISTANT_BACKUP_DIR=/mnt/c/Users/jsche/Backups/assistant
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/backup.py
+TimeoutStartSec=300

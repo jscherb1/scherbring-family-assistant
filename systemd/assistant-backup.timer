@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily backup of the assistant's state
+
+[Timer]
+# Local time (America/Chicago on this machine).
+OnCalendar=*-*-* 03:15:00
+# If the machine was off at 03:15, run at the next start.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
