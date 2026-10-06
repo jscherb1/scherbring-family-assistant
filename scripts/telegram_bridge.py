@@ -45,6 +45,7 @@ MAX_CHARS = 4000
 POLL_TIMEOUT = 25  # long-poll seconds
 WORKER_STALE_S = 15  # worker heartbeat older than this = "agent restarting"
 NOTICE_AFTER_S = 10  # unanswered this long + stale worker -> notice
+POLL_ALERT_AFTER_S = 60  # polling failing this long -> tell the user (sending still works)
 ATTACH_DIR = REPO_ROOT / "state" / "attachments"
 
 
@@ -132,6 +133,8 @@ class Bridge:
         self.session_map = session_map or {}
         self.stop = threading.Event()
         self._notified_for: int | None = None  # inbox id we already sent the restart notice for
+        self._poll_fail_since: float | None = None
+        self._poll_alerted = False
 
     # ---- inbound ----
     def handle_update(self, store: BridgeStore, update: dict) -> None:
@@ -219,6 +222,26 @@ class Bridge:
             lines.append(f"Undeliverable replies: {s['outbox_failed']}")
         return "\n".join(lines)
 
+    def note_poll_result(self, store: BridgeStore, error: str | None, now: float | None = None) -> None:
+        """Alert (once) when polling has been failing for a while, and again when it recovers.
+        Sending uses a different endpoint, so the alert gets through even when polling is blocked."""
+        ts = now if now is not None else time.time()
+        chat = sorted(self.allowed)[0] if self.allowed else None
+        if error is None:
+            if self._poll_alerted and chat:
+                store.enqueue_outbound(CHANNEL, chat, "✅ Telegram polling recovered; messages are being received again.")
+            self._poll_fail_since, self._poll_alerted = None, False
+            return
+        if self._poll_fail_since is None:
+            self._poll_fail_since = ts
+        if ts - self._poll_fail_since >= POLL_ALERT_AFTER_S and not self._poll_alerted and chat:
+            self._poll_alerted = True
+            if "Conflict" in error:
+                why = "another process is polling this bot (for example a Claude session with the Telegram plugin enabled)"
+            else:
+                why = f"Telegram can't be reached ({error[:120]})"
+            store.enqueue_outbound(CHANNEL, chat, f"⚠️ I'm not receiving your messages right now: {why}. Anything you send may be delayed until this clears.")
+
     # ---- run loops ----
     @staticmethod
     def _safe(fn) -> None:
@@ -233,8 +256,10 @@ class Bridge:
         while not self.stop.is_set():
             try:
                 self.poll_once(store)
+                self.note_poll_result(store, None)
                 delay = 1.0
             except TelegramError as e:
+                self.note_poll_result(store, str(e))
                 log.warning("poll failed: %s (retry in %.0fs)", e, delay)
                 self.stop.wait(delay)
                 delay = min(30.0, delay * 2)

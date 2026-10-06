@@ -130,3 +130,25 @@ def test_notice_not_sent_for_non_telegram_rows(env):
     store.add_inbound("terminal", "terminal", "hi", external_id="t1", session_key="1", now=time.time() - 30)
     b.check_agent_notice(store)
     assert store.stats()["outbox_pending"] == 0
+
+
+def test_poll_failure_alerts_once_then_announces_recovery(env):
+    api, store, b = env
+    err = "getUpdates: Conflict: terminated by other getUpdates request"
+    b.note_poll_result(store, err, now=1000)
+    b.note_poll_result(store, err, now=1030)
+    assert store.stats()["outbox_pending"] == 0  # not yet
+    b.note_poll_result(store, err, now=1061)
+    b.note_poll_result(store, err, now=1200)
+    rows = [store.next_outbound("telegram")]
+    assert store.stats()["outbox_pending"] == 1 and "another process is polling" in rows[0]["text"]
+    store.mark_sent(rows[0]["id"])
+    b.note_poll_result(store, None, now=1210)
+    assert "recovered" in store.next_outbound("telegram")["text"]
+
+
+def test_brief_poll_failures_do_not_alert(env):
+    api, store, b = env
+    b.note_poll_result(store, "getUpdates: timeout", now=1000)
+    b.note_poll_result(store, None, now=1010)
+    assert store.stats()["outbox_pending"] == 0

@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bridge_store import BridgeStore  # noqa: E402
-from paths import REPO_ROOT, get_env  # noqa: E402
+from paths import REPO_ROOT, find_claude, get_env  # noqa: E402
 
 DB = REPO_ROOT / "state" / "inbox.db"
 STREAM_LOG = REPO_ROOT / "state" / "logs" / "agent_stream.jsonl"
@@ -115,6 +115,27 @@ def cmd_sessions(_args) -> int:
 
 
 ORCH_UNIT = "assistant-orchestrator"
+PLUGIN = "telegram@claude-plugins-official"
+
+
+def _plugin(action: str) -> None:
+    """The Telegram plugin must be disabled while the bridge runs: any Claude session that loads it
+    (even a pre-warmed spare) polls the same bot token and blocks the bridge with a getUpdates Conflict."""
+    claude = find_claude()
+    if claude:
+        subprocess.run([claude, "plugin", action, PLUGIN], capture_output=True, text=True)
+
+
+def _effective_token_env() -> str:
+    """What the bridge unit really uses: .env override, else the unit's own Environment default."""
+    override = get_env("BRIDGE_TOKEN_ENV")
+    if override:
+        return override
+    env = _systemctl("show", BRIDGE_UNIT, "-p", "Environment", "--value").stdout
+    for part in env.split():
+        if part.startswith("BRIDGE_TOKEN_ENV="):
+            return part.split("=", 1)[1]
+    return "TELEGRAM_TEST_BOT_TOKEN"
 
 
 def _active(unit: str) -> bool:
@@ -126,7 +147,7 @@ def _tmux_session_exists() -> bool:
 
 
 def cmd_mode(args) -> int:
-    token_env = get_env("BRIDGE_TOKEN_ENV") or "TELEGRAM_TEST_BOT_TOKEN"
+    token_env = _effective_token_env()
     on_prod_bot = token_env == "TELEGRAM_BOT_TOKEN"
     stacks = {"plugin orchestrator": _active(ORCH_UNIT), "bridge": _active(BRIDGE_UNIT), "worker": _active(WORKER_UNIT)}
     if args.target == "status":
@@ -143,6 +164,7 @@ def cmd_mode(args) -> int:
     if args.target == "plugin":
         for u in (WORKER_UNIT, BRIDGE_UNIT):
             _systemctl("disable", "--now", u)
+        _plugin("enable")
         _systemctl("enable", "--now", ORCH_UNIT)
         print("Switched to the plugin orchestrator. Bridge and worker stopped and disabled.")
         return 0
@@ -154,6 +176,7 @@ def cmd_mode(args) -> int:
     if _tmux_session_exists() or _active(ORCH_UNIT):
         print("The old orchestrator is still running; refusing to start the bridge (two pollers on one bot token). Check `tmux ls`.", file=sys.stderr)
         return 1
+    _plugin("disable")
     _systemctl("enable", "--now", BRIDGE_UNIT, WORKER_UNIT)
     print(f"Switched to the bridge (token {token_env}). The old orchestrator is stopped and disabled.")
     if on_prod_bot and get_env("BRIDGE_EXPORT_LEGACY_LOG") != "1":

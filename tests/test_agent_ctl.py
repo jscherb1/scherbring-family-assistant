@@ -29,6 +29,8 @@ def setup(monkeypatch, active, token_env="TELEGRAM_TEST_BOT_TOKEN", tmux=False):
     sd = FakeSystemd(active)
     monkeypatch.setattr(agent_ctl, "_systemctl", sd.run)
     monkeypatch.setattr(agent_ctl, "_tmux_session_exists", lambda: tmux)
+    sd.plugin_calls = []
+    monkeypatch.setattr(agent_ctl, "_plugin", lambda action: sd.plugin_calls.append(action))
     monkeypatch.setattr(agent_ctl, "get_env", lambda name, *a, **k: {"BRIDGE_TOKEN_ENV": token_env}.get(name))
     return sd
 
@@ -75,3 +77,25 @@ def test_switch_back_to_plugin(monkeypatch):
     sd = setup(monkeypatch, {"assistant-bridge", "assistant-agent-worker"})
     assert agent_ctl.cmd_mode(ns("plugin", yes=True)) == 0
     assert sd.active == {"assistant-orchestrator"}
+
+
+def test_switching_toggles_the_telegram_plugin(monkeypatch):
+    sd = setup(monkeypatch, {"assistant-orchestrator"})
+    agent_ctl.cmd_mode(ns("bridge", yes=True))
+    assert sd.plugin_calls == ["disable"]
+    agent_ctl.cmd_mode(ns("plugin", yes=True))
+    assert sd.plugin_calls == ["disable", "enable"]
+
+
+def test_effective_token_env_falls_back_to_unit_environment(monkeypatch):
+    sd = FakeSystemd()
+    sd.run_orig = sd.run
+
+    def run(*args):
+        if args[0] == "show":
+            return subprocess.CompletedProcess(args, 0, stdout="PYTHONUNBUFFERED=1 BRIDGE_TOKEN_ENV=TELEGRAM_BOT_TOKEN\n")
+        return sd.run_orig(*args)
+
+    monkeypatch.setattr(agent_ctl, "_systemctl", run)
+    monkeypatch.setattr(agent_ctl, "get_env", lambda name, *a, **k: None)
+    assert agent_ctl._effective_token_env() == "TELEGRAM_BOT_TOKEN"

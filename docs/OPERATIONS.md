@@ -10,9 +10,9 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 
 | Unit | Job |
 |---|---|
-| `assistant-orchestrator.service` | Claude Code with the Telegram channel, in a tmux session named `assistant` |
-| `assistant-bridge.service` | Telegram bridge (**test phase**, test bot): polls Telegram into a durable inbox, delivers replies from the outbox. See "Telegram bridge" below |
-| `assistant-agent-worker.service` | agent worker (**test phase**): runs Claude turns for inbox messages via the Agent SDK, resumes its session on restart; systemd watchdog 30 s |
+| `assistant-orchestrator.service` | **Stopped and disabled since the 2026-10-06 cutover** (rollback only): Claude Code with the Telegram plugin channel, in a tmux session named `assistant` |
+| `assistant-bridge.service` | Telegram bridge (**live, production bot**): polls Telegram into a durable inbox, delivers replies from the outbox. See "Telegram bridge" below |
+| `assistant-agent-worker.service` | agent worker (**live**): runs Claude turns for inbox messages via the Agent SDK, resumes its session on restart; systemd watchdog 30 s |
 | `assistant-scheduler.timer` | every 2 min: run due scheduled tasks (`scripts/scheduler_dispatch.py`) |
 | `assistant-watchdog.timer` | every 2 min: Telegram-health and scheduler-health checks, log pruning |
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
@@ -72,8 +72,17 @@ acknowledging it, delivers replies from an outbox with retry) and `scripts/agent
 Claude turns and can be killed or restarted at any moment without losing a message or the
 conversation (the Claude session is resumed by id; if that fails it is rebuilt from the message log).
 
-**Status of the rollout:** running on the *test* bot (`TELEGRAM_TEST_BOT_TOKEN`) only. The production
-orchestrator and bot are unchanged until cutover.
+**Status of the rollout:** cut over to the production bot on 2026-10-06 (the old orchestrator is
+stopped and disabled). Roll back with `scripts/agent_ctl.py mode plugin --yes`; `mode status` shows
+which stack is live. The test bot (`BRIDGE_TOKEN_ENV=TELEGRAM_TEST_BOT_TOKEN` in `.env`) is still there
+for experiments.
+
+**The Telegram plugin must stay disabled while the bridge runs** (`claude plugin disable
+telegram@claude-plugins-official`, done by `mode bridge`; `mode plugin` re-enables it). The plugin is a
+poller: any Claude session that loads it, even a pre-warmed spare from the Claude daemon, polls the same
+bot token and blocks the bridge with `getUpdates: Conflict`. This happened at cutover. If polling is
+blocked for more than a minute the bridge messages the user ("I'm not receiving your messages") and
+sends a recovery message afterwards; find the culprit with `ps -eo pid,ppid,etime,cmd | grep "bun run.*telegram"`.
 
 ```
 scripts/agent_ctl.py status            # up/down, queue, current turn, MCP problems (exit 1 if unhealthy)
