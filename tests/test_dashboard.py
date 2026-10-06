@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dashboard.app import app  # noqa: E402
-from dashboard.data import family, finance, home, ops, recipes, restarts, schedule, shopping_fitness  # noqa: E402
+from dashboard.data import activity, family, finance, home, ops, recipes, restarts, schedule, shopping_fitness  # noqa: E402
 
 
 @pytest.fixture
@@ -252,6 +252,7 @@ def client(state):
     "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
     "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
+    "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
 def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
@@ -446,3 +447,44 @@ def test_finance_pages_never_leak_sensitive_values(client):
 def test_finance_missing_db(tmp_path, monkeypatch):
     monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path))
     assert "error" in finance.get_tagging() and "error" in finance.get_reports()
+
+
+# ---- meal insights & activity feed ----
+
+def test_meal_insights(state):
+    future = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+    conn = sqlite3.connect(state / "agent_results.db")
+    conn.execute("INSERT INTO agent_results (agent,task,created_at,summary,detail_json) VALUES "
+                 "('meal-planner','plan','2026-10-05T00:00:00Z','s',?)",
+                 (json.dumps({"meals": [{"title": "Teriyaki Chicken", "recipe_id": "r1", "date": future},
+                                        {"title": "Old", "recipe_id": "r1", "date": "2020-01-01"}]}),))
+    conn.commit()
+    conn.close()
+    data = activity.get_meal_insights()
+    assert [m["title"] for m in data["menu"]] == ["Teriyaki Chicken"] and data["menu"][0]["recipe_known"]
+    assert data["stale_total"] == 1 and data["stale"][0]["id"] == "r2"  # r1 cooked recently; r2 never
+    assert dict(data["by_meal_type"]) == {"dinner": 1, "breakfast": 1}
+
+
+def test_meal_plan_route_beats_recipe_id(client):
+    assert "Menu &amp; Insights" in client.get("/meals/plan").text
+
+
+def test_activity_hides_sensitive_and_truncates(state):
+    conn = sqlite3.connect(state / "agent_results.db")
+    conn.execute("INSERT INTO agent_results (agent,task,created_at,summary) VALUES "
+                 "('finance','t','2026-10-03T00:00:00Z','SECRET $9,999')")
+    conn.execute("INSERT INTO agent_results (agent,task,created_at,summary) VALUES "
+                 "('todoist','t','2026-10-04T00:00:00Z',?)", ("word " * 200,))
+    conn.commit()
+    conn.close()
+    feed = {f["agent"]: f for f in activity.get_activity()["feed"]}
+    assert "SECRET" not in feed["finance"]["summary"]
+    assert len(feed["todoist"]["summary"]) <= activity.SUMMARY_MAX
+    assert [f["agent"] for f in activity.get_activity("todoist")["feed"]] == ["todoist"]
+    assert "SECRET" not in TestClient(app).get("/activity").text
+
+
+def test_activity_missing_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path))
+    assert "error" in activity.get_activity() and "error" in activity.get_meal_insights()

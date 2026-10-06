@@ -10,10 +10,25 @@ the state the assistant already keeps in `../state/` and never writes to it.
 | Orchestrator Health | Overview | `/health` | Uptime, task success rate, watchdog health, Telegram fallback, recent failures (auto-refreshes every 30 s) |
 | | Scheduled Tasks | `/health/schedule` | Every scheduled task: what it does, schedule in plain English, next run, last run, 7-day ok/failed, recent runs |
 | | Restart History | `/health/restarts` | Every orchestrator launch with the inferred cause, previous exit code, downtime, and the raw log records behind it |
-| Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe (view-only for now) |
+| | Logins & Backups | `/health/system` | Days until the Hy-Vee/Drive/Monarch logins expire, newest backup age and files, scheduler heartbeat |
+| Home & Yard | Maintenance | `/home` | Overdue / due soon / on-track items, last done, recent completions |
+| | Lawn & Garden | `/home/lawn` | 6-step program progress, treatments, issues, products on hand, plants |
+| | Weather Alerts | `/home/weather` | Alerts sent (7/30 days, by type), thresholds (coordinates hidden) |
+| People & Family | Profile | `/family` | Upcoming birthdays, directory, facts on file by key, what's missing. **Fact values are not shown** |
+| | Kids Memories | `/family/memories` | Counts per child/month/tag, Drive sync health. **Memory text is not shown** |
+| Finance | Tagging | `/finance` | WHO-tagging activity, learned mapping, rule proposals. **No amounts or per-transaction merchants** |
+| | Reports & Planning | `/finance/reports` | Report history with Drive links, advisor-profile completeness, non-monetary retirement settings |
+| Hy-Vee | Overview | `/hyvee` | Purchase history, most-bought items, learned preferences, cart builds |
+| Fitness | Overview | `/fitness` | This week's plan, COROS push status, library. Planned workouts only (no completion tracking) |
+| Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe |
+| | Menu & Insights | `/meals/plan` | Upcoming menu (from the meal-planner's logged plans), recently cooked, stale recipes, collection counts |
+| Activity | Agent Activity | `/activity` | Latest agent results and last run per agent; sensitive agents' summaries are hidden |
 
-JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/restarts`,
-`/api/recipes`, `/api/recipes/<id>`), with interactive docs at `/api/docs`.
+Everything is view-only. Because there is no login, sensitive areas (finance, kids memories, profile)
+show summaries only.
+
+JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/restarts`, `/api/system`,
+`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/activity`), with interactive docs at `/api/docs`.
 
 ## Run it
 

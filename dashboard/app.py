@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routers import family, finance, health, home, meals, shopping_fitness
+from .routers import activity, family, finance, health, home, meals, shopping_fitness
 from .web import APP_NAME, HERE
 
 app = FastAPI(
@@ -22,6 +22,7 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.include_router(finance.router)
 app.include_router(health.router)
+app.include_router(activity.router)
 app.include_router(family.router)
 app.include_router(home.router)
 app.include_router(meals.router)

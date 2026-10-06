@@ -67,7 +67,12 @@ update it when you finish or add something. Dates are absolute.
     - Restart causes are inferred by matching the exit log to the watchdog logs, and those logs are pruned
       after 14 days. Recording a structured cause (for example a `cause` field in
       `state/orchestrator_restarts.jsonl` written by the watchdog) would make the history exact and permanent.
-    - Meal Planner is view-only. Recipe create/edit/delete, and a meal-plan view, are the next phases.
+    - Every dashboard page is view-only (insights for home, family, finance, Hy-Vee, fitness, meals, activity
+      added 2026-10-06). Create/update/delete is the next phase, starting with recipes.
+    - Sensitive areas (kids memory text, profile fact values, finance amounts) are deliberately hidden until
+      auth exists; revisit what to reveal once there is a login.
+    - Fitness shows planned workouts only: `completion_status` is never set by any automation.
+    - The meal menu is read from `agent_results.detail_json`; a dedicated meal-plan table would be sturdier.
     - The dashboard has no login; it relies on the bind address (localhost or Tailscale). Add auth before
       any write routes exist.
 

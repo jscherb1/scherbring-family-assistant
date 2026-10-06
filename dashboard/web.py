@@ -69,7 +69,14 @@ SECTIONS = [
         "href": "/meals",
         "pages": [
             {"key": "recipes", "label": "Recipes", "href": "/meals"},
+            {"key": "plan", "label": "Menu & Insights", "href": "/meals/plan"},
         ],
+    },
+    {
+        "key": "activity",
+        "label": "Activity",
+        "href": "/activity",
+        "pages": [{"key": "feed", "label": "Agent Activity", "href": "/activity"}],
     },
 ]
 

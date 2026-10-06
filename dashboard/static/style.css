@@ -528,6 +528,15 @@ select:focus-visible {
   margin-bottom: 16px;
 }
 
+a.chip {
+  text-decoration: none;
+}
+
+.chip.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .chip {
   font-size: 12px;
   padding: 3px 10px;

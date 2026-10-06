@@ -3,7 +3,7 @@ import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ..data import recipes
+from ..data import activity, recipes
 from ..web import render, templates
 
 router = APIRouter()
@@ -24,6 +24,17 @@ def recipe_results(request: Request, q: str = "", meal_type: str = "", protein: 
     """htmx partial: just the result grid for the current filters."""
     data = recipes.list_recipes(q, meal_type, protein, tag, sort)
     return templates.TemplateResponse(request, "meals/_results.html", {"data": data})
+
+
+@router.get("/meals/plan", include_in_schema=False)
+def plan(request: Request):
+    return render(request, "meals/plan.html", "meals", "plan", "Menu & Insights",
+                  data=activity.get_meal_insights())
+
+
+@router.get("/api/meals/plan")
+def api_plan():
+    return activity.get_meal_insights()
 
 
 @router.get("/meals/{recipe_id}", include_in_schema=False)

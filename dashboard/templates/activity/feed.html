@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Agent Activity</h1>
+  <p class="subtitle">The latest results logged by each agent. Showing summaries only.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.total %}
+  <div class="card"><div class="empty-state">No agent activity has been logged yet.</div></div>
+{% else %}
+  <div class="chips" style="margin-bottom:20px">
+    <a class="chip {{ 'active' if not data.selected }}" href="/activity">all · {{ data.total }}</a>
+    {% for a in data.agents %}<a class="chip {{ 'active' if a.agent == data.selected }}" href="/activity?agent={{ a.agent|urlencode }}">{{ a.agent }} · {{ a.runs }}</a>{% endfor %}
+  </div>
+
+  <div class="stack">
+    {% if not data.selected %}
+    <h2>Last run by agent</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Agent</th><th class="num">Results</th><th>Last result</th></tr></thead>
+        <tbody>{% for a in data.agents %}<tr><td><a href="/activity?agent={{ a.agent|urlencode }}">{{ a.agent }}</a></td><td class="num">{{ a.runs }}</td><td>{{ a.last_at|fmt_dt }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <h2>{{ data.selected or 'Recent activity' }}</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>When</th><th>Agent</th><th>Summary</th></tr></thead>
+        <tbody>{% for f in data.feed %}<tr><td>{{ f.created_at|fmt_dt }}</td><td>{{ f.agent }}</td><td>{{ f.summary }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </section>
+  </div>
+{% endif %}
+{% endblock %}
