@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routers import family, health, home, meals
+from .routers import family, health, home, meals, shopping_fitness
 from .web import APP_NAME, HERE
 
 app = FastAPI(
@@ -24,6 +24,7 @@ app.include_router(health.router)
 app.include_router(family.router)
 app.include_router(home.router)
 app.include_router(meals.router)
+app.include_router(shopping_fitness.router)
 
 
 @app.get("/", include_in_schema=False)

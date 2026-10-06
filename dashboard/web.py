@@ -43,6 +43,18 @@ SECTIONS = [
         ],
     },
     {
+        "key": "hyvee",
+        "label": "Hy-Vee",
+        "href": "/hyvee",
+        "pages": [{"key": "overview", "label": "Overview", "href": "/hyvee"}],
+    },
+    {
+        "key": "fitness",
+        "label": "Fitness",
+        "href": "/fitness",
+        "pages": [{"key": "overview", "label": "Overview", "href": "/fitness"}],
+    },
+    {
         "key": "meals",
         "label": "Meal Planner",
         "href": "/meals",
@@ -104,7 +116,7 @@ def fmt_minutes(minutes):
 def status_pill(status):
     return {
         "ok": "pill-ok", "done": "pill-ok", "synced": "pill-ok", "created": "pill-ok",
-        "failed": "pill-warn", "dispatch_failed": "pill-warn", "overdue": "pill-warn",
+        "failed": "pill-warn", "pending": "pill-muted", "dispatch_failed": "pill-warn", "overdue": "pill-warn",
         "missed": "pill-warn", "manual_needed": "pill-warn", "expired": "pill-warn",
         "active": "pill-warn", "warn": "pill-warn",
     }.get(status, "pill-muted")

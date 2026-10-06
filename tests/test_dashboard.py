@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dashboard.app import app  # noqa: E402
-from dashboard.data import family, home, ops, recipes, restarts, schedule  # noqa: E402
+from dashboard.data import family, home, ops, recipes, restarts, schedule, shopping_fitness  # noqa: E402
 
 
 @pytest.fixture
@@ -45,9 +45,27 @@ def state(tmp_path, monkeypatch):
         "('r2','Plain Oatmeal','[]','[]','breakfast')")
     seed_home(conn)
     seed_family(conn)
+    seed_shopping_fitness(conn)
     conn.commit()
     conn.close()
     return tmp_path
+
+
+def seed_shopping_fitness(conn):
+    ts = "2026-10-01T00:00:00"
+    for i, (name, d) in enumerate((("Milk <b>2%</b>", "2026-09-01"), ("Milk <b>2%</b>", "2026-09-15"), ("Eggs", "2026-09-15"))):
+        conn.execute("INSERT INTO hyvee_purchase_history VALUES (?,?,?,?,?,?)",
+                     (f"hp{i}", f"u{i}", name, d, f"o{d}", ts))
+    conn.execute("INSERT INTO hyvee_item_prefs VALUES ('milk','p1','u1','Milk','1 gal',0.9,NULL,NULL,0,NULL,'history',3,0,?)", (ts,))
+    conn.execute("INSERT INTO hyvee_item_prefs VALUES ('eggs','p2','u2','Eggs','12',0.4,NULL,NULL,0,NULL,'history',1,1,?)", (ts,))
+    for i, a in enumerate(("accepted", "accepted", "rejected")):
+        conn.execute("INSERT INTO hyvee_feedback_log VALUES (?,?,?,?,?,?,?)", (f"fb{i}", ts, "milk", "p1", a, None, None))
+    conn.execute("INSERT INTO hyvee_cart_runs VALUES ('cr1',?,?,?,1,'built')", (ts, json.dumps([{"item": "milk"}, {"item": "eggs"}]),
+                 json.dumps([{"item": "milk", "decision": "auto"}, {"item": "eggs", "decision": "flag"}])))
+    monday = (datetime.now().date() - timedelta(days=datetime.now().weekday())).isoformat()
+    conn.execute("INSERT INTO fitness_workout_library VALUES ('l1','c1','Peloton - 45 min','cycle',NULL,NULL,'45 min',NULL,?,?)", (ts, ts))
+    conn.execute("INSERT INTO fitness_weekly_plans VALUES ('fp1',?,'Wed','peloton',NULL,'l1',0,'06:00','created',NULL,NULL,'planned',?)", (monday, ts))
+    conn.execute("INSERT INTO fitness_weekly_plans VALUES ('fp2',?,'Mon','run','tempo',NULL,1,'05:30','manual_needed',NULL,NULL,'planned',?)", (monday, ts))
 
 
 def seed_family(conn):
@@ -210,6 +228,7 @@ def client(state):
     "/api/home/maintenance", "/api/home/lawn", "/api/home/weather",
     "/health/system", "/api/system",
     "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
+    "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
 ])
 def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
@@ -350,3 +369,26 @@ def test_birthday_formats():
     assert family._next_birthday("03-01", date(2026, 3, 1)) == (date(2026, 3, 1), None)
     assert family._next_birthday("2020-02-29", date(2026, 3, 2))[1] == 7
     assert family._next_birthday("junk", date(2026, 1, 1)) == (None, None)
+
+
+# ---- hy-vee & fitness ----
+
+def test_hyvee_summary(state):
+    data = shopping_fitness.get_hyvee()
+    assert data["top_items"][0]["times"] == 2 and data["history"]["orders"] == 2
+    assert (data["auto_prefs"], data["low_prefs"]) == (1, 1)
+    assert data["acceptance_rate"] == 67
+    assert data["runs"][0]["item_count"] == 2 and data["runs"][0]["auto"] == 1 and data["runs"][0]["flagged"] == 1
+
+
+def test_fitness_week_sorted_and_flags(state):
+    data = shopping_fitness.get_fitness()
+    assert [w["day_of_week"] for w in data["week"]] == ["Mon", "Wed"]
+    assert data["needs_attention"] == 1 and data["is_current_week"] and data["library_total"] == 1
+
+
+def test_shopping_fitness_escaped_and_missing(client, tmp_path, monkeypatch):
+    assert "<b>2%</b>" not in client.get("/hyvee").text
+    monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path / "none"))
+    assert "error" in shopping_fitness.get_hyvee() and "error" in shopping_fitness.get_fitness()
+    assert client.get("/fitness").status_code == 200
