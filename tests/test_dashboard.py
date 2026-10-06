@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dashboard.app import app  # noqa: E402
-from dashboard.data import home, recipes, restarts, schedule  # noqa: E402
+from dashboard.data import home, ops, recipes, restarts, schedule  # noqa: E402
 
 
 @pytest.fixture
@@ -194,6 +194,7 @@ def client(state):
     "/api/recipes", "/api/recipes/r1", "/api/docs",
     "/home", "/home/lawn", "/home/weather",
     "/api/home/maintenance", "/api/home/lawn", "/api/home/weather",
+    "/health/system", "/api/system",
 ])
 def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
@@ -273,3 +274,34 @@ def test_home_missing_db(tmp_path, monkeypatch):
 def test_home_output_escaped(client):
     page = client.get("/home").text
     assert "<b>spigots</b>" not in page and "&lt;b&gt;spigots" in page
+
+
+# ---- logins & backups ----
+
+def test_credentials_states(state):
+    now = datetime.now().astimezone()
+    (state / "credential_check.json").write_text(json.dumps({
+        "hyvee": {"authed_at": (now - timedelta(days=10)).isoformat(), "lifetime_days": 11, "status": "ok"},
+        "drive": {"authed_at": (now - timedelta(days=1)).isoformat(), "lifetime_days": 7, "status": "ok"},
+        "monarch": {"authed_at": (now - timedelta(days=20)).isoformat(), "lifetime_days": 14, "status": "ok"},
+    }))
+    by = {s["key"]: s for s in ops.get_credentials()["systems"]}
+    assert by["hyvee"]["state"] == "warn" and by["drive"]["state"] == "ok" and by["monarch"]["state"] == "expired"
+
+
+def test_backups_list_only(tmp_path, monkeypatch, state):
+    bdir = tmp_path / "bk"
+    bdir.mkdir()
+    (bdir / "data-20261005-020000.tar.gz").write_bytes(b"x" * 2048)
+    monkeypatch.setenv("ASSISTANT_BACKUP_DIR", str(bdir))
+    data = ops.get_backups()
+    assert data["count"] == 1 and data["files"][0]["kind"] == "data" and not data["stale"]
+
+
+def test_heartbeat_and_missing_files(state, monkeypatch, tmp_path):
+    assert "error" in ops.get_heartbeat() and "error" in ops.get_credentials()
+    monkeypatch.setenv("ASSISTANT_BACKUP_DIR", str(tmp_path / "nope"))
+    assert "error" in ops.get_backups()
+    (state / "scheduler_loop_state.json").write_text(
+        json.dumps({"last_tick": (datetime.now() - timedelta(minutes=45)).isoformat()}))
+    assert ops.get_heartbeat()["stale"] is True

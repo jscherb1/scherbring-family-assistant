@@ -20,6 +20,7 @@ SECTIONS = [
             {"key": "overview", "label": "Overview", "href": "/health"},
             {"key": "schedule", "label": "Scheduled Tasks", "href": "/health/schedule"},
             {"key": "restarts", "label": "Restart History", "href": "/health/restarts"},
+            {"key": "system", "label": "Logins & Backups", "href": "/health/system"},
         ],
     },
     {
@@ -100,6 +101,14 @@ def status_pill(status):
     }.get(status, "pill-muted")
 
 
+def fmt_bytes(n):
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
 def stars(rating):
     rating = max(0, min(5, int(rating or 0)))
     return "★" * rating + "☆" * (5 - rating)
@@ -107,7 +116,7 @@ def stars(rating):
 
 templates.env.filters.update(
     fmt_dt=fmt_dt, fmt_duration=fmt_duration, fmt_minutes=fmt_minutes,
-    status_pill=status_pill, stars=stars,
+    status_pill=status_pill, stars=stars, fmt_bytes=fmt_bytes,
 )
 templates.env.globals["APP_NAME"] = APP_NAME
 

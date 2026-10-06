@@ -1,7 +1,7 @@
 """Orchestrator Health section: overview, scheduled tasks, restart history."""
 from fastapi import APIRouter, Request
 
-from ..data import health, restarts, schedule
+from ..data import health, ops, restarts, schedule
 from ..web import render
 
 router = APIRouter()
@@ -39,3 +39,14 @@ def api_schedule():
 @router.get("/api/restarts")
 def api_restarts():
     return restarts.get_restart_history()
+
+
+@router.get("/health/system", include_in_schema=False)
+def system(request: Request):
+    return render(request, "health/system.html", "health", "system", "Logins & Backups",
+                  data=ops.get_system())
+
+
+@router.get("/api/system")
+def api_system():
+    return ops.get_system()

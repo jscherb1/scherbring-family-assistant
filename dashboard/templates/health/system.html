@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Logins &amp; Backups</h1>
+  <p class="subtitle">Manually refreshed logins and when they expire, backup freshness, and the scheduler heartbeat.</p>
+{% endblock %}
+
+{% block content %}
+<div class="stack">
+  <h2>Logins</h2>
+  {% set cr = data.credentials %}
+  {% if cr.error %}
+    <div class="card"><div class="error-state">{{ cr.error }}</div></div>
+  {% else %}
+    <div class="grid stats">
+      {% for s in cr.systems %}
+      <section class="card">
+        <h2>{{ s.label }}</h2>
+        {% if s.state == 'unknown' %}
+          <div class="metric">—</div><div class="metric-sub">no login recorded</div>
+        {% else %}
+          <div class="metric {{ 'fail-count' if s.state in ('warn', 'expired') }}">
+            {% if s.state == 'expired' %}expired{% else %}{{ s.days_left }} d{% endif %}</div>
+          <div class="metric-sub"><span class="pill {{ s.state|status_pill }}">{{ s.state }}</span>
+            logged in {{ s.authed_at|fmt_dt }} · expires {{ s.expires_at|fmt_dt }}</div>
+        {% endif %}
+      </section>
+      {% endfor %}
+    </div>
+    <p class="footnote">Lifetimes are estimates; a warning shows within 2 days of expiry. COROS re-logs in by itself and isn't listed.</p>
+  {% endif %}
+
+  <h2>Scheduler heartbeat</h2>
+  {% set hb = data.heartbeat %}
+  <section class="card">
+    {% if hb.error %}<div class="error-state">{{ hb.error }}</div>
+    {% else %}
+      <div class="metric {{ 'fail-count' if hb.stale }}">{{ hb.age_minutes }} min ago</div>
+      <div class="metric-sub"><span class="pill {{ 'pill-warn' if hb.stale else 'pill-ok' }}">{{ 'stale' if hb.stale else 'healthy' }}</span>
+        last tick {{ hb.last_tick|fmt_dt }} · stale after {{ hb.stale_after_minutes }} min</div>
+    {% endif %}
+  </section>
+
+  <h2>Backups</h2>
+  {% set b = data.backups %}
+  {% if b.error %}
+    <div class="card"><div class="error-state">{{ b.error }}</div></div>
+  {% elif not b.files %}
+    <div class="card"><div class="empty-state">No backups found.</div></div>
+  {% else %}
+    <div class="grid stats">
+      <section class="card"><h2>Newest</h2><div class="metric {{ 'fail-count' if b.stale }}">{{ b.newest_age_hours }} h</div><div class="metric-sub">{{ 'older than 36 h' if b.stale else 'ago' }}</div></section>
+      <section class="card"><h2>Files kept</h2><div class="metric">{{ b.count }}</div><div class="metric-sub">{{ b.total_size|fmt_bytes }} total</div></section>
+    </div>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>File</th><th>Kind</th><th>Modified</th><th class="num">Size</th></tr></thead>
+        <tbody>
+        {% for f in b.files %}
+          <tr><td class="code">{{ f.name }}</td><td>{{ f.kind }}</td><td>{{ f.modified|fmt_dt }}</td><td class="num">{{ f.size|fmt_bytes }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
