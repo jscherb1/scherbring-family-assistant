@@ -184,6 +184,12 @@ def run(args) -> int:
                     )
                 context.storage_state(path=str(SESSION_FILE))
                 print(f"[login] Session saved to {SESSION_FILE}")
+                try:  # lets scripts/credential_check.py time its expiry reminders
+                    from credential_check import record_login
+
+                    record_login("hyvee")
+                except ImportError:
+                    pass
 
             if args.login_only:
                 print("\nPASS: signed in; session saved (login-only, cart not touched)")

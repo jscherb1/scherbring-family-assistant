@@ -133,6 +133,9 @@ def _guess_mime(path: Path) -> str:
 
 def cmd_auth(_args) -> int:
     _load_credentials(interactive=True)
+    from credential_check import record_login
+
+    record_login("drive")
     print(json.dumps({"status": "authorized", "token": str(_token_path())}))
     return 0
 
