@@ -285,11 +285,13 @@ class BridgeStore:
             v = self.kv_get(key)
             return round(ts - float(v), 1) if v else None
 
-        bridge_age, worker_age = age("bridge_heartbeat"), age("worker_heartbeat")
+        bridge_age, worker_age, poll_age = age("bridge_heartbeat"), age("worker_heartbeat"), age("last_poll_ok")
         turn = self.kv_get("current_turn") or ""
         return {
             "bridge_up": bridge_age is not None and bridge_age <= stale_s,
             "bridge_heartbeat_age_s": bridge_age,
+            "polling_ok": poll_age is not None and poll_age <= 60,  # Telegram reachable and long-polling
+            "last_poll_ok_age_s": poll_age,
             "worker_up": worker_age is not None and worker_age <= stale_s,
             "worker_heartbeat_age_s": worker_age,
             "paused": self.kv_get("paused") == "1",

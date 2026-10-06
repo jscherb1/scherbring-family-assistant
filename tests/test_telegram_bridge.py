@@ -123,3 +123,10 @@ def test_notice_also_fires_for_message_stuck_in_processing(env):
     store.claim_next()  # worker took it, then died
     b.check_agent_notice(store)
     assert store.stats()["outbox_pending"] == 1
+
+
+def test_notice_not_sent_for_non_telegram_rows(env):
+    api, store, b = env
+    store.add_inbound("terminal", "terminal", "hi", external_id="t1", session_key="1", now=time.time() - 30)
+    b.check_agent_notice(store)
+    assert store.stats()["outbox_pending"] == 0

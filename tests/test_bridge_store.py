@@ -140,3 +140,11 @@ def test_health_snapshot():
     snap = s.health_snapshot(now=now)
     assert snap["bridge_up"] is True and snap["worker_up"] is False and snap["paused"] is True
     assert snap["worker_heartbeat_age_s"] == 100.0 and snap["inbox_pending"] == 0
+
+
+def test_health_distinguishes_alive_from_polling():
+    s = make()
+    s.kv_set("bridge_heartbeat", "999")
+    s.kv_set("last_poll_ok", "800")
+    snap = s.health_snapshot(now=1000.0)
+    assert snap["bridge_up"] is True and snap["polling_ok"] is False

@@ -45,6 +45,8 @@ def cmd_status(args) -> int:
         return 0
     mark = lambda ok: "up" if ok else "DOWN"  # noqa: E731
     print(f"bridge : {mark(snap['bridge_up'])} (heartbeat {snap['bridge_heartbeat_age_s']}s ago, unit {snap['units'][BRIDGE_UNIT]})")
+    if snap["bridge_up"] and not snap["polling_ok"]:
+        print("         (bridge is alive but Telegram polling is failing)")
     print(f"worker : {mark(snap['worker_up'])}{' [PAUSED]' if snap['paused'] else ''} (heartbeat {snap['worker_heartbeat_age_s']}s ago, unit {snap['units'][WORKER_UNIT]})")
     print(f"queue  : {snap['inbox_pending']} pending, {snap['inbox_processing']} in progress, oldest {snap['oldest_pending_age_s']}")
     print(f"outbox : {snap['outbox_pending']} pending, {snap['outbox_failed']} failed")

@@ -173,7 +173,7 @@ class Bridge:
             self.handle_update(store, upd)
             # Advance only after the row is committed.
             store.kv_set("tg_offset", str(upd["update_id"] + 1))
-        store.kv_set("bridge_heartbeat", str(time.time()))
+        store.kv_set("last_poll_ok", str(time.time()))
         return len(updates)
 
     # ---- outbound ----
@@ -203,7 +203,7 @@ class Bridge:
         hb = float(store.kv_get("worker_heartbeat", "0") or 0)
         worker_down = time.time() - hb > WORKER_STALE_S
         if age >= NOTICE_AFTER_S and worker_down:
-            oldest = store._conn.execute("SELECT id, chat_ref FROM inbox WHERE status IN ('pending','processing') AND kind='message' ORDER BY id LIMIT 1").fetchone()
+            oldest = store._conn.execute("SELECT id, chat_ref FROM inbox WHERE status IN ('pending','processing') AND kind='message' AND channel=? ORDER BY id LIMIT 1", (CHANNEL,)).fetchone()
             if oldest and self._notified_for != oldest["id"]:
                 self._notified_for = oldest["id"]
                 store.enqueue_outbound(CHANNEL, oldest["chat_ref"], "⚠️ The agent is restarting. Your message is saved and will be answered as soon as it's back.")
@@ -250,10 +250,12 @@ class Bridge:
         threads = [threading.Thread(target=f, name=n, daemon=True) for n, f in (("poll", self._poll_loop), ("send", self._send_loop))]
         for t in threads:
             t.start()
+        hb_store = BridgeStore(self.store_path)
         while not self.stop.is_set():
             if not all(t.is_alive() for t in threads):
                 log.error("a bridge thread died; exiting so systemd restarts us")
                 sys.exit(1)
+            hb_store.kv_set("bridge_heartbeat", str(time.time()))  # process alive; polling health is last_poll_ok
             self.stop.wait(1)
 
 
