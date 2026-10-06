@@ -277,6 +277,28 @@ class BridgeStore:
             "outbox_failed": out_failed,
         }
 
+    def health_snapshot(self, now: float | None = None, stale_s: float = 15) -> dict:
+        """Everything the dashboard/agent_ctl needs to show liveness, from one place."""
+        ts = now if now is not None else time.time()
+
+        def age(key: str) -> float | None:
+            v = self.kv_get(key)
+            return round(ts - float(v), 1) if v else None
+
+        bridge_age, worker_age = age("bridge_heartbeat"), age("worker_heartbeat")
+        turn = self.kv_get("current_turn") or ""
+        return {
+            "bridge_up": bridge_age is not None and bridge_age <= stale_s,
+            "bridge_heartbeat_age_s": bridge_age,
+            "worker_up": worker_age is not None and worker_age <= stale_s,
+            "worker_heartbeat_age_s": worker_age,
+            "paused": self.kv_get("paused") == "1",
+            "mcp_down": json.loads(self.kv_get("mcp_down") or "[]"),
+            "current_turn": json.loads(turn) if turn else None,
+            "last_canary": json.loads(self.kv_get("last_canary") or "null"),
+            **self.stats(ts),
+        }
+
     def recent_conversation(self, session_key: str, *, max_age_s: float = 48 * 3600, min_messages: int = 40,
                             max_bytes: int = 300_000, now: float | None = None) -> list[dict]:
         """Both directions, oldest first: everything newer than max_age_s, but never fewer than

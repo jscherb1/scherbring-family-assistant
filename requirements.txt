@@ -12,3 +12,5 @@ google-api-python-client~=2.201
 google-auth~=2.60
 google-auth-oauthlib~=1.5
 google-auth-httplib2~=0.4
+# Telegram bridge agent worker; pinned because it bundles a Claude Code CLI (upgrade deliberately).
+claude-agent-sdk==0.2.163

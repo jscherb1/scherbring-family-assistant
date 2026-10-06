@@ -127,3 +127,16 @@ def test_recent_conversation_size_cap_trims_beyond_floor():
         s.add_inbound("telegram", "1", "x" * 1000, external_id=str(i), now=now - 10 + i)
     conv = s.recent_conversation("1", min_messages=2, max_bytes=3500, now=now)
     assert 3 <= len(conv) <= 4
+
+
+def test_health_snapshot():
+    s = make()
+    now = 1000.0
+    snap = s.health_snapshot(now=now)
+    assert snap["bridge_up"] is False and snap["worker_up"] is False
+    s.kv_set("bridge_heartbeat", "995")
+    s.kv_set("worker_heartbeat", "900")
+    s.kv_set("paused", "1")
+    snap = s.health_snapshot(now=now)
+    assert snap["bridge_up"] is True and snap["worker_up"] is False and snap["paused"] is True
+    assert snap["worker_heartbeat_age_s"] == 100.0 and snap["inbox_pending"] == 0

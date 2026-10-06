@@ -286,7 +286,7 @@ class Worker:
         sd_notify("READY=1")
         try:
             while not self.stop.is_set():
-                if not await self.process_one():
+                if self.store.kv_get("paused") == "1" or not await self.process_one():
                     await asyncio.sleep(0.3)
         finally:
             hb.cancel()
