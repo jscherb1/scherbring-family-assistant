@@ -1,18 +1,12 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Orchestrator Dashboard</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <header class="page-header">
-    <h1>Orchestrator Dashboard</h1>
-    <p class="subtitle" id="generated-at">Loading…</p>
-  </header>
+{% extends "base.html" %}
 
-  <main class="grid" id="grid">
+{% block page_header %}
+  <h1>Orchestrator Health</h1>
+  <p class="subtitle" id="generated-at">Loading…</p>
+{% endblock %}
+
+{% block content %}
+  <div class="grid" id="grid">
     <section class="card" id="card-uptime">
       <h2>Uptime</h2>
       <div class="card-body">Loading…</div>
@@ -37,8 +31,9 @@
       <h2>Recent Failures</h2>
       <div class="card-body">Loading…</div>
     </section>
-  </main>
+  </div>
+{% endblock %}
 
-  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
-</body>
-</html>
+{% block scripts %}
+  <script src="/static/dashboard.js"></script>
+{% endblock %}

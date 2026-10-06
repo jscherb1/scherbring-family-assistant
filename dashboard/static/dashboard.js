@@ -17,15 +17,21 @@ function formatTs(iso) {
   return d.toLocaleString();
 }
 
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
 function renderUptime(uptime) {
   const el = document.querySelector("#card-uptime .card-body");
   if (uptime.error) {
-    el.innerHTML = `<div class="error-state">${uptime.error}</div>`;
+    el.innerHTML = `<div class="error-state">${esc(uptime.error)}</div>`;
     return;
   }
   el.innerHTML = `
     <div class="metric">${formatDuration(uptime.uptime_seconds)}</div>
-    <div class="metric-sub">since last restart (${formatTs(uptime.last_restart_at)})</div>
+    <div class="metric-sub">since last restart (${esc(formatTs(uptime.last_restart_at))})</div>
     <div class="metric-sub">${uptime.restarts_24h} restarts / 24h &middot; ${uptime.restarts_7d} / 7d</div>
   `;
 }
@@ -33,7 +39,7 @@ function renderUptime(uptime) {
 function renderSuccess(taskRuns) {
   const el = document.querySelector("#card-success .card-body");
   if (taskRuns.error) {
-    el.innerHTML = `<div class="error-state">${taskRuns.error}</div>`;
+    el.innerHTML = `<div class="error-state">${esc(taskRuns.error)}</div>`;
     return;
   }
   const rate = taskRuns.success_rate_24h;
@@ -49,13 +55,13 @@ function renderWatchdogs(watchdogs) {
   const el = document.querySelector("#card-watchdogs .card-body");
   const rows = Object.entries(watchdogs).map(([name, info]) => {
     if (info.error) {
-      return `<div class="status-row"><span>${name}</span><span class="error-state">${info.error}</span></div>`;
+      return `<div class="status-row"><span>${esc(name)}</span><span class="error-state">${esc(info.error)}</span></div>`;
     }
     const pillClass = info.healthy ? "pill-ok" : "pill-warn";
     const pillText = info.healthy ? "healthy" : "unhealthy";
     return `
       <div class="status-row">
-        <span>${name}</span>
+        <span>${esc(name)}</span>
         <span class="pill ${pillClass}">${pillText}</span>
       </div>
     `;
@@ -70,15 +76,15 @@ function renderFallback(fallback) {
     return;
   }
   el.innerHTML = `
-    <div class="metric-sub">Last used: ${formatTs(fallback.last_used_at)}</div>
-    <div class="metric-sub">Reason: ${fallback.reason || "unknown"}</div>
+    <div class="metric-sub">Last used: ${esc(formatTs(fallback.last_used_at))}</div>
+    <div class="metric-sub">Reason: ${esc(fallback.reason || "unknown")}</div>
   `;
 }
 
 function renderFailures(taskRuns) {
   const el = document.querySelector("#card-failures .card-body");
   if (taskRuns.error) {
-    el.innerHTML = `<div class="error-state">${taskRuns.error}</div>`;
+    el.innerHTML = `<div class="error-state">${esc(taskRuns.error)}</div>`;
     return;
   }
   const failures = taskRuns.recent_failures || [];
@@ -88,8 +94,8 @@ function renderFailures(taskRuns) {
   }
   const items = failures.map((f) => `
     <li>
-      <div class="failure-task">${f.task_name} <span class="pill pill-warn">${f.status}</span></div>
-      <div class="failure-meta">${formatTs(f.run_at)}${f.summary ? " — " + f.summary : ""}</div>
+      <div class="failure-task">${esc(f.task_name)} <span class="pill pill-warn">${esc(f.status)}</span></div>
+      <div class="failure-meta">${esc(formatTs(f.run_at))}${f.summary ? " — " + esc(f.summary) : ""}</div>
     </li>
   `).join("");
   el.innerHTML = `<ul class="failure-list">${items}</ul>`;

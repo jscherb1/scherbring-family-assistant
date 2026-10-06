@@ -1,12 +1,12 @@
 [Unit]
-Description=Scherbring assistant dashboard (read-only Flask status page)
+Description=Scherbring Family Assistant dashboard (read-only FastAPI web app)
 After=network-online.target
 
 [Service]
 WorkingDirectory=@REPO_ROOT@
 Environment=DASHBOARD_HOST=127.0.0.1
 Environment=DASHBOARD_PORT=5151
-ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/dashboard/app.py
+ExecStart=@REPO_ROOT@/.venv/bin/python -m uvicorn dashboard.app:app --host ${DASHBOARD_HOST} --port ${DASHBOARD_PORT}
 Restart=on-failure
 RestartSec=5
 
