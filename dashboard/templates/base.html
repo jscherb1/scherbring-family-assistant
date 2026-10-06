@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title }} · {{ APP_NAME }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="/">{{ APP_NAME }}</a>
+      <nav class="section-nav" aria-label="Sections">
+        {% for s in sections %}
+          <a href="{{ s.href }}" class="{{ 'active' if s.key == section.key }}"
+             {% if s.key == section.key %}aria-current="page"{% endif %}>{{ s.label }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+  </header>
+
+  {% if section.pages|length > 1 %}
+  <nav class="sub-nav container" aria-label="{{ section.label }} pages">
+    {% for p in section.pages %}
+      <a href="{{ p.href }}" class="{{ 'active' if p.key == page }}"
+         {% if p.key == page %}aria-current="page"{% endif %}>{{ p.label }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <main class="container">
+    <div class="page-header">
+      {% block page_header %}<h1>{{ page_title }}</h1>{% endblock %}
+    </div>
+    {% block content %}{% endblock %}
+  </main>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

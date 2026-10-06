@@ -285,6 +285,32 @@ def cmd_disable(args: argparse.Namespace) -> int:
     return _set_enabled(args, 0)
 
 
+def cmd_update(args: argparse.Namespace) -> int:
+    fields = {}
+    if args.new_prompt is not None:
+        fields["prompt"] = args.new_prompt
+    if args.new_cron is not None:
+        parse_cron(args.new_cron)
+        fields["cron_expression"] = args.new_cron
+    if not fields:
+        print(json.dumps({"error": "nothing to update; pass --new-prompt and/or --new-cron"}), file=sys.stderr)
+        return 1
+    conn = _connect()
+    try:
+        row = _find_task(conn, args)
+        if row is None:
+            print(json.dumps({"error": "no matching scheduled task"}), file=sys.stderr)
+            return 1
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        conn.execute(f"UPDATE scheduled_tasks SET {sets} WHERE id = ?", (*fields.values(), row["id"]))
+        conn.commit()
+        row = conn.execute("SELECT * FROM scheduled_tasks WHERE id = ?", (row["id"],)).fetchone()
+    finally:
+        conn.close()
+    print(json.dumps(dict(row), ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_delete(args: argparse.Namespace) -> int:
     conn = _connect()
     try:
@@ -417,6 +443,13 @@ def build_parser() -> argparse.ArgumentParser:
     dis.add_argument("--id", default=None)
     dis.add_argument("--name", default=None)
     dis.set_defaults(func=cmd_disable)
+
+    upd = sub.add_parser("update", help="Change a task's prompt and/or cron by --id or --name.")
+    upd.add_argument("--id", default=None)
+    upd.add_argument("--name", default=None)
+    upd.add_argument("--new-prompt", dest="new_prompt", default=None)
+    upd.add_argument("--new-cron", dest="new_cron", default=None)
+    upd.set_defaults(func=cmd_update)
 
     dele = sub.add_parser("delete", help="Delete a scheduled task and its run history.")
     dele.add_argument("--id", default=None)

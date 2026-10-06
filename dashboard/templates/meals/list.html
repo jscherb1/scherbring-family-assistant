@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Recipes</h1>
+  <p class="subtitle">Browse the family recipe collection.</p>
+{% endblock %}
+
+{% block content %}
+  <form class="filters card" id="filters" action="/meals" method="get"
+        hx-get="/meals/results" hx-target="#results" hx-swap="innerHTML"
+        hx-trigger="input delay:200ms, change">
+    <label class="field field-search">
+      <span>Search</span>
+      <input type="search" name="q" value="{{ filters.q }}" placeholder="Title, tag or ingredient" autocomplete="off">
+    </label>
+    <label class="field">
+      <span>Meal type</span>
+      <select name="meal_type">
+        <option value="">All</option>
+        {% for m in data.facets.meal_types %}<option value="{{ m }}" {{ 'selected' if m == filters.meal_type }}>{{ m|capitalize }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Protein</span>
+      <select name="protein">
+        <option value="">All</option>
+        {% for p in data.facets.proteins %}<option value="{{ p }}" {{ 'selected' if p == filters.protein }}>{{ p|capitalize }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Tag</span>
+      <select name="tag">
+        <option value="">All</option>
+        {% for t in data.facets.tags %}<option value="{{ t }}" {{ 'selected' if t == filters.tag }}>{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Sort by</span>
+      <select name="sort">
+        {% for key, label in [('title','Title'),('rating','Rating'),('time','Total time'),('cooked','Recently cooked')] %}
+        <option value="{{ key }}" {{ 'selected' if key == filters.sort }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button type="submit" class="button">Apply</button></noscript>
+  </form>
+
+  <div id="results" aria-live="polite">
+    {% include "meals/_results.html" %}
+  </div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.recipes %}
+  <div class="card"><div class="empty-state">No recipes match those filters.</div></div>
+{% else %}
+  <p class="result-count">{{ data.recipes|length }} of {{ data.total }} recipes</p>
+  <div class="recipe-grid">
+    {% for r in data.recipes %}
+    <a class="card recipe-card" href="/meals/{{ r.id }}">
+      <h3>{{ r.title }}</h3>
+      {% if r.description %}<p class="recipe-desc">{{ r.description|truncate(110) }}</p>{% endif %}
+      <div class="chips">
+        {% if r.meal_type %}<span class="pill pill-muted">{{ r.meal_type }}</span>{% endif %}
+        {% if r.protein_type %}<span class="pill pill-muted">{{ r.protein_type }}</span>{% endif %}
+        {% for t in r.tags %}<span class="chip">{{ t }}</span>{% endfor %}
+      </div>
+      <div class="recipe-meta">
+        <span>{{ r.total_time_min|fmt_minutes }}</span>
+        {% if r.rating %}<span class="stars" aria-label="Rated {{ r.rating }} of 5">{{ r.rating|stars }}</span>{% endif %}
+        {% if r.last_cooked_at %}<span class="muted">cooked {{ r.last_cooked_at }}</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+{% endif %}

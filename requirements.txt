@@ -1,6 +1,9 @@
 # Runtime dependencies for every script, the dashboard, and the hyvee/fitness
 # Playwright automation. Install with scripts/setup_wsl.sh.
-flask~=3.1
+fastapi~=0.142
+uvicorn~=0.54
+jinja2~=3.1
+httpx~=0.28  # FastAPI TestClient (dashboard tests)
 playwright~=1.63
 numpy~=2.5
 xlsxwriter~=3.2

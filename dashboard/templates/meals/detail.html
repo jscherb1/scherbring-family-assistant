@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <a class="back-link" href="/meals">← All recipes</a>
+  <h1>{{ recipe.title }}</h1>
+  {% if recipe.description %}<p class="subtitle">{{ recipe.description }}</p>{% endif %}
+{% endblock %}
+
+{% block content %}
+  <div class="chips detail-chips">
+    {% if recipe.meal_type %}<span class="pill pill-muted">{{ recipe.meal_type }}</span>{% endif %}
+    {% if recipe.protein_type %}<span class="pill pill-muted">{{ recipe.protein_type }}</span>{% endif %}
+    {% for t in recipe.tags %}<span class="chip">{{ t }}</span>{% endfor %}
+  </div>
+
+  <div class="grid stats">
+    <section class="card"><h2>Prep</h2><div class="metric">{{ recipe.prep_time_min|fmt_minutes }}</div></section>
+    <section class="card"><h2>Cook</h2><div class="metric">{{ recipe.cook_time_min|fmt_minutes }}</div></section>
+    <section class="card"><h2>Total</h2><div class="metric">{{ recipe.total_time_min|fmt_minutes }}</div></section>
+    <section class="card"><h2>Servings</h2><div class="metric">{{ recipe.servings or "—" }}</div></section>
+  </div>
+
+  <div class="detail-layout">
+    <section class="card">
+      <h2>Ingredients</h2>
+      {% if recipe.ingredients %}
+      <ul class="ingredients">
+        {% for i in recipe.ingredients %}
+        <li>{{ i.text }}{% if not i.shopping %} <span class="muted">(pantry)</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty-state">No ingredients listed.</div>{% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Steps</h2>
+      {% if recipe.steps %}
+      <ol class="steps">
+        {% for s in recipe.steps %}<li>{{ s }}</li>{% endfor %}
+      </ol>
+      {% else %}<div class="empty-state">No steps listed.</div>{% endif %}
+    </section>
+  </div>
+
+  {% if recipe.notes or recipe.source_url or recipe.last_cooked_at or recipe.rating or recipe.feedback %}
+  <section class="card detail-extra">
+    <h2>Notes &amp; history</h2>
+    {% if recipe.rating %}<p><span class="stars" aria-label="Rated {{ recipe.rating }} of 5">{{ recipe.rating|stars }}</span></p>{% endif %}
+    {% if recipe.last_cooked_at %}<p>Last cooked {{ recipe.last_cooked_at }}</p>{% endif %}
+    {% if recipe.source_url %}<p><a href="{{ recipe.source_url }}" rel="noopener noreferrer" target="_blank">Original recipe source ↗</a></p>{% endif %}
+    {% if recipe.notes %}<p>{{ recipe.notes }}</p>{% endif %}
+    {% if recipe.feedback %}
+    <h3>Feedback</h3>
+    <ul class="run-list">
+      {% for f in recipe.feedback %}
+      <li>
+        <div><span class="muted">{{ f.date or "undated" }}</span>
+          {% if f.rating %}<span class="stars">{{ f.rating|stars }}</span>{% endif %}</div>
+        {% if f.comment %}<div>{{ f.comment }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
+{% endblock %}
