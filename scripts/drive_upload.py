@@ -11,11 +11,11 @@ OAuth token (like the vendored monarch server) and uploads resumably from disk.
 One-time setup (only the user can do this):
   1. In Google Cloud Console, create a project, enable the Google Drive API.
   2. Create an OAuth client ID of type "Desktop app"; download the client-secret
-     JSON to `state/google/drive_client_secret.json` (or set
+     JSON to `~/.config/scherbring-assistant/google/drive_client_secret.json` (or set
      GOOGLE_DRIVE_CLIENT_SECRET to its path).
   3. Run `python scripts/drive_upload.py auth` in a terminal and complete the
      browser consent. This writes the refresh token to
-     `state/google/drive_token.json`. After that, all commands run unattended.
+     `~/.config/scherbring-assistant/google/drive_token.json`. After that, all commands run unattended.
 
 Commands (each prints JSON to stdout):
   auth                                  interactive one-time authorization
@@ -33,12 +33,12 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
-import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-GOOGLE_DIR = REPO_ROOT / "state" / "google"
+from paths import get_env, secrets_dir
+
+GOOGLE_DIR = secrets_dir() / "google"
 DEFAULT_CLIENT_SECRET = GOOGLE_DIR / "drive_client_secret.json"
 DEFAULT_TOKEN = GOOGLE_DIR / "drive_token.json"
 FOLDER_MIME = "application/vnd.google-apps.folder"
@@ -55,16 +55,17 @@ def _err(msg: str, code: int = 1) -> int:
 
 
 def _client_secret_path() -> Path:
-    return Path(os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", str(DEFAULT_CLIENT_SECRET)))
+    return Path(get_env("GOOGLE_DRIVE_CLIENT_SECRET") or DEFAULT_CLIENT_SECRET)
 
 
 def _token_path() -> Path:
-    return Path(os.environ.get("GOOGLE_DRIVE_TOKEN", str(DEFAULT_TOKEN)))
+    return Path(get_env("GOOGLE_DRIVE_TOKEN") or DEFAULT_TOKEN)
 
 
 def _load_credentials(interactive: bool):
     """Load stored credentials, refreshing or (if interactive) running the OAuth
     flow as needed. Raises RuntimeError with an actionable message otherwise."""
+    from google.auth.exceptions import RefreshError
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
 
@@ -76,9 +77,19 @@ def _load_credentials(interactive: bool):
     if creds and creds.valid:
         return creds
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        token_path.write_text(creds.to_json(), encoding="utf-8")
-        return creds
+        try:
+            creds.refresh(Request())
+        except RefreshError as exc:
+            # Revoked or expired refresh token (invalid_grant). Interactive
+            # callers fall through to a fresh consent flow below.
+            if not interactive:
+                raise RuntimeError(
+                    f"Google Drive token was rejected ({exc}). Run "
+                    "`python scripts/drive_upload.py auth` in a terminal to re-authorize."
+                ) from exc
+        else:
+            token_path.write_text(creds.to_json(), encoding="utf-8")
+            return creds
 
     if not interactive:
         raise RuntimeError(
@@ -96,7 +107,13 @@ def _load_credentials(interactive: bool):
             "or set GOOGLE_DRIVE_CLIENT_SECRET."
         )
     flow = InstalledAppFlow.from_client_secrets_file(str(secret), SCOPES)
-    creds = flow.run_local_server(port=0)
+    # No browser is launched from here (there usually isn't one in WSL); open the
+    # printed URL in any browser. The redirect to localhost reaches this process.
+    creds = flow.run_local_server(
+        port=0,
+        open_browser=False,
+        authorization_prompt_message="\nOpen this URL in your browser to authorize Google Drive:\n\n{url}\n",
+    )
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(creds.to_json(), encoding="utf-8")
     return creds
@@ -116,6 +133,9 @@ def _guess_mime(path: Path) -> str:
 
 def cmd_auth(_args) -> int:
     _load_credentials(interactive=True)
+    from credential_check import record_login
+
+    record_login("drive")
     print(json.dumps({"status": "authorized", "token": str(_token_path())}))
     return 0
 

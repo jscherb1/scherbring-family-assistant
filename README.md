@@ -1,7 +1,7 @@
 # Personal AI Assistant — Phase 1 (Telegram → Orchestrator → Todoist subagent)
 
 A personal multi-agent assistant orchestrated through Claude Code, running locally on
-Windows. One orchestrator is the single point of contact; it delegates to scoped
+Linux (built on WSL2 Ubuntu 24.04, run by systemd). One orchestrator is the single point of contact; it delegates to scoped
 subagents. Phase 1 proves the core loop end-to-end with one real subagent (**Todoist**)
 and a shared state store that gives follow-up questions continuity.
 
@@ -28,7 +28,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.claude/agents/home-assistant.md` | Home-assistant subagent (Phases 1-3) — ad-hoc smart-home control/query via the hosted Home Assistant connector plus a local `ha` MCP server (vendor/ha-mcp) for automation/script/scene/helper/dashboard authoring and history/log debugging; proactive monitoring is a later phase |
-| `vendor/ha-mcp/` | Vendored [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) (PyPI package, `.venv`) — runs as a loopback-only local HTTP server (`scripts/start_ha_mcp.ps1`) that Claude connects to via the `ha` entry in `.mcp.json` |
+| `vendor/ha-mcp/` | Vendored [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) (PyPI package, `.venv`) — runs as a loopback-only local HTTP server (`systemd/assistant-ha-mcp.service`) that Claude connects to via the `ha` entry in `.mcp.json` |
 | `.claude/agents/fitness.md` | Fitness subagent (Phases 1-3) — plans weekly workouts by reusing the COROS Training Hub library, gated on approval, writes to Coros + the "Running" Google Calendar |
 | `scripts/fitness_store.py` | Zero-dep CLI for fitness data (workout-library cache sync/list, weekly-plan add/list/update sub-commands) |
 | `scripts/fitness/` | Playwright + API browser layer for COROS Training Hub — `login_test.py` (session), `library_sync.py` (Workout Library scrape), `schedule_ops.py` (list-week / add-existing-workout / remove-workout, via the real Coros API, not drag-and-drop), `coros_web.py` (selector/URL/endpoint constants), `coros_session.py` (shared helpers) |
@@ -41,25 +41,26 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_model.py` | Monte Carlo retirement engine (numpy) — success probability, percentile bands, base + what-if scenarios |
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
-| `.mcp.json` | Project MCP config (Todoist HTTP/OAuth). Gitignored. See `.mcp.json.example`. |
+| `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
 | `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
 | `scripts/scheduler_store.py` | Zero-dep CLI for the scheduled-tasks registry (add/list/enable/disable/delete/due/log-run); called by `scheduler_dispatch.py` to find and dispatch due tasks |
 | `scripts/scheduler_dispatch.py` | Zero-token external poller — writes a heartbeat tick, checks for due tasks, and dispatches each via `claude --print` as a one-shot subprocess. Exits silently when nothing is due. |
-| `scripts/run_scheduler_hidden.vbs` | VBS launcher so the Windows Task Scheduler trigger runs without a console flash (same pattern as `run_watchdog_hidden.vbs`) |
-| `scripts/register_scheduler_task.ps1` | One-time setup for the `PersonalAssistantScheduler` Scheduled Task (fires every ~2 min, runs `scheduler_dispatch.py`) |
-| `scripts/start_orchestrator.ps1` | Idempotent launcher — skips if already running, restarts on exit |
-| `scripts/orchestrator_status.ps1` | Read-only check for whether the orchestrator is running |
-| `scripts/register_orchestrator_task.ps1` | One-time setup for the auto-start-at-logon Scheduled Task |
-| `scripts/start_ha_mcp.ps1` | Idempotent launcher for the local `ha-mcp` HTTP server (loopback-only, port 8086) — skips if already running, restarts on exit |
-| `scripts/run_ha_mcp_hidden.vbs` | VBS launcher so the ha-mcp auto-start-at-logon task runs without a console flash |
-| `scripts/register_ha_mcp_task.ps1` | One-time setup for the `PersonalAssistantHaMcp` auto-start-at-logon Scheduled Task |
-| `scripts/watchdog_telegram_health.ps1` | Detects a stuck Telegram MCP connection and force-restarts the orchestrator |
-| `scripts/watchdog_scheduler_health.ps1` | Detects a stalled `PersonalAssistantScheduler` dispatch task (via heartbeat file), triggers recovery, and sends a direct Telegram alert |
-| `scripts/run_watchdog.ps1` | Wrapper the watchdog Scheduled Task invokes; logs to `state/logs/` |
-| `scripts/register_watchdog_task.ps1` | One-time setup for the watchdog Scheduled Task (fires every ~2 min) |
+| `systemd/` | systemd **user** unit templates (`@REPO_ROOT@` placeholder): orchestrator, scheduler, watchdog, ha-mcp, dashboard, credential check, backup |
+| `scripts/install_systemd.sh` | Installs the units into `~/.config/systemd/user/` and optionally enables named ones |
+| `scripts/setup_wsl.sh` | Builds `.venv`, installs Python deps + Playwright Chromium, the pinned `ha-mcp` and Monarch servers |
+| `scripts/paths.py` | Shared locations and secrets loading (`~/.config/scherbring-assistant/.env`); every script goes through this, nothing hardcodes a home directory |
+| `scripts/start_orchestrator.sh` | The orchestrator loop run inside tmux — single instance (flock), restarts 10 s after any exit, logs starts/exits |
+| `scripts/attach_orchestrator.sh`, `scripts/register_attach_window.ps1` | Optional: a window that shows the live orchestrator session (the only Windows-side script) |
+| `scripts/run_watchdog.sh` | One watchdog pass (both checks + log pruning); run every 2 minutes by `assistant-watchdog.timer` |
+| `scripts/watchdog_telegram_health.py` | Detects a stuck Telegram MCP connection and kills `claude` so the loop restarts it |
+| `scripts/watchdog_scheduler_health.py` | Detects a stalled scheduler dispatcher (via the heartbeat file), restarts the timer, and sends a direct Telegram alert |
+| `scripts/scheduler_run_now.py` | Runs one scheduled task immediately through the real dispatch path, for testing |
+| `scripts/credential_check.py` | Daily check that warns on Telegram before Hy-Vee, Google Drive and Monarch logins expire |
+| `scripts/backup.py` | Daily backup: SQLite snapshot, Claude memory notes, age-encrypted secrets; keeps 14 daily + 8 weekly |
+| `scripts/monarch_result.py` | Read-only queries over large saved Monarch results, so headless runs need no `python -c` or `jq` |
 | `scripts/kid_memories_store.py` | Zero-dep CLI for kid memories (add/update/get/list/mark-drive-synced/mark-drive-failed/add-trigger/triggers) |
 | `scripts/lawn_garden_store.py` | Zero-dep CLI for lawn & garden data (plant/product/program/treatment/issue/config sub-commands) |
 | `scripts/profile_store.py` | Zero-dep CLI for the personal profile store (person/fact/global-fact sub-commands) — any subagent can call it directly |
@@ -68,16 +69,22 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/hyvee.md` | Hy-Vee cart-builder subagent — resolves the Todoist shopping list to specific products and builds (never places) a Hy-Vee Aisles Online cart |
 | `scripts/hyvee_store.py` | Zero-dep CLI for the cart-builder decision store (history / prefs / feedback / seed / resolve / rank / run sub-commands) |
 | `scripts/hyvee/` | Playwright browser layer — `cart_ops.py` (login, purchase-history sync, product search, add-to-cart, cart verify), `diagnose.py` (site-change maintenance toolkit), `hyvee_web.py` (selector/URL/endpoint constants), `hyvee_session.py` (shared helpers) |
-| `.env.example` | Env template (Hy-Vee cart builder needs `HYVEE_USERNAME`/`HYVEE_PASSWORD` here; otherwise no real secrets needed for Phase 1) |
+| `.env.example` | Template listing the keys for `~/.config/scherbring-assistant/.env` (the secrets file, outside the repo). Hy-Vee, COROS, Home Assistant and Telegram alert settings go there. |
 
-> **Location matters:** this project lives **outside** OneDrive on purpose. The personal
-> task DB and any tokens must not sync to a corporate cloud tenant. Back up via a
-> **private** git remote, not OneDrive.
+> **Location matters:** keep this project on the Linux filesystem (not under `/mnt/c`) and outside
+> any corporate-synced folder. The personal task DB and any tokens must not sync to a cloud
+> tenant. Credentials live in `~/.config/scherbring-assistant/`, outside the repo. Back up with the
+> daily backup job (`scripts/backup.py`, see `docs/OPERATIONS.md`) plus a **private** git remote.
 
 ## Setup
 
 ### A. Manual, one-time (you — needs an interactive `claude` session + a browser)
 
+0. **Build the environment** (once, from the repo root): `scripts/setup_wsl.sh`. It creates
+   `.venv`, installs the Python dependencies and Playwright's Chromium, and installs the pinned
+   `ha-mcp` and Monarch servers under `vendor/`. Then create the secrets file, which lives
+   **outside the repo**: `~/.config/scherbring-assistant/.env` (directory mode 700, file mode
+   600). Use `.env.example` as the list of keys. Every script reads it through `scripts/paths.py`.
 1. **Telegram bot** — create one via [@BotFather](https://t.me/BotFather); copy the token.
 2. **Your Telegram user ID** — get your numeric ID (e.g. via [@userinfobot](https://t.me/userinfobot)).
 3. **Private git remote** (backup):
@@ -92,9 +99,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
    - Use a Todoist **test project** if you want to avoid touching your real lists — the
      subagent can create and complete tasks.
 5. **Install Bun** — the Telegram channel's MCP server runs on **Bun** (not Node). Without
-   it the channel silently never starts. Install and reopen your terminal:
-   ```powershell
-   powershell -c "irm bun.sh/install.ps1 | iex"
+   it the channel silently never starts. Install it, then reopen your terminal:
+   ```
+   curl -fsSL https://bun.sh/install | bash
    ```
    Verify: `bun --version`.
 6. **Telegram channel** — configure the bot (any `claude` session, persists to
@@ -131,69 +138,76 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 
 ## Launch (the orchestrator)
 
-Preferred: run the idempotent launcher — it checks whether an instance is already
-running before starting a new one, and restarts it automatically if it ever exits:
+The orchestrator is `claude --model sonnet --permission-mode auto --channels
+plugin:telegram@claude-plugins-official`, an interactive terminal program, so it runs inside a
+detached **tmux** session named `assistant`. `scripts/start_orchestrator.sh` is the loop inside
+that session: it allows only one instance (flock), restarts `claude` 10 seconds after every exit,
+and logs each start and exit.
+
+Normally systemd starts it (see below). By hand, for debugging:
 
 ```
-powershell -ExecutionPolicy Bypass -File scripts\start_orchestrator.ps1
+tmux new-session -d -s assistant scripts/start_orchestrator.sh   # start
+tmux attach -t assistant                                         # watch it (Ctrl-b d detaches)
 ```
 
-Or run the raw command directly (no idempotency/restart):
+Message your bot from Telegram. Every start is a fresh Claude session; a hook
+(`telegram_context_bridge.py`) replays the last hour of conversation into it.
+
+## Always-on: systemd user units
+
+Everything runs as **systemd user units**, templated in `systemd/` and installed with
+`scripts/install_systemd.sh` (which fills in this checkout's path):
+
+| Unit | What it does |
+|---|---|
+| `assistant-orchestrator.service` | The Claude Code orchestrator, in tmux. Restarts whenever it exits. |
+| `assistant-scheduler.timer` / `.service` | Scheduled-task dispatcher, every 2 minutes. |
+| `assistant-watchdog.timer` / `.service` | Telegram-health and scheduler-health checks, every 2 minutes, plus log pruning. |
+| `assistant-ha-mcp.service` | Local Home Assistant MCP server on 127.0.0.1:8086. |
+| `assistant-credential-check.timer` / `.service` | Daily 09:30 warning before Hy-Vee, Drive or Monarch logins expire. |
+| `assistant-backup.timer` / `.service` | Daily 03:15 backup of the database, memory notes and encrypted secrets. |
+| `assistant-dashboard.service` | Optional local dashboard (127.0.0.1 only). |
+
+First-time install on a fresh machine:
 
 ```
-claude --channels plugin:telegram@claude-plugins-official
+scripts/setup_wsl.sh                    # venv, Python deps, Playwright, ha-mcp, Monarch server
+sudo loginctl enable-linger "$USER"     # user units run without a login session
+scripts/install_systemd.sh assistant-orchestrator.service assistant-scheduler.timer \
+    assistant-watchdog.timer assistant-ha-mcp.service assistant-credential-check.timer \
+    assistant-backup.timer
 ```
 
-Leave the session running; it's the live orchestrator. Message your bot from Telegram.
-
-## Always-on: auto-start at logon + status check
-
-One-time setup — registers a Scheduled Task (`PersonalAssistantOrchestrator`) that
-starts the orchestrator automatically whenever you log into Windows, in a minimized
-window, and restarts it if it crashes:
-
-```
-powershell -ExecutionPolicy Bypass -File scripts\register_orchestrator_task.ps1
-```
-
-- The task runs only while you're logged on (no Windows password stored) — it keeps
-  going through a locked screen, but stops if you sign out or restart without logging
-  back in.
-- Minimize the window rather than closing it; closing the window stops the assistant.
-- To check whether it's currently running (e.g. before manually starting another copy
-  and accidentally double-polling Telegram):
-  ```
-  powershell -ExecutionPolicy Bypass -File scripts\orchestrator_status.ps1
-  ```
-- To re-register the task later (e.g. after moving the repo), just re-run
-  `register_orchestrator_task.ps1` — it replaces the existing task.
-- To remove it: `Unregister-ScheduledTask -TaskName PersonalAssistantOrchestrator`.
-- Unattended auto-restart (crash recovery, logon) is safe to rely on: the orchestrator
-  no longer loads any development channel at launch, so there's no interactive
-  confirmation dialog left to silently stall a restart (see **Scheduled tasks** below
-  for the history here).
+**On WSL2** the VM must also stay up on its own: `/etc/wsl.conf` needs `[boot] systemd=true`,
+`%UserProfile%\.wslconfig` needs `vmIdleTimeout=-1` under `[wsl2]`, and one Windows startup task
+keeps the VM alive (`wsl.exe -d Ubuntu-24.04 -u <user> -- sleep infinity`). An optional logon task
+that opens a window showing the live session is in `scripts/register_attach_window.ps1`.
+`docs/OPERATIONS.md` has the full day-to-day runbook: status, logs, restart, backup, restore.
 
 ## Scheduled tasks (proactive, recurring prompts)
 
 Lets you ask the orchestrator to do something on a schedule — "every Sunday at 9am,
 plan next week's dinners and post it" — and have the result posted into this same
 Telegram chat. Adding a new scheduled task is just a conversation with the `scheduler`
-subagent (or a row in the registry via `scheduler_store.py`) — it never touches
-Windows Task Scheduler.
+subagent (or a row in the registry via `scheduler_store.py`) — it never touches systemd.
 
-**Architecture:** A dedicated Windows Scheduled Task (`PersonalAssistantScheduler`)
-runs `scripts/scheduler_dispatch.py` every 2 minutes. That script:
+**Architecture:** a systemd user timer (`assistant-scheduler.timer`) runs
+`scripts/scheduler_dispatch.py` every 2 minutes. That script:
 1. Writes a heartbeat tick to `state/scheduler_loop_state.json` (monitors health).
-2. Runs `scheduler_store.py due` to check the SQLite registry for anything due.
+2. Runs `scheduler_store.py due` to check the SQLite registry for anything due. Cron is
+   evaluated in the machine's local time zone, so `/etc/localtime` must be right.
 3. **If nothing is due — exits immediately. Zero Claude API calls, zero tokens.**
-4. If tasks are due — dispatches each via `claude --print "<prompt>" --channels
-   plugin:telegram@claude-plugins-official` as a one-shot subprocess (fresh context,
-   no accumulated session state), then logs the result.
-5. If a task fails — sends a direct Telegram alert via the Bot API (no Claude involved).
+4. If tasks are due — runs each as a one-shot `claude --print --model sonnet` subprocess (fresh
+   context, 300 s limit). The agent wraps its reply in `<<<TELEGRAM_SEND>>>` markers and the
+   dispatcher delivers it through the Telegram Bot API.
+5. If a task fails, or ran with any tool-permission denial, the run is marked failed and a
+   direct Telegram alert goes out (no Claude involved). Missed runs after downtime collapse
+   into one catch-up run.
 
-A separate OS-level watchdog (`scripts/watchdog_scheduler_health.ps1`) verifies the
-heartbeat is ticking and triggers recovery if it goes stale, suppressing alerts caused
-by machine sleep (both heartbeat and task last-run equally stale = silent recovery).
+A separate watchdog (`scripts/watchdog_scheduler_health.py`, run every 2 minutes by
+`assistant-watchdog.timer`) verifies the heartbeat is ticking and restarts the timer if it goes
+stale, staying quiet if the machine was asleep.
 
 *(History: v1 used a hand-written local MCP channel server requiring
 `--dangerously-load-development-channels`, which caused a multi-hour outage from
@@ -203,24 +217,16 @@ The current external-dispatch approach eliminates both problems.)*
 
 One-time setup:
 
-1. **Register the scheduler Scheduled Task** (fires every ~2 minutes, zero tokens
-   when idle):
-   ```
-   powershell -ExecutionPolicy Bypass -File scripts\register_scheduler_task.ps1
-   ```
-2. **Register the watchdog Scheduled Task** (Telegram-connection health check +
-   scheduler heartbeat health check, runs every ~2 minutes):
-   ```
-   powershell -ExecutionPolicy Bypass -File scripts\register_watchdog_task.ps1
-   ```
-3. **Set the alert chat ID** the watchdog uses for direct Telegram alerts — edit
-   `scripts/scheduler.config.json`:
-   ```json
-   { "alert_chat_id": "<your chat_id>" }
-   ```
-4. Try it: message the bot "every day at [a couple minutes from now], say hello" and
-   confirm the scheduled reply arrives — no manual channel setup, no `bun install`,
-   no confirmation dialogs.
+1. **Install and start the timers** (see **Always-on** above):
+   `scripts/install_systemd.sh assistant-scheduler.timer assistant-watchdog.timer`
+2. **Set the alert chat ID** the watchdogs use for direct Telegram alerts: add
+   `TELEGRAM_ALERT_CHAT_ID=<your chat_id>` to `~/.config/scherbring-assistant/.env`.
+3. Try it: message the bot "every day at [a couple minutes from now], say hello" and
+   confirm the scheduled reply arrives.
+
+To run one task right now through the real dispatch path (for testing; it does not
+advance the task's schedule): `python scripts/scheduler_run_now.py --name <task>`
+(`--list` shows the names; `--ignore-gates` overrides a task's own date check).
 
 ## Kids memory keeper
 
@@ -393,16 +399,13 @@ writes. Automation/script/scene/dashboard writes always follow propose-then-conf
 One-time setup for the local `ha` server:
 ```
 # 1. Home Assistant -> Profile -> Security -> Long-lived access tokens -> Create Token
-# 2. Add to .env (gitignored, never commit):
+# 2. Add to ~/.config/scherbring-assistant/.env (mode 600, never commit):
 #      HOMEASSISTANT_URL=http://homeassistant.local:8123
 #      HOMEASSISTANT_TOKEN=<paste token>
-# 3. Install the vendored package once:
-python -m venv vendor/ha-mcp/.venv
-./vendor/ha-mcp/.venv/Scripts/python.exe -m pip install ha-mcp
-# 4. Register auto-start-at-logon (mirrors register_orchestrator_task.ps1):
-powershell -ExecutionPolicy Bypass -File scripts\register_ha_mcp_task.ps1
-# 5. Start it now without logging off/on:
-powershell -ExecutionPolicy Bypass -File scripts\start_ha_mcp.ps1
+# 3. scripts/setup_wsl.sh installs ha-mcp (pinned) into vendor/ha-mcp/.venv. It needs Python >= 3.13,
+#    so that venv is created with uv, separate from the main .venv.
+# 4. Start it, and have it start at boot:
+scripts/install_systemd.sh assistant-ha-mcp.service
 ```
 Verify with `claude mcp list` — the `ha` entry should show **Connected**.
 
@@ -444,10 +447,10 @@ guessing at a structure. History-informed planning (using
 `fitness_weekly_plans.completion_status` to adjust future weeks) is schema-ready but
 not yet built.
 
-One-time setup: add `COROS_USERNAME`/`COROS_PASSWORD` to `.env`, then
-`pip install -r scripts/fitness/requirements.txt && playwright install chromium`.
-Weekly trigger: `weekly-fitness-plan` scheduled task, Sundays 6pm — see **Scheduled
-tasks** above.
+One-time setup: add `COROS_USERNAME`/`COROS_PASSWORD` to `~/.config/scherbring-assistant/.env`
+(`scripts/setup_wsl.sh` installs Playwright and Chromium). Always pass `--headless` to the COROS
+scripts when running them by hand on a machine with no display. Weekly trigger:
+`weekly-fitness-plan` scheduled task, Sundays 6pm — see **Scheduled tasks** above.
 
 See `docs/superpowers/specs/2026-08-20-fitness-agent-coros-login-design.md` and its
 two follow-on specs in the same directory for the full phased design and live
@@ -495,13 +498,18 @@ Monarch. Until it's restored, these agents talk to Monarch through a **local, ve
 server** instead: `vendor/monarch-mcp-server/` (the community
 [`robcerda/monarch-mcp-server`](https://github.com/robcerda/monarch-mcp-server), built on
 the actively-maintained `MonarchMoneyCommunity` fork), registered as `monarch` in
-`.mcp.json`. Credentials never pass through Claude — auth is a one-time terminal step that
-saves a session to the OS keyring:
+`.mcp.json`. `scripts/setup_wsl.sh` clones and installs it at a pinned commit. Credentials never
+pass through Claude. Auth is a one-time terminal step that saves a session file at
+`~/.monarch-mcp-server/token` (mode 600; there is no OS keyring on this setup):
 
 ```
 cd vendor/monarch-mcp-server
-python login_setup.py   # choose option 1: paste browser session cookies from app.monarch.com
+.venv/bin/python login_setup.py   # choose option 1: paste the cookie header from app.monarch.com
 ```
+
+The `check_auth_status` tool ignores that file and reports "not authenticated" even when the login
+works. Judge auth by a real read such as `get_accounts`. The session lasts roughly two weeks;
+`scripts/credential_check.py` warns before it expires.
 
 All four subagents are **read-only against Monarch except `finance`** (the only one that
 writes tags / rules / review status), default to **Sonnet**, and follow the same "derive
@@ -593,14 +601,18 @@ and check out yourself. It **never** places an order.
   `python scripts/hyvee/diagnose.py check` reports exactly which selector/endpoint broke, and
   the fix is a one-line change in `scripts/hyvee/hyvee_web.py`.
 
-One-time setup — put `HYVEE_USERNAME`/`HYVEE_PASSWORD` in `.env`, then:
+One-time setup — put `HYVEE_USERNAME`/`HYVEE_PASSWORD` in `~/.config/scherbring-assistant/.env`
+(`scripts/setup_wsl.sh` already installed Playwright and its Chromium), then:
 ```
-pip install -r scripts/hyvee/requirements.txt && playwright install chromium
 python scripts/hyvee/cart_ops.py sync-history
 python scripts/hyvee_store.py history ingest --json <json_path from sync-history>
 python scripts/hyvee_store.py seed --items "milk,eggs,bread,bananas,..."
 ```
-Build-only, always: `cart_ops.py` has no checkout command by design.
+Hy-Vee shows a CAPTCHA on login, so the headless login cannot refresh an expired session by
+itself. A session lasts about 11-12 days. `scripts/credential_check.py` warns on Telegram two
+days before, with the exact command:
+`python scripts/hyvee/login_test.py --login-only --manual-wait 180` (a browser window opens;
+solve the CAPTCHA). Build-only, always: `cart_ops.py` has no checkout command by design.
 
 ## State store CLI (reference)
 
@@ -635,7 +647,7 @@ Also confirm:
 ## Out of scope for Phase 1
 
 Email delivery, subagents beyond Todoist, containerization, Remote Control,
-notification-formatting skills. (Cron/Task Scheduler and a custom local channel were
+notification-formatting skills. (Cron-style scheduling and a custom local channel were
 originally listed here too — both are now built; see **Scheduled tasks** above.)
 
 ## Backlog / Future Ideas

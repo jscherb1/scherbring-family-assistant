@@ -13,6 +13,13 @@ cost/tokens.
 - If you encounter or are about to add a config that specifies Opus (or anything above
   Sonnet), stop and flag it to the user before proceeding.
 
+## Open to-dos and runbook
+
+Outstanding work (untested scheduled tasks, manual user actions, deferred decisions) is tracked
+in `docs/TODO.md`; read it before starting related work and update it when you finish or add
+something. Day-to-day operation (status, logs, restarts, backups, expiring logins) is in
+`docs/OPERATIONS.md`.
+
 ## Telegram channel behavior
 
 **Acknowledge any request expected to take more than ~3 seconds. This is a hard rule,
@@ -54,7 +61,7 @@ answer in plain text — fall back immediately to:
     python scripts/telegram_send.py "<message text>"
 
 This sends directly via the Telegram Bot API, bypassing the broken tool binding, so the user
-still gets the reply. It also stamps a state file that the `watchdog_telegram_health.ps1` task
+still gets the reply. It also stamps a state file that the `watchdog_telegram_health.py` check
 picks up as an explicit unhealthy signal and uses to restart the orchestrator with a fresh,
 working tool binding — so use this fallback every single time the real tool fails, not just
 once. Restarting drops conversation context, so the watchdog sends its own heads-up before

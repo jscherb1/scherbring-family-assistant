@@ -26,23 +26,36 @@ python -m pip install google-api-python-client google-auth google-auth-oauthlib 
 2. **OAuth consent screen** (if not already configured)
    - APIs & Services ▸ OAuth consent screen ▸ External ▸ fill the minimum
      (app name, your email) ▸ add your Google account as a **Test user**.
-     (Test-user mode is fine; no verification needed for personal use.)
+   - **Known issue: weekly re-login.** While the app's publishing status is
+     **Testing**, Google expires its refresh tokens after **7 days**, so
+     `drive_upload.py auth` has to be re-run about weekly (this is what broke the
+     Drive upload on 2026-08-16). To stop that, set the publishing status to
+     **In production** (OAuth consent screen / Google Auth platform ▸ Audience ▸
+     *Publish app*). For a single-user personal app you do not need Google's
+     verification: you click through the "Google hasn't verified this app" warning
+     once. Tokens issued while the app was in Testing keep the 7-day limit, so
+     re-run `python scripts/drive_upload.py auth` once after switching. Until this
+     is done, `scripts/credential_check.py` reminds you before each expiry; if you
+     do switch, raise Drive's `lifetime_days` in `state/credential_check.json`
+     (or watch whether it stays alive past 7 days) so the reminders stop.
 
 3. **OAuth client (Desktop app)**
    - APIs & Services ▸ Credentials ▸ Create credentials ▸ **OAuth client ID** ▸
      Application type **Desktop app**.
    - Download the JSON and save it to:
      ```
-     state/google/drive_client_secret.json
+     ~/.config/scherbring-assistant/google/drive_client_secret.json
      ```
-     (`state/google/` is git-ignored — the secret and token never get committed.)
+     (This directory is outside the repo, so the secret and token are never committed.)
 
 4. **Authorize** — in a terminal at the repo root:
    ```
    python scripts/drive_upload.py auth
    ```
-   A browser window opens; sign in and approve. On success it writes
-   `state/google/drive_token.json` and prints `{"status": "authorized"}`.
+   It prints a URL; open it in any browser (on WSL, your Windows browser), sign in
+   and approve. The browser then redirects to `localhost`, which reaches the script.
+   On success it writes `~/.config/scherbring-assistant/google/drive_token.json`
+   and prints `{"status": "authorized", ...}`.
 
 5. **Verify:**
    ```

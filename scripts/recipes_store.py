@@ -63,6 +63,19 @@ def _row_to_dict(row: sqlite3.Row) -> dict:
     return d
 
 
+COMPACT_FIELDS = (
+    "id", "title", "meal_type", "protein_type", "tags_json",
+    "total_time_min", "rating", "last_cooked_at",
+)
+
+
+def _compact(row: dict) -> dict:
+    """Just what is needed to choose candidates; use `get --id` for full detail."""
+    out = {k: row.get(k) for k in COMPACT_FIELDS}
+    out["tags"] = out.pop("tags_json") or []
+    return out
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     path = Path(args.file)
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -142,7 +155,11 @@ def cmd_list(args: argparse.Namespace) -> int:
     finally:
         conn.close()
 
-    print(json.dumps([_row_to_dict(r) for r in rows], ensure_ascii=False, indent=2))
+    items = [_row_to_dict(r) for r in rows]
+    if args.compact:
+        print(json.dumps([_compact(i) for i in items], ensure_ascii=False, separators=(",", ":")))
+    else:
+        print(json.dumps(items, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -275,6 +292,11 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--exclude-cooked-since", dest="exclude_cooked_since", default=None)
     ls.add_argument("--min-rating", dest="min_rating", type=int, default=None)
     ls.add_argument("--limit", type=int, default=None)
+    ls.add_argument(
+        "--compact", action="store_true",
+        help="only id/title/meal_type/protein_type/tags/total_time_min/rating/last_cooked_at "
+             "(about 5% of the full size); fetch one recipe's detail with `get --id`",
+    )
     ls.set_defaults(func=cmd_list)
 
     get = sub.add_parser("get", help="Full detail for one recipe.")

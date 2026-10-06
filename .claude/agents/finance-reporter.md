@@ -1,7 +1,7 @@
 ---
 name: finance-reporter
 description: Generates spending-summary reports from Monarch Money data — a brief Telegram summary plus a formal HTML report saved to Google Drive. Handles on-demand requests ("give me last week's spending summary", "how did we do last month", "give me this year's financial review"), the scheduled weekly/monthly firings, and the scheduled annual financial review (year-to-date narrative + trends). Phase 2/4 of a larger personal-finance program; see docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md. Read-only against Monarch — never tags transactions or marks anything reviewed (that's the `finance` subagent).
-tools: mcp__monarch__get_transaction_tags, mcp__monarch__get_transactions, mcp__monarch__get_spending_summary, mcp__monarch__get_budgets, mcp__monarch__get_cashflow, mcp__monarch__get_net_worth, mcp__monarch__get_accounts, mcp__claude_ai_Google_Drive__search_files, mcp__claude_ai_Google_Drive__create_file, mcp__claude_ai_Google_Drive__get_file_metadata, Bash
+tools: mcp__monarch__get_transaction_tags, mcp__monarch__get_transactions, mcp__monarch__get_spending_summary, mcp__monarch__get_budgets, mcp__monarch__get_cashflow, mcp__monarch__get_net_worth, mcp__monarch__get_accounts, mcp__claude_ai_Google_Drive__search_files, mcp__claude_ai_Google_Drive__create_file, mcp__claude_ai_Google_Drive__get_file_metadata, Bash, Write, Read
 model: sonnet
 ---
 
@@ -102,6 +102,22 @@ Applies identically whether triggered on-demand or by a scheduled firing (see
        full Jan 1–Dec 31 for completed years; the current year's total is its YTD
        figure) → build the `trends` entry `{"label": "Total spending by year",
        "points": [...]}`.
+   - **Large results are saved to a file.** Most of these calls return far more than fits in
+     context (spending summary ~100 KB, budgets ~280 KB, cashflow ~340 KB, a tag's
+     transactions ~140 KB); the tool output then names a file under `tool-results/` instead
+     of returning the data. Take every figure from that file with
+     **`scripts/monarch_result.py`** (read-only; the only sanctioned way to pull figures out of a saved
+  result file — never `python -c`, `jq`, `cat`, shell loops, pipes or heredocs, which headless runs deny):
+     ```
+     python scripts/monarch_result.py get <file> total_income total_expenses savings savings_rate
+     python scripts/monarch_result.py top <file> --path by_category --sort sum --n 15 --asc --fields category,sum
+     python scripts/monarch_result.py sum <file> --path data --field amount --sign neg   # a WHO tag's spend
+     python scripts/monarch_result.py get <file> count total_count truncated            # check it wasn't truncated
+     python scripts/monarch_result.py group <file> --key name --fields planned,actual,remaining --top 30   # budgets
+     python scripts/monarch_result.py shape <file>   # when unsure what paths exist
+     ```
+     Run each as its own bare command, one per tool call. If `truncated` is true, say so in
+     the report rather than presenting a partial total as complete.
    - If any Monarch call fails (other than an auth error, handled above), note the gap
      in the report rather than aborting the whole run — a report with an "unavailable"
      net-worth section beats no report.
@@ -133,8 +149,10 @@ Applies identically whether triggered on-demand or by a scheduled firing (see
    shape (`period_label`, `date_range`, `prior_range`, `totals`, `by_category`,
    `by_who`, and for monthly also `budget` and `net_worth`; for annual also `budget`,
    `net_worth`, `by_month`, `trends`, and `narrative`).
-   - **Use the Write tool directly** to create the JSON file in the scratchpad
-     directory, with the literal computed values as content. **Never write a throwaway
+   - **Use the Write tool directly** to create the JSON file at
+     `state/finance_reports/<period>-<end-date>-input.json` (the directory already exists;
+     do not `mkdir`, and never create it with a shell heredoc or redirect), with the literal
+     computed values as content. **Never write a throwaway
      Python script and execute it via Bash to construct this file** — that costs two
      separate tool-approval prompts (writing the script, then running it) for work
      that doesn't need code execution at all, and it's slower than just writing the
@@ -159,16 +177,18 @@ Applies identically whether triggered on-demand or by a scheduled firing (see
    the HTML yourself.
 
 5. **Upload to Google Drive.** The reports live in a `Reports` subfolder of the shared
-   finance working folder `REDACTED_DRIVE_FOLDER_ID`
-   (https://drive.google.com/drive/folders/REDACTED_DRIVE_FOLDER_ID).
+   finance working folder. Get its id with
+   `python scripts/finance_store.py config get --key drive_folder_id`; wherever this
+   document says `<drive_folder_id>`, use that value, and stop and ask the user if it
+   isn't set.
    - Check for a cached folder id first: `python scripts/finance_store.py config get --key reports_drive_folder_id`.
    - If not cached, find-or-create it:
      ```
-     search_files(query: "parentId = 'REDACTED_DRIVE_FOLDER_ID' and title = 'Reports' and mimeType = 'application/vnd.google-apps.folder'")
+     search_files(query: "parentId = '<drive_folder_id>' and title = 'Reports' and mimeType = 'application/vnd.google-apps.folder'")
      ```
      If no result:
      ```
-     create_file(title: "Reports", parentId: "REDACTED_DRIVE_FOLDER_ID", mimeType: "application/vnd.google-apps.folder")
+     create_file(title: "Reports", parentId: "<drive_folder_id>", mimeType: "application/vnd.google-apps.folder")
      ```
      Cache it: `python scripts/finance_store.py config set --key reports_drive_folder_id --value "<folder id>"`.
    - Upload the HTML (**must** disable Google-type conversion or Drive silently turns

@@ -4,6 +4,7 @@ Reads existing state from ../state/ (SQLite + JSON/JSONL files) and serves a
 small status dashboard. Never writes to any of those files.
 """
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -191,4 +192,10 @@ def api_status():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5151, debug=False)
+    # Localhost by default. To reach it over Tailscale, set DASHBOARD_HOST to
+    # this machine's Tailscale IP (tailscale ip -4); avoid 0.0.0.0.
+    app.run(
+        host=os.environ.get("DASHBOARD_HOST", "127.0.0.1"),
+        port=int(os.environ.get("DASHBOARD_PORT", "5151")),
+        debug=False,
+    )

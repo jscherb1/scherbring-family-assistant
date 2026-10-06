@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import urllib.error
@@ -35,11 +34,15 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from paths import REPO_ROOT, alert_chat_id, find_claude, get_env, telegram_env_path  # noqa: E402
+
 LOOP_STATE_FILE = REPO_ROOT / "state" / "scheduler_loop_state.json"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 DISPATCH_DEBUG_DIR = REPO_ROOT / "state" / "logs" / "scheduler_dispatch_debug"
 TASK_TIMEOUT_SECONDS = 300  # 5 minutes per task
+# Project policy (CLAUDE.md): scheduled AI usage defaults to Sonnet. Pinned here so
+# it does not depend on a per-machine ~/.claude/settings.json.
+MODEL = "sonnet"
 
 # The local `monarch` MCP server is a stdio server spawned fresh per process
 # (Python venv cold start + heavy monarchmoney/gql imports + a live Windows
@@ -55,57 +58,32 @@ MCP_TIMEOUT_MS = "60000"
 
 
 def _resolve_claude() -> str:
-    """Find the claude executable, preferring the real .exe over the npm .cmd shim.
-
-    npm's generated claude.cmd on Windows forwards args via a bare `%*`, which
-    mangles/truncates multi-line prompt arguments when invoked through
-    subprocess.run's list-argv form (confirmed by direct testing: the same
-    multi-line prompt reliably lost its marker instructions through claude.cmd
-    but worked every time through the underlying claude.exe). This is the root
-    cause of scheduled tasks' Telegram replies never arriving despite "ok"
-    status — see memory: scheduler_dispatch_false_ok_gap.
-    """
-    npm_dir = Path(os.environ.get("APPDATA", "")) / "npm"
-    exe_candidate = npm_dir / "node_modules" / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
-    if exe_candidate.exists():
-        return str(exe_candidate)
-    # shutil.which respects PATHEXT so it finds .cmd/.exe on Windows.
-    found = shutil.which("claude")
+    """Find the claude executable via PATH, falling back to ~/.local/bin."""
+    found = find_claude()
     if found:
         return found
-    # Fallback: npm global install location for the current user.
-    for name in ("claude.cmd", "claude.exe", "claude"):
-        candidate = npm_dir / name
-        if candidate.exists():
-            return str(candidate)
     raise FileNotFoundError(
-        "claude executable not found. Ensure @anthropic-ai/claude-code is installed "
-        "globally via npm and the npm bin directory is in PATH."
+        "claude executable not found on PATH or in ~/.local/bin. Set PATH in the "
+        "systemd unit (Environment=PATH=...) or install Claude Code."
     )
 
 
 CLAUDE_EXE = _resolve_claude()
 
 
-CONFIG_FILE = REPO_ROOT / "scripts" / "scheduler.config.json"
-TELEGRAM_ENV_FILE = Path(os.environ.get("USERPROFILE", "")) / ".claude" / "channels" / "telegram" / ".env"
+TELEGRAM_ENV_FILE = telegram_env_path()
 
 
 def _read_telegram_creds() -> tuple[str, str] | tuple[None, None]:
     """Return (bot_token, chat_id) from env file + config, or (None, None) if unavailable."""
     try:
-        token = None
-        if TELEGRAM_ENV_FILE.exists():
-            for line in TELEGRAM_ENV_FILE.read_text(encoding="utf-8").splitlines():
-                if line.startswith("TELEGRAM_BOT_TOKEN="):
-                    token = line.split("=", 1)[1].strip()
+        token = get_env("TELEGRAM_BOT_TOKEN", (TELEGRAM_ENV_FILE,))
         if not token:
             return None, None
-        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        chat_id = config.get("alert_chat_id")
+        chat_id = alert_chat_id()
         if not chat_id:
             return None, None
-        return token, str(chat_id)
+        return token, chat_id
     except Exception:  # noqa: BLE001
         return None, None
 
@@ -173,6 +151,20 @@ def deliver_telegram_message(chat_id: str, text: str) -> bool:
     except Exception as exc:  # noqa: BLE001
         print(f"scheduler_dispatch: failed to deliver telegram message: {exc}", flush=True)
         return False
+
+
+def count_permission_denials(debug_log: Path) -> int:
+    """How many tool calls the headless run was denied.
+
+    There is nobody to approve a prompt in a scheduled run, so every denial means the
+    workflow could not do something it tried. `claude --print` still exits 0 and the
+    agent usually still writes a message, so without this a degraded run looks "ok".
+    """
+    try:
+        text = debug_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    return text.count("tool permission denied")
 
 
 def _now_local_iso() -> str:
@@ -306,7 +298,7 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         safe_run_at = run_at.replace(":", "-") or "unknown"
         debug_log = DISPATCH_DEBUG_DIR / f"{task_id or 'unknown'}_{safe_run_at}.log"
         result = subprocess.run(
-            [CLAUDE_EXE, "--print", "--debug-file", str(debug_log), full_prompt],
+            [CLAUDE_EXE, "--print", "--model", MODEL, "--debug-file", str(debug_log), full_prompt],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -325,6 +317,11 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         else:
             success = process_ok
             summary = output[:500] if output else (result.stderr or "").strip()[:200]
+
+        denials = count_permission_denials(debug_log)
+        if denials:
+            success = False
+            summary = f"[{denials} tool permission denial(s): the run was degraded] {summary}"
 
         status_label = "ok" if success else "failed"
         print(

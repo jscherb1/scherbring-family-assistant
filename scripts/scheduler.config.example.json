@@ -1,0 +1,3 @@
+{
+  "alert_chat_id": "<your Telegram chat id; prefer TELEGRAM_ALERT_CHAT_ID in ~/.config/scherbring-assistant/.env>"
+}

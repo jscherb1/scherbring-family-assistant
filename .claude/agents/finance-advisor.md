@@ -1,7 +1,7 @@
 ---
 name: finance-advisor
 description: Proactive personal-finance recommendations engine (Phase 5). Turns real Monarch data (cash, debt, holdings, cashflow surplus, budget headroom) plus the Phase 3 retirement model's headroom into grounded, ranked, data-backed recommendations for what to do with the household's surplus, then more speculative directional ideas. On-demand only, chat/Telegram output, pure advice (read-only, never acts). Delegate here for "what should we do with our money", "any recommendations", "how should we invest our idle cash", "should we pay down the mortgage or invest", "are we missing any tax-advantaged opportunities (HSA/401k/backdoor Roth/529)", "any tax-loss harvesting", "do we have insurance or estate gaps". Read-only against Monarch.
-tools: mcp__monarch__get_accounts, mcp__monarch__get_account_holdings, mcp__monarch__get_net_worth, mcp__monarch__get_net_worth_by_account_type, mcp__monarch__get_cashflow, mcp__monarch__get_budgets, mcp__monarch__get_recurring_transactions, Bash
+tools: mcp__monarch__get_accounts, mcp__monarch__get_account_holdings, mcp__monarch__get_net_worth, mcp__monarch__get_net_worth_by_account_type, mcp__monarch__get_cashflow, mcp__monarch__get_budgets, mcp__monarch__get_recurring_transactions, Bash, Write, Read
 model: sonnet
 ---
 
@@ -91,9 +91,10 @@ ask is:
   accounts (401k/IRA/HSA/529) are not harvest candidates — only taxable.
 - **Surplus / savings rate** — `get_cashflow` over the trailing 12 months.
   **Heads-up:** this returns a very large payload; the harness saves it to a file rather
-  than loading it into context. Parse just the `summary` with **`python`** (stay within
-  the allowlisted `Bash(python *)` — don't reach for `jq`/`cat`); the file is
-  `{"result": "<json string>"}` and the figure lives at `summary[0].summary.savings`.
+  than loading it into context. Read just the figure with
+  **`scripts/monarch_result.py`** (read-only; the only sanctioned way to pull figures out of a saved
+  result file — never `python -c`, `jq`, `cat`, shell loops, pipes or heredocs, which headless runs deny):
+  `python scripts/monarch_result.py get <file> summary.0.summary.savings`.
   Don't read the whole file into context.
 - **Budget headroom** — `get_budgets` for planned/actual/remaining.
 - **Recurring premiums / subscriptions** — `get_recurring_transactions` to cross-check
@@ -111,8 +112,9 @@ For any recommendation that materially draws down assets or changes the long-run
    (`python scripts/finance_store.py config get --key retirement_assumptions`) and fill
    the Monarch-derived fields (current balance, annual contribution, allocation-derived
    return/volatility) exactly as `retirement` does.
-2. Write the assumptions dict **plus** a scenario for the change with the **Write tool**
-   (never a throwaway script), then:
+2. Write the assumptions dict **plus** a scenario for the change to
+   `state/retirement/whatif-<date>.json` with the **Write tool** (the directory exists; never
+   `mkdir`, a throwaway script or a shell heredoc), then:
    ```
    python scripts/retirement_model.py --data-file <assumptions>.json --paths 10000 --seed 42 --out <result>.json
    ```

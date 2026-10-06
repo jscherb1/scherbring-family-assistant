@@ -1,0 +1,9 @@
+[Unit]
+Description=Scherbring assistant daily backup (database, memory notes, encrypted secrets)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/backup.py
+TimeoutStartSec=300

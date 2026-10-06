@@ -14,13 +14,11 @@ carries out the stored prompt. Your job is only to manage the registry correctly
 
 ## How firing actually works (context, not your job)
 
-The orchestrator arms itself a self-renewing poll loop via Claude Code's `CronCreate` tool
-(see the "Scheduler self-arming" section of `CLAUDE.md`) that fires every ~2 minutes, checks
-this registry for anything due, and carries out the task's stored `prompt` text in-session,
-prefixed for the user as `📅 Scheduled: <task name>`. There is no external poller or channel —
-the orchestrator polls itself. An OS-level watchdog (`scripts/watchdog_scheduler_health.ps1`)
-independently verifies that loop is actually ticking and force-restarts the orchestrator if it
-ever goes stale. This means **the `prompt` you store must be fully self-contained** — written
+A systemd timer (`assistant-scheduler.timer`) runs `scripts/scheduler_dispatch.py` every ~2
+minutes. It checks this registry for anything due and runs each due task's stored `prompt` as a
+separate headless `claude --print` run (fresh context, no access to this conversation), then
+delivers the reply to Telegram. A watchdog (`scripts/watchdog_scheduler_health.py`)
+independently verifies the dispatcher is ticking and restarts the timer if it goes stale. This means **the `prompt` you store must be fully self-contained** — written
 as an instruction to a future orchestrator turn that has no memory of this conversation, not as
 a note to yourself. Write it in the imperative, naming any subagent to delegate to, e.g.:
 "Delegate to the meal-planner subagent to plan next week's dinners, then reply with the result"

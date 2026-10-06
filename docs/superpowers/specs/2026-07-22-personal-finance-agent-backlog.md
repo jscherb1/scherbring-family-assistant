@@ -51,7 +51,7 @@ nothing (silent-when-healthy convention used throughout this repo).
 **Output, per the user's spec:**
 - A **brief summary sent over Telegram** by the orchestrator.
 - A **formal HTML report** saved to the Drive working folder
-  (https://drive.google.com/drive/folders/REDACTED_DRIVE_FOLDER_ID —
+  (https://drive.google.com/drive/folders/<drive_folder_id> —
   suggest a `Reports/` subfolder, mirroring the `kids-memory` per-child-subfolder
   pattern) **and** emailed to the user.
 

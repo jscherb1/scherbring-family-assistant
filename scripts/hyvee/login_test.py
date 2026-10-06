@@ -13,6 +13,9 @@ Usage:
     playwright install chromium
     python scripts/hyvee/login_test.py                # headed, watch it work
     python scripts/hyvee/login_test.py --headless     # no visible window
+    python scripts/hyvee/login_test.py --login-only --manual-wait 180
+                                                      # refresh an expired session without touching the cart;
+                                                      # gives you 3 minutes to solve a CAPTCHA
     python scripts/hyvee/login_test.py --item bananas # different test item
 
 Requires HYVEE_USERNAME / HYVEE_PASSWORD in the repo-root .env file.
@@ -69,7 +72,7 @@ def is_logged_in(page) -> bool:
         return False
 
 
-def do_login(page, username: str, password: str) -> None:
+def do_login(page, username: str, password: str, manual_wait: int = 0) -> None:
     print("[login] Navigating to sign-in (Auth0)...")
     goto_login(page)
     page.wait_for_timeout(2000)
@@ -80,6 +83,19 @@ def do_login(page, username: str, password: str) -> None:
     # Submit via Enter — a cookie overlay can intercept a button click.
     page.press(SEL_PASSWORD, "Enter")
     page.wait_for_timeout(6000)
+
+    # Auth0 may show a visual CAPTCHA that only a person can solve. In a headed
+    # run, give the user time to finish it: wait until the browser leaves the
+    # identity host.
+    if manual_wait and "identity.hy-vee.com" in page.url:
+        print(
+            f"[login] Still on the sign-in page. If a CAPTCHA is showing, solve it in "
+            f"the browser window now (waiting up to {manual_wait}s)..."
+        )
+        try:
+            page.wait_for_url(lambda url: "identity.hy-vee.com" not in url, timeout=manual_wait * 1000)
+        except PlaywrightTimeoutError:
+            print("[login] Timed out waiting for the sign-in to finish.")
 
     # MFA: this account did not prompt in testing, but handle it if it appears.
     try:
@@ -160,7 +176,7 @@ def run(args) -> int:
                 print("[login] Reusing saved session — already signed in.")
             else:
                 print("[login] Not signed in — logging in fresh.")
-                do_login(page, username, password)
+                do_login(page, username, password, manual_wait=0 if args.headless else args.manual_wait)
                 if not is_logged_in(page):
                     raise RuntimeError(
                         "Login did not appear to succeed (no cart icon / "
@@ -168,6 +184,18 @@ def run(args) -> int:
                     )
                 context.storage_state(path=str(SESSION_FILE))
                 print(f"[login] Session saved to {SESSION_FILE}")
+                try:  # lets scripts/credential_check.py time its expiry reminders
+                    from credential_check import record_login
+
+                    record_login("hyvee")
+                except ImportError:
+                    pass
+
+            if args.login_only:
+                print("\nPASS: signed in; session saved (login-only, cart not touched)")
+                if args.keep_open:
+                    input("\nPress Enter to close the browser...")
+                return 0
 
             added = add_test_item_to_cart(page, args.item)
             result = "PASS" if added else "FAIL"
@@ -195,6 +223,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--item", default="milk", help="test item to search/add")
     ap.add_argument("--headless", action="store_true", help="hide the browser")
+    ap.add_argument(
+        "--login-only",
+        action="store_true",
+        help="sign in and save the session, but do not add a test item to the cart",
+    )
+    ap.add_argument(
+        "--manual-wait",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="headed only: wait this long for you to solve a CAPTCHA on the sign-in page",
+    )
     ap.add_argument(
         "--keep-open",
         action="store_true",

@@ -18,7 +18,7 @@ A shared SQLite store records what each agent did. You MUST use it on every turn
   ```
   python scripts/state_store.py query --agent todoist --limit 10
   ```
-  Run this from the project root (`C:\Users\USER\Projects\personal-assistant`).
+  Run this from the project root (the repo checkout directory).
   If the user's message is a follow-up ("what did I just add?", "why that list?",
   "undo that"), ANSWER FROM THIS RECORD FIRST rather than re-deriving from scratch.
   Never reply "I don't have that context" without checking here.
