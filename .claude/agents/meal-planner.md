@@ -85,11 +85,18 @@ The `detail-json` must be self-sufficient for later follow-ups.
 Use `scripts/recipes_store.py` (same project-root convention) as your recipe source of
 truth:
 ```
-python scripts/recipes_store.py list [--meal-type dinner] [--protein-type chicken] \
+python scripts/recipes_store.py list --compact [--meal-type dinner] [--protein-type chicken] \
   [--tag Crockpot] [--search "text"] [--exclude-cooked-since YYYY-MM-DD] \
   [--min-rating N] [--limit N]
 python scripts/recipes_store.py get --id <id>
 ```
+**Always pass `--compact` to `list`.** Without it the output is the full library with every
+recipe's ingredients and steps (over 100 KB, tens of thousands of tokens) and you will be
+tempted to post-process it with an inline `python -c`, which is not permitted. `--compact`
+returns only id, title, meal_type, protein_type, tags, total_time_min, rating and
+last_cooked_at: enough to pick candidates. Use `get --id <id>` for the one or two recipes
+you actually need detail on. Never run ad hoc `python -c` / heredoc scripts; the allowed
+commands are exactly the ones in this file.
 Prefer the library. Deprioritize or skip low-rated recipes (`rating` from past feedback)
 unless the user names that meal specifically. Generate a fresh, constraint-fitting idea
 when nothing in the library fits, or the user asks for something new or references an
