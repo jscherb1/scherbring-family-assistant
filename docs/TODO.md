@@ -33,6 +33,29 @@ update it when you finish or add something. Dates are absolute.
 8. **Check the Windows backup folder is covered.** Backups land in `C:\Users\<you>\Backups\assistant`.
    Make sure File History or OneDrive includes it, and consider a periodic `wsl --export` of the distro.
 
+## Telegram bridge (branch `feat/telegram-bridge`, started 2026-10-06)
+
+Replacing the plugin with `telegram_bridge.py` + `agent_worker.py` (design: `docs/OPERATIONS.md`
+"Telegram bridge"). Running on the test bot; production untouched.
+
+Done: durable inbox/outbox, bridge, worker (resume, MCP-ready gate, redelivery), systemd units with
+watchdog, canary + alerts, `agent_ctl`, dashboard Agent section, scheduled-task context notes, resume
+fallback from the message log, rotation/compaction, daily-cost alert.
+
+Still to do before cutover:
+- Decide the dashboard "talk to the orchestrator" box (needs its own token-protected page; the main
+  dashboard has no login) and whether to add a token-protected full-content stream view.
+- External dead-man's switch for whole-host outages (healthchecks.io ping from the canary; needs the
+  user to create a free check and add `HEALTHCHECK_PING_URL` to `.env`).
+- `agent_ctl mode plugin|bridge` switch-back command + one-way exporter into the old
+  `telegram_conversation_log.jsonl` so a rollback keeps recent context.
+- Feature parity with the plugin: attachments from the agent side (sending files/photos back),
+  edits, reactions.
+- Update CLAUDE.md "Telegram channel behavior" (ack/reply handled by the bridge), switch the units to
+  the production token (`--token-env TELEGRAM_BOT_TOKEN`), rotate the bot token (item 5 above), soak
+  one week, then remove the plugin path.
+- Windows keepalive and full-reboot drill with the new units (`wsl --shutdown`, confirm both come back).
+
 ## Agent follow-ups
 
 9. **Test the two scheduled tasks that have never run on WSL.** Dates are when each next fires on its own:

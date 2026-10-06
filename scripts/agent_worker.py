@@ -43,6 +43,12 @@ PING_EVERY_S = 30
 MODEL_CANARY_EVERY_S = 1800
 PING_TIMEOUT_S = 20
 MODEL_CANARY_TIMEOUT_S = 90
+ROTATE_CONTEXT_TOKENS = 150_000
+ROTATE_AGE_S = 7 * 86400
+COMPACT_MIN_TOKENS = 40_000
+MAINTENANCE_HOUR = 3  # local time; quiet-hours compaction
+COMPACT_INSTRUCTIONS = ("/compact Preserve: open tasks and pending questions, the user's preferences and corrections, "
+                        "outcomes of scheduled tasks, and anything the user asked to be remembered.")
 
 CHANNEL_PROMPT = """\
 You are running behind a message bridge, not the Telegram plugin. Overrides to anything in CLAUDE.md about Telegram:
@@ -90,6 +96,19 @@ def format_turn_prompt(row: dict) -> str:
     return "\n\n".join(parts)
 
 
+def format_seed(rows: list[dict]) -> str:
+    """Rebuild context from the durable message log when a session can't be resumed."""
+    if not rows:
+        return ""
+    lines = []
+    for r in rows:
+        who = "User" if r["dir"] == "in" else "Assistant"
+        when = datetime.fromtimestamp(r["at"]).strftime("%Y-%m-%d %H:%M")
+        lines.append(f"[{when}] {who}: {r['text']}")
+    return ("[Conversation history restored from the message log because the previous session could not be "
+            "resumed. Treat it as your memory of the recent conversation.]\n" + "\n".join(lines) + "\n[/history]\n\n")
+
+
 def sd_notify(msg: str) -> None:
     addr = os.environ.get("NOTIFY_SOCKET")
     if not addr:
@@ -122,6 +141,7 @@ class SdkSession:
         self.model = model
         self._client: Any = None
         self.mcp_ready = False
+        self.seed: str = ""  # history to prepend to the next turn after a fresh (non-resumed) start
 
     def _options(self):
         from claude_agent_sdk import ClaudeAgentOptions
@@ -133,7 +153,7 @@ class SdkSession:
             setting_sources=["project"],
             permission_mode="auto",
             system_prompt={"type": "preset", "preset": "claude_code", "append": CHANNEL_PROMPT},
-            resume=resume,
+            resume=resume or None,
             # A background task outlives its turn and its completion has nowhere to be
             # delivered here; make the agent run things in the foreground instead.
             env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "BRIDGE_WORKER": "1"},
@@ -143,8 +163,17 @@ class SdkSession:
         from claude_agent_sdk import ClaudeSDKClient
 
         if self._client is None:
-            self._client = ClaudeSDKClient(options=self._options())
-            await self._client.connect()
+            try:
+                self._client = ClaudeSDKClient(options=self._options())
+                await self._client.connect()
+            except Exception as e:  # noqa: BLE001
+                if not self.store.kv_get(f"session_id:{self.key}"):
+                    raise
+                log.error("could not resume session for %s (%r); starting fresh from the message log", self.key, e)
+                await self.close()
+                self._start_fresh()
+                self._client = ClaudeSDKClient(options=self._options())
+                await self._client.connect()
             self.mcp_ready = False
         deadline = time.time() + MCP_READY_TIMEOUT_S
         while time.time() < deadline:
@@ -160,11 +189,11 @@ class SdkSession:
         log.warning("MCP servers still pending after %ss: proceeding anyway", MCP_READY_TIMEOUT_S)
         self.store.kv_set("mcp_down", json.dumps(["timeout"]))
 
-    async def run_turn(self, prompt: str, on_event: Callable[[dict], None]) -> TurnResult:
+    async def run_turn(self, prompt: str, on_event: Callable[[dict], None], *, require_assistant: bool = True) -> TurnResult:
         from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, UserMessage
 
         await self.ensure_ready()
-        await self._client.query(prompt)
+        await self._client.query(self.seed + prompt)
         result = TurnResult(text="")
         seen_assistant = False
         # receive_messages (not receive_response): the latter stops at the FIRST result,
@@ -185,14 +214,39 @@ class SdkSession:
                     if isinstance(b, ToolResultBlock):
                         on_event({"type": "tool_result", "is_error": b.is_error, "content": str(b.content)[:2000]})
             elif isinstance(m, ResultMessage):
-                if not seen_assistant:
+                if require_assistant and not seen_assistant:
                     on_event({"type": "stale_result_ignored", "text": (m.result or "")[:200]})
                     continue
                 result = TurnResult(text=m.result or "", session_id=m.session_id, cost_usd=m.total_cost_usd, usage=m.usage or {})
                 if m.session_id:
+                    if self.store.kv_get(f"session_id:{self.key}") != m.session_id:
+                        self.store.kv_set(f"session_started:{self.key}", str(time.time()))
                     self.store.kv_set(f"session_id:{self.key}", m.session_id)
+                u = result.usage
+                self.store.kv_set(f"ctx_tokens:{self.key}", str((u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0)))
+                self.seed = ""
                 break
         return result
+
+    def _start_fresh(self) -> None:
+        self.store.kv_set(f"session_id:{self.key}", "")
+        self.store.kv_set(f"ctx_tokens:{self.key}", "0")
+        self.seed = format_seed(self.store.recent_conversation(self.key))
+
+    def should_rotate(self, now: float | None = None) -> bool:
+        ts = now if now is not None else time.time()
+        ctx = int(self.store.kv_get(f"ctx_tokens:{self.key}", "0") or 0)
+        started = float(self.store.kv_get(f"session_started:{self.key}", "0") or 0)
+        return ctx > ROTATE_CONTEXT_TOKENS or (started > 0 and ts - started > ROTATE_AGE_S)
+
+    async def rotate(self) -> None:
+        log.warning("rotating session for %s", self.key)
+        await self.close()
+        self._start_fresh()
+
+    async def compact(self) -> TurnResult:
+        # /compact legitimately ends with a result and no assistant message.
+        return await self.run_turn(COMPACT_INSTRUCTIONS, lambda ev: None, require_assistant=False)
 
     async def ping(self) -> list[str]:
         """Zero-token liveness check of the live agent process; returns MCP servers not connected."""
@@ -254,6 +308,9 @@ class Worker:
             self._reply(row, "⚠️ I couldn't process that message after several attempts. Please resend it or rephrase.")
             return True
         session = self._session(row["session_key"])
+        should_rotate = getattr(session, "should_rotate", None)
+        if should_rotate and should_rotate():
+            await session.rotate()
         started = time.time()
         events: list[dict] = []
 
@@ -290,9 +347,55 @@ class Worker:
         # Never close a message without telling the user something.
         self._reply(row, result.text if result.text.strip() else "✅ Done (I had nothing further to report).")
         self.store.complete(row["id"])
+        self._track_daily_cost(result.cost_usd or 0.0)
         _append_jsonl(USAGE_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "session": row["session_key"], "inbox_id": row["id"], "duration_s": round(time.time() - started, 1), "cost_usd": result.cost_usd, "usage": result.usage})
         _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_end", "duration_s": round(time.time() - started, 1)})
         return True
+
+    def _track_daily_cost(self, cost: float) -> None:
+        """Optional guard rail: alert once per day when API-rate cost passes BRIDGE_DAILY_COST_ALERT_USD."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        if self.store.kv_get("cost_day") != today:
+            self.store.kv_set("cost_day", today)
+            self.store.kv_set("cost_today", "0")
+        total = float(self.store.kv_get("cost_today", "0") or 0) + cost
+        self.store.kv_set("cost_today", str(total))
+        limit = float(os.environ.get("BRIDGE_DAILY_COST_ALERT_USD") or 0)
+        if limit and total > limit and self.store.kv_get("cost_alerted_day") != today:
+            self.store.kv_set("cost_alerted_day", today)
+            self._alert(f"💸 Agent usage today is about ${total:.2f} at API rates (alert threshold ${limit:.2f}).")
+
+    async def maintenance_once(self, now: datetime | None = None) -> bool:
+        """Quiet-hours compaction with instructions that keep what matters. Returns True if it ran."""
+        now = now or datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        if now.hour != MAINTENANCE_HOUR or self.store.kv_get("last_maintenance") == today:
+            return False
+        stats = self.store.stats()
+        if stats["inbox_pending"] or stats["inbox_processing"] or self.store.kv_get("current_turn"):
+            return False  # try again next minute while still inside the hour
+        self.store.kv_set("last_maintenance", today)
+        for key, session in list(self.sessions.items()):
+            compact = getattr(session, "compact", None)
+            if compact is None or int(self.store.kv_get(f"ctx_tokens:{key}", "0") or 0) < COMPACT_MIN_TOKENS:
+                continue
+            self.store.kv_set("current_turn", json.dumps({"inbox_id": "maintenance", "started": time.time()}))
+            try:
+                await asyncio.wait_for(compact(), timeout=self.turn_timeout)
+                _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "type": "compacted", "session": key})
+            except Exception as e:  # noqa: BLE001
+                log.error("maintenance compaction failed for %s: %r", key, e)
+            finally:
+                self.store.kv_set("current_turn", "")
+        return True
+
+    async def maintenance_loop(self) -> None:
+        while not self.stop.is_set():
+            await asyncio.sleep(60)
+            try:
+                await self.maintenance_once()
+            except Exception as e:  # noqa: BLE001
+                log.error("maintenance error: %r", e)
 
     async def _slow_ack(self, row: dict) -> None:
         await asyncio.sleep(self.slow_ack_after)
@@ -371,6 +474,7 @@ class Worker:
             log.warning("recovered %d in-flight message(s) from a previous crash", recovered)
         hb = asyncio.create_task(self.heartbeat_loop())
         canary = asyncio.create_task(self.canary_loop(model))
+        maint = asyncio.create_task(self.maintenance_loop())
         sd_notify("READY=1")
         try:
             while not self.stop.is_set():
@@ -379,6 +483,7 @@ class Worker:
         finally:
             hb.cancel()
             canary.cancel()
+            maint.cancel()
             for s in self.sessions.values():
                 await s.close()
 

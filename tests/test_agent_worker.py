@@ -216,3 +216,103 @@ def test_model_canary_records_failure(tmp_path, monkeypatch):
     asyncio.run(w.model_canary_once(boom))
     assert store.health_snapshot()["last_canary"]["ok"] is False
     assert "failed (model)" in _alerts(store)[0]
+
+
+class CompactSession(FakeSession):
+    def __init__(self):
+        super().__init__()
+        self.compacted = 0
+        self.rotated = 0
+        self.rotate_now = False
+
+    async def compact(self):
+        self.compacted += 1
+
+    def should_rotate(self):
+        return self.rotate_now
+
+    async def rotate(self):
+        self.rotated += 1
+        self.rotate_now = False
+
+
+def test_rotation_happens_before_turn(tmp_path):
+    store, w, _ = make(tmp_path)
+    s = CompactSession()
+    s.rotate_now = True
+    w.session_factory = lambda key: s
+    store.add_inbound("telegram", "1", "hi", external_id="1")
+    asyncio.run(w.process_one())
+    assert s.rotated == 1 and s.prompts
+
+
+def test_maintenance_compacts_only_in_quiet_hour_when_idle_and_big(tmp_path):
+    from datetime import datetime
+
+    store, w, _ = make(tmp_path)
+    s = CompactSession()
+    w.sessions["1"] = s
+    store.kv_set("ctx_tokens:1", str(agent_worker.COMPACT_MIN_TOKENS + 1))
+    assert asyncio.run(w.maintenance_once(datetime(2026, 10, 7, 14, 0))) is False  # not 3am
+    store.add_inbound("telegram", "1", "busy", external_id="1")
+    assert asyncio.run(w.maintenance_once(datetime(2026, 10, 7, 3, 0))) is False  # not idle
+    store._conn.execute("UPDATE inbox SET status='done'")
+    assert asyncio.run(w.maintenance_once(datetime(2026, 10, 7, 3, 5))) is True
+    assert s.compacted == 1
+    assert asyncio.run(w.maintenance_once(datetime(2026, 10, 7, 3, 10))) is False  # once per day
+
+
+def test_small_context_is_not_compacted(tmp_path):
+    from datetime import datetime
+
+    store, w, _ = make(tmp_path)
+    s = CompactSession()
+    w.sessions["1"] = s
+    store.kv_set("ctx_tokens:1", "100")
+    asyncio.run(w.maintenance_once(datetime(2026, 10, 7, 3, 0)))
+    assert s.compacted == 0
+
+
+def test_daily_cost_alert_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRIDGE_DAILY_COST_ALERT_USD", "1.00")
+    monkeypatch.setenv("BRIDGE_ALLOWED_CHAT_IDS", "1")
+    store, w, _ = make(tmp_path)
+    w._track_daily_cost(0.6)
+    assert _alerts(store) == []
+    w._track_daily_cost(0.6)
+    w._track_daily_cost(5)
+    alerts = _alerts(store)
+    assert len(alerts) == 1 and "$" in alerts[0]
+
+
+def test_seed_format_and_fresh_start(tmp_path):
+    store = BridgeStore(tmp_path / "i.db")
+    store.add_inbound("telegram", "1", "remember PELICAN", external_id="1", now=time.time() - 60)
+    store.enqueue_outbound("telegram", "1", "stored", now=time.time() - 50)
+    s = agent_worker.SdkSession("1", store, "sonnet")
+    store.kv_set("session_id:1", "dead-session")
+    s._start_fresh()
+    assert store.kv_get("session_id:1") == ""
+    assert "remember PELICAN" in s.seed and "Assistant: stored" in s.seed
+
+
+def test_compact_accepts_result_without_assistant_message(tmp_path):
+    from claude_agent_sdk import ResultMessage
+
+    class FakeClient:
+        async def query(self, prompt):
+            pass
+
+        async def receive_messages(self):
+            yield ResultMessage(subtype="success", duration_ms=1, duration_api_ms=0, is_error=False, num_turns=0, session_id="new-sid", result=None, total_cost_usd=0.1, usage={"input_tokens": 0})
+
+    store = BridgeStore(tmp_path / "i.db")
+    s = agent_worker.SdkSession("1", store, "sonnet")
+    s._client = FakeClient()
+
+    async def ready():
+        pass
+
+    s.ensure_ready = ready
+    asyncio.run(asyncio.wait_for(s.compact(), 5))  # would hang forever before the fix
+    assert store.kv_get("session_id:1") == "new-sid"
