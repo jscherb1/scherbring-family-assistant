@@ -197,6 +197,10 @@ class BridgeStore:
             (now if now is not None else time.time(), inbox_id),
         )
 
+    def requeue(self, inbox_id: int) -> None:
+        """Put a claimed message back to pending (attempts is kept, so retries are bounded)."""
+        self._conn.execute("UPDATE inbox SET status='pending' WHERE id=? AND status='processing'", (inbox_id,))
+
     def fail(self, inbox_id: int) -> None:
         self._conn.execute("UPDATE inbox SET status='failed' WHERE id=?", (inbox_id,))
 
