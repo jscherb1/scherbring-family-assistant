@@ -63,6 +63,14 @@ update it when you finish or add something. Dates are absolute.
 14. **Known limitation:** COROS allows one web session per account, so each automated login signs the user
     out of COROS elsewhere.
 
+15. **Dashboard follow-ups** (the FastAPI dashboard shipped 2026-10-06, see `dashboard/README.md`):
+    - Restart causes are inferred by matching the exit log to the watchdog logs, and those logs are pruned
+      after 14 days. Recording a structured cause (for example a `cause` field in
+      `state/orchestrator_restarts.jsonl` written by the watchdog) would make the history exact and permanent.
+    - Meal Planner is view-only. Recipe create/edit/delete, and a meal-plan view, are the next phases.
+    - The dashboard has no login; it relies on the bind address (localhost or Tailscale). Add auth before
+      any write routes exist.
+
 ## Not started (ideas, from README "Backlog")
 
 See the Backlog section of `README.md`.

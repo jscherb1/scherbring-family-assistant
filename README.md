@@ -167,7 +167,7 @@ Everything runs as **systemd user units**, templated in `systemd/` and installed
 | `assistant-ha-mcp.service` | Local Home Assistant MCP server on 127.0.0.1:8086. |
 | `assistant-credential-check.timer` / `.service` | Daily 09:30 warning before Hy-Vee, Drive or Monarch logins expire. |
 | `assistant-backup.timer` / `.service` | Daily 03:15 backup of the database, memory notes and encrypted secrets. |
-| `assistant-dashboard.service` | Optional local dashboard (127.0.0.1 only). |
+| `assistant-dashboard.service` | Optional Scherbring Family Assistant web dashboard (FastAPI; orchestrator health, scheduled tasks, restart history, recipes). Binds 127.0.0.1 unless a drop-in sets another address. |
 
 First-time install on a fresh machine:
 
