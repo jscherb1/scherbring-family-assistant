@@ -73,8 +73,12 @@ def backoff_seconds(attempts: int) -> float:
 
 
 class BridgeStore:
-    def __init__(self, path: Path | str = DEFAULT_DB):
+    def __init__(self, path: Path | str = DEFAULT_DB, *, read_only: bool = False):
         self.path = Path(path)
+        if read_only:  # dashboard: never create, migrate or write
+            self._conn = sqlite3.connect(f"file:{self.path.as_posix()}?mode=ro", uri=True, timeout=10, isolation_level=None)
+            self._conn.row_factory = sqlite3.Row
+            return
         if str(path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path), timeout=10, isolation_level=None)

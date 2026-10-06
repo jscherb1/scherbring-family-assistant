@@ -24,6 +24,15 @@ SECTIONS = [
         ],
     },
     {
+        "key": "agent",
+        "label": "Agent",
+        "href": "/agent",
+        "pages": [
+            {"key": "live", "label": "Live Status", "href": "/agent"},
+            {"key": "usage", "label": "Usage", "href": "/agent/usage"},
+        ],
+    },
+    {
         "key": "home",
         "label": "Home & Yard",
         "href": "/home",

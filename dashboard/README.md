@@ -11,6 +11,8 @@ the state the assistant already keeps in `../state/` and never writes to it.
 | | Scheduled Tasks | `/health/schedule` | Every scheduled task: what it does, schedule in plain English, next run, last run, 7-day ok/failed, recent runs |
 | | Restart History | `/health/restarts` | Every orchestrator launch with the inferred cause, previous exit code, downtime, and the raw log records behind it |
 | | Logins & Backups | `/health/system` | Days until the Hy-Vee/Drive/Monarch logins expire, newest backup age and files, scheduler heartbeat |
+| Agent | Live Status | `/agent` | Telegram bridge and agent worker liveness (heartbeats, Telegram polling, MCP servers, health-check result), queue depth, current turn, live event stream (refreshes every 5 s). Message text, tool inputs and results are **hidden** unless `DASHBOARD_SHOW_AGENT_CONTENT=1`; use `scripts/agent_ctl.py tail` for the full stream |
+| | Usage | `/agent/usage` | Per-day turns, tokens (fresh/cache) and API-rate cost from the worker's turn log, plus current context size |
 | Home & Yard | Maintenance | `/home` | Overdue / due soon / on-track items, last done, recent completions |
 | | Lawn & Garden | `/home/lawn` | 6-step program progress, treatments, issues, products on hand, plants |
 | | Weather Alerts | `/home/weather` | Alerts sent (7/30 days, by type), thresholds (coordinates hidden) |
