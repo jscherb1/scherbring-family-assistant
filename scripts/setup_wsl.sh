@@ -22,6 +22,9 @@ else
 fi
 .venv/bin/playwright install chromium
 
+# Folders the agents write into. Headless runs may not mkdir, so they must exist.
+mkdir -p state/finance_reports state/retirement state/hyvee_tmp state/logs
+
 # Home Assistant MCP server. ha-mcp needs Python >= 3.13, newer than Ubuntu
 # 24.04's 3.12, so it gets its own uv-managed venv. Pinned to the version in use.
 HA_MCP_VERSION="8.3.0"

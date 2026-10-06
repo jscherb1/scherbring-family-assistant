@@ -32,6 +32,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
+from pathlib import Path
 
 from paths import REPO_ROOT, alert_chat_id, find_claude, get_env, telegram_env_path  # noqa: E402
 
@@ -150,6 +151,20 @@ def deliver_telegram_message(chat_id: str, text: str) -> bool:
     except Exception as exc:  # noqa: BLE001
         print(f"scheduler_dispatch: failed to deliver telegram message: {exc}", flush=True)
         return False
+
+
+def count_permission_denials(debug_log: Path) -> int:
+    """How many tool calls the headless run was denied.
+
+    There is nobody to approve a prompt in a scheduled run, so every denial means the
+    workflow could not do something it tried. `claude --print` still exits 0 and the
+    agent usually still writes a message, so without this a degraded run looks "ok".
+    """
+    try:
+        text = debug_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return 0
+    return text.count("tool permission denied")
 
 
 def _now_local_iso() -> str:
@@ -302,6 +317,11 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         else:
             success = process_ok
             summary = output[:500] if output else (result.stderr or "").strip()[:200]
+
+        denials = count_permission_denials(debug_log)
+        if denials:
+            success = False
+            summary = f"[{denials} tool permission denial(s): the run was degraded] {summary}"
 
         status_label = "ok" if success else "failed"
         print(

@@ -39,7 +39,10 @@
       "Bash(python scripts/fitness_store.py *)",
       "Bash(python scripts/fitness/library_sync.py *)",
       "Bash(python scripts/fitness/schedule_ops.py *)",
-      "Bash(python scripts/telegram_send.py *)"
+      "Bash(python scripts/telegram_send.py *)",
+      "Bash(python scripts/monarch_result.py *)",
+      "Edit(state/finance_reports/**)",
+      "Edit(state/retirement/**)"
     ]
   },
   "hooks": {

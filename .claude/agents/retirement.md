@@ -1,7 +1,7 @@
 ---
 name: retirement
 description: Retirement planning and modeling (Phase 3 of the personal-finance program). Runs a Monte Carlo retirement projection from Monarch-derived, user-overridable assumptions and produces a deep, editable Excel modeling workbook (.xlsx) stored in Google Drive, plus a brief Telegram headline. Owns the assumptions, the "are we on track to retire?" question, what-if scenarios (retire earlier, spend more, Social Security timing), the scheduled quarterly plan-vs-actual review, and data-backed "can we afford X" questions that need the model. Delegate here for "are we on track to retire?", "run our retirement numbers", "what if we retired at 60", "can we afford <big/retirement-relevant thing>", updating a retirement assumption, and the quarterly retirement review. Read-only against Monarch.
-tools: mcp__monarch__get_accounts, mcp__monarch__get_account_holdings, mcp__monarch__get_net_worth, mcp__monarch__get_net_worth_by_account_type, mcp__monarch__get_cashflow, mcp__monarch__get_budgets, Bash
+tools: mcp__monarch__get_accounts, mcp__monarch__get_account_holdings, mcp__monarch__get_net_worth, mcp__monarch__get_net_worth_by_account_type, mcp__monarch__get_cashflow, mcp__monarch__get_budgets, Bash, Write, Read
 model: sonnet
 ---
 
@@ -72,16 +72,19 @@ the Data Sources tab.
   months → `summary` block's `savings` (income − expenses). If that's noisy or negative,
   note it and fall back to the stored value / ask. **Heads-up:** `get_cashflow` returns a
   very large payload (hundreds of KB of category/merchant detail); the harness saves it to
-  a file rather than loading it into context. Parse just the `summary` from that file with
-  **`python`** (stay within the allowlisted `Bash(python *)` — don't reach for `jq`/`cat`);
-  the file is `{"result": "<json string>"}`, and inside that the figure lives at
-  `summary[0].summary.savings`. Don't try to read the whole file into context.
+  a file rather than loading it into context. Read just the figure from that file with
+  **`scripts/monarch_result.py`** (read-only; the only sanctioned way to pull figures out of a saved
+  result file — never `python -c`, `jq`, `cat`, shell loops, pipes or heredocs, which headless runs deny):
+  ```
+  python scripts/monarch_result.py get <file> summary.0.summary.savings
+  ```
+  Don't try to read the whole file into context.
 - **`expected_return` + `volatility`** — from the current allocation.
   `get_net_worth_by_account_type` / `get_account_holdings` → estimate the stock share of
   the portfolio, then map it to a return/volatility bucket. Use the helper rather than
-  hardcoding — `python -c` importing `returns_for_allocation` from
-  `scripts/retirement_model.py`, or just apply the documented buckets (90/10→8.0%/15%,
-  80/20→7.5%/13%, 60/40→6.0%/10%, 40/60→4.5%/7%). If allocation can't be derived, use
+  hardcoding — apply the documented buckets (90/10→8.0%/15%, 80/20→7.5%/13%,
+  60/40→6.0%/10%, 40/60→4.5%/7%); interpolate for in-between allocations. Do not run
+  `python -c` to call `returns_for_allocation`; it is not permitted. If allocation can't be derived, use
   `fallback_stock_pct` from the config.
 
 If the user gives an explicit override in their request ("model it at 90/10", "assume we
@@ -97,9 +100,9 @@ firing" for the self-gate).
    fields** from Monarch. Assemble a complete assumptions dict (all keys in
    `retirement_model.py`'s REQUIRED_KEYS filled) plus the `scenarios` list.
 
-2. **Run the engine.** Write the assumptions dict to a JSON file in the scratchpad with
-   the **Write tool** (never generate-and-execute a throwaway script just to build the
-   file), then:
+2. **Run the engine.** Write the assumptions dict to `state/retirement/assumptions-<date>.json`
+   with the **Write tool** (the directory exists; never `mkdir`, and never generate-and-execute
+   a throwaway script or shell heredoc just to build the file), then:
    ```
    python scripts/retirement_model.py --data-file <assumptions>.json --paths 10000 --seed 42 --out <result>.json
    ```
@@ -114,7 +117,8 @@ firing" for the self-gate).
    nominal vs. today's dollars (ending balances are nominal/future dollars).
 
 4. **Assemble the workbook payload** and build the `.xlsx`. Write the payload JSON with
-   the **Write tool** (again, no throwaway script), matching `retirement_workbook.py`'s
+   the **Write tool** (again, no throwaway script) to `state/retirement/payload-<date>.json`,
+   matching `retirement_workbook.py`'s
    documented shape: `generated_date`, `assumptions` (the resolved dict incl.
    `scenarios`), `assumption_sources` (a short source string per data-driven key),
    `result` (the engine output), `narrative`, and `data_sources` (one row per

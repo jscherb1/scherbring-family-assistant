@@ -21,7 +21,7 @@ Usage:
     python scripts/finance_store.py who-map set --signal-key "costco" \
         --signal-type merchant --who-tag "WHO:Justin" --confidence 0.9 \
         [--source inferred|user]
-    python scripts/finance_store.py who-map get --signal-key "costco"
+    python scripts/finance_store.py who-map get --signal-key "costco" [--signal-key "account:123" ...]
     python scripts/finance_store.py who-map list [--signal-type merchant] [--min-confidence 0.7]
     python scripts/finance_store.py who-map feedback --signal-key "costco" --result confirmed|rejected
         (bumps times_confirmed/times_rejected and nudges confidence)
@@ -123,14 +123,19 @@ def cmd_who_map_set(args: argparse.Namespace) -> int:
 
 
 def cmd_who_map_get(args: argparse.Namespace) -> int:
+    keys = args.signal_key
     conn = _connect()
     try:
-        row = conn.execute("SELECT * FROM finance_who_map WHERE signal_key = ?", (args.signal_key,)).fetchone()
+        rows = {k: conn.execute("SELECT * FROM finance_who_map WHERE signal_key = ?", (k,)).fetchone() for k in keys}
     finally:
         conn.close()
-    if row is None:
-        return _err(f"no who-map entry for signal_key {args.signal_key!r}")
-    _print(dict(row))
+    if len(keys) == 1:  # original single-key contract
+        if rows[keys[0]] is None:
+            return _err(f"no who-map entry for signal_key {keys[0]!r}")
+        _print(dict(rows[keys[0]]))
+        return 0
+    # Several keys in one call (so agents need no shell loop); a miss is data, not an error.
+    _print([{"signal_key": k, "found": rows[k] is not None, **(dict(rows[k]) if rows[k] else {})} for k in keys])
     return 0
 
 
@@ -430,8 +435,9 @@ def build_parser() -> argparse.ArgumentParser:
     wm_set.add_argument("--source", default="inferred", choices=["inferred", "user"])
     wm_set.set_defaults(func=cmd_who_map_set)
 
-    wm_get = who_map_sub.add_parser("get", help="Get one who-map entry.")
-    wm_get.add_argument("--signal-key", required=True)
+    wm_get = who_map_sub.add_parser("get", help="Get one or more who-map entries.")
+    wm_get.add_argument("--signal-key", action="append", required=True,
+                        help="repeat to look up several keys in one call")
     wm_get.set_defaults(func=cmd_who_map_get)
 
     wm_list = who_map_sub.add_parser("list", help="List who-map entries.")

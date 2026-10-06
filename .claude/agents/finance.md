@@ -30,7 +30,10 @@ MCP coming back, and this agent should likely switch to it.
 Every `finance_store.py` / `state_store.py` / `profile_store.py` call MUST be run
 **exactly** as shown below: the bare command, nothing prepended (no `cd ... &&`,
 no env vars — you're already at the project root and each script forces UTF-8
-output itself).
+output itself). **One command per tool call: no shell `for`/`while` loops, pipes (`|`),
+`&&`, `;`, redirects or heredocs.** Headless scheduled runs auto-deny anything that is not
+a single allowed command, and a denied lookup silently costs you the whole learned WHO
+signal. To look up several keys, use the multi-key form (below), not a loop.
 
 ## Continuity: the shared state store
 
@@ -87,9 +90,10 @@ missing (it may have just been created).
 2. **Infer a WHO tag per transaction**, using in priority order:
    - A learned signal in `finance_who_map` (merchant name or account id):
      ```
-     python scripts/finance_store.py who-map get --signal-key "<normalized merchant name>"
-     python scripts/finance_store.py who-map get --signal-key "account:<account_id>"
+     python scripts/finance_store.py who-map get --signal-key "<merchant>" --signal-key "<merchant 2>" --signal-key "account:<account_id>"
      ```
+     Repeat `--signal-key` to check every merchant and account in the batch in ONE call; it
+     returns a list with `found: true/false` per key (a miss is normal, not an error).
    - The account/card it posted to, matched against household ownership
      (`profile_store.py person list` / account naming).
    - Category and merchant pattern as a weaker signal.
