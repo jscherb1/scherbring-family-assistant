@@ -160,3 +160,59 @@ def test_context_bridge_hooks_noop_for_bridge_worker(monkeypatch, capsys):
     monkeypatch.setenv("BRIDGE_WORKER", "1")
     assert tcb.main(["hook-session-start"]) == 0
     assert capsys.readouterr().out == ""
+
+
+class PingSession(FakeSession):
+    def __init__(self, results):
+        super().__init__()
+        self.results = list(results)
+
+    async def ping(self):
+        r = self.results.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+def _alerts(store):
+    out = []
+    while (o := store.next_outbound("telegram")) is not None:
+        out.append(o["text"])
+        store.mark_sent(o["id"])
+    return out
+
+
+def test_ping_failure_alerts_once_then_recovers(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRIDGE_ALLOWED_CHAT_IDS", "1")
+    store, w, _ = make(tmp_path)
+    s = PingSession([RuntimeError("x"), RuntimeError("y"), []])
+    w.sessions["1"] = s
+    asyncio.run(w.ping_once())  # fail 1: alert
+    asyncio.run(w.ping_once())  # fail 2: rebuild client, no second alert
+    assert s.closed and "1" not in w.sessions
+    alerts = _alerts(store)
+    assert len(alerts) == 1 and "failed (ping)" in alerts[0]
+    w.sessions["1"] = PingSession([[]])
+    asyncio.run(w.ping_once())
+    assert any("recovered" in a for a in _alerts(store))
+    assert store.health_snapshot()["last_canary"]["ok"] is True
+
+
+def test_ping_skipped_while_turn_running(tmp_path):
+    store, w, _ = make(tmp_path)
+    store.kv_set("current_turn", '{"inbox_id": 1}')
+    w.sessions["1"] = PingSession([RuntimeError("would fail")])
+    asyncio.run(w.ping_once())
+    assert store.kv_get("last_canary") is None
+
+
+def test_model_canary_records_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRIDGE_ALLOWED_CHAT_IDS", "1")
+    store, w, _ = make(tmp_path)
+
+    async def boom():
+        raise RuntimeError("auth expired")
+
+    asyncio.run(w.model_canary_once(boom))
+    assert store.health_snapshot()["last_canary"]["ok"] is False
+    assert "failed (model)" in _alerts(store)[0]

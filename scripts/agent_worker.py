@@ -39,6 +39,10 @@ SLOW_ACK_AFTER_S = 20
 MAX_ATTEMPTS = 3
 MCP_READY_TIMEOUT_S = 90
 HEARTBEAT_EVERY_S = 2
+PING_EVERY_S = 30
+MODEL_CANARY_EVERY_S = 1800
+PING_TIMEOUT_S = 20
+MODEL_CANARY_TIMEOUT_S = 90
 
 CHANNEL_PROMPT = """\
 You are running behind a message bridge, not the Telegram plugin. Overrides to anything in CLAUDE.md about Telegram:
@@ -190,6 +194,14 @@ class SdkSession:
                 break
         return result
 
+    async def ping(self) -> list[str]:
+        """Zero-token liveness check of the live agent process; returns MCP servers not connected."""
+        if self._client is None:
+            return []
+        st = await self._client.get_mcp_status()
+        servers = st.get("mcpServers", []) if isinstance(st, dict) else []
+        return [s.get("name") for s in servers if s.get("status") not in ("connected", "disabled")]
+
     async def close(self) -> None:
         if self._client is not None:
             try:
@@ -197,6 +209,22 @@ class SdkSession:
             except Exception as e:  # noqa: BLE001
                 log.debug("disconnect: %s", e)
             self._client = None
+
+
+async def model_canary(model: str) -> None:
+    """A real, minimal model round trip in a throwaway session (no resume, no MCP, no project
+    settings): verifies auth, network and the API without touching the user's context."""
+    from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+
+    opts = ClaudeAgentOptions(model=model, setting_sources=[], max_turns=1, allowed_tools=[], extra_args={"strict-mcp-config": None}, env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "BRIDGE_WORKER": "1"})
+    result = None
+    async for m in query(prompt="Reply with exactly: OK", options=opts):  # drain fully; early exit leaves the generator open
+        if isinstance(m, ResultMessage):
+            result = m
+    if result is None:
+        raise RuntimeError("canary produced no result")
+    if result.is_error or "OK" not in (result.result or ""):
+        raise RuntimeError(f"unexpected canary result: {(result.result or '')[:100]!r}")
 
 
 class Worker:
@@ -207,6 +235,7 @@ class Worker:
         self.turn_timeout = turn_timeout
         self.slow_ack_after = slow_ack_after
         self.stop = asyncio.Event()
+        self._ping_failures: dict[str, int] = {}
 
     def _session(self, key: str) -> AgentSession:
         if key not in self.sessions:
@@ -269,6 +298,64 @@ class Worker:
         await asyncio.sleep(self.slow_ack_after)
         self._reply(row, "⏳ On it. This is taking a bit; I'll send the result when it's ready.")
 
+    def _alert(self, text: str) -> None:
+        chat = os.environ.get("TELEGRAM_ALERT_CHAT_ID") or (os.environ.get("BRIDGE_ALLOWED_CHAT_IDS", "").split(",")[0].strip())
+        if chat:
+            self.store.enqueue_outbound("telegram", chat, text)
+
+    def _record_canary(self, kind: str, ok: bool, detail: str = "") -> None:
+        self.store.kv_set("last_canary", json.dumps({"t": time.time(), "kind": kind, "ok": ok, "detail": detail[:300]}))
+        failing = self.store.kv_get(f"canary_failing:{kind}") == "1"
+        if not ok and not failing:
+            self.store.kv_set(f"canary_failing:{kind}", "1")
+            self._alert(f"⚠️ Agent health check failed ({kind}): {detail[:200]}")
+        elif ok and failing:
+            self.store.kv_set(f"canary_failing:{kind}", "0")
+            self._alert(f"✅ Agent health check recovered ({kind}).")
+
+    async def ping_once(self) -> None:
+        """Ping every live session that isn't mid-turn. Two straight failures rebuild the client."""
+        if self.store.kv_get("current_turn"):
+            return
+        for key, session in list(self.sessions.items()):
+            ping = getattr(session, "ping", None)
+            if ping is None:
+                continue
+            try:
+                down = await asyncio.wait_for(ping(), timeout=PING_TIMEOUT_S)
+                self.store.kv_set("mcp_down", json.dumps(down))
+                self._ping_failures[key] = 0
+                self._record_canary("ping", True, f"mcp not connected: {down}" if down else "")
+            except Exception as e:  # noqa: BLE001
+                self._ping_failures[key] = self._ping_failures.get(key, 0) + 1
+                self._record_canary("ping", False, repr(e))
+                if self._ping_failures[key] >= 2:
+                    log.error("session %s unresponsive; rebuilding client", key)
+                    await session.close()
+                    self.sessions.pop(key, None)
+                    self._ping_failures[key] = 0
+
+    async def model_canary_once(self, fn: Callable[[], Awaitable[None]]) -> None:
+        if self.store.kv_get("current_turn"):
+            return
+        try:
+            await asyncio.wait_for(fn(), timeout=MODEL_CANARY_TIMEOUT_S)
+            self._record_canary("model", True)
+        except Exception as e:  # noqa: BLE001
+            self._record_canary("model", False, repr(e))
+
+    async def canary_loop(self, model: str) -> None:
+        cstore = BridgeStore(self.store.path)
+        last_model = 0.0
+        while not self.stop.is_set():
+            await asyncio.sleep(PING_EVERY_S)
+            probe = Worker(cstore, self.session_factory)  # own connection; shares live sessions below
+            probe.sessions, probe._ping_failures = self.sessions, self._ping_failures
+            await probe.ping_once()
+            if time.time() - last_model >= MODEL_CANARY_EVERY_S:
+                last_model = time.time()
+                await probe.model_canary_once(lambda: model_canary(model))
+
     async def heartbeat_loop(self) -> None:
         # Separate task and connection so long turns never look like a dead worker,
         # but a wedged event loop does.
@@ -278,11 +365,12 @@ class Worker:
             sd_notify("WATCHDOG=1")
             await asyncio.sleep(HEARTBEAT_EVERY_S)
 
-    async def run(self) -> None:
+    async def run(self, model: str = "sonnet") -> None:
         recovered = self.store.recover_in_flight()
         if recovered:
             log.warning("recovered %d in-flight message(s) from a previous crash", recovered)
         hb = asyncio.create_task(self.heartbeat_loop())
+        canary = asyncio.create_task(self.canary_loop(model))
         sd_notify("READY=1")
         try:
             while not self.stop.is_set():
@@ -290,6 +378,7 @@ class Worker:
                     await asyncio.sleep(0.3)
         finally:
             hb.cancel()
+            canary.cancel()
             for s in self.sessions.values():
                 await s.close()
 
@@ -307,7 +396,7 @@ def main() -> int:
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, worker.stop.set)
-        await worker.run()
+        await worker.run(args.model)
 
     asyncio.run(runner())
     return 0
