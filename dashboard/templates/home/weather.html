@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Weather Alerts</h1>
+  <p class="subtitle">Proactive rain, snow and storm nudges already sent, and the thresholds that trigger them.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <div class="grid stats">
+    <section class="card"><h2>Last 7 days</h2><div class="metric">{{ data.last_7d }}</div><div class="metric-sub">alerts</div></section>
+    <section class="card"><h2>Last 30 days</h2><div class="metric">{{ data.last_30d }}</div>
+      <div class="metric-sub">{% for k, v in data.by_type_30d.items() %}{{ v }} {{ k|replace('_', ' ') }}{{ ', ' if not loop.last }}{% else %}none{% endfor %}</div></section>
+    <section class="card"><h2>Upcoming</h2><div class="metric">{{ data.upcoming|length }}</div><div class="metric-sub">events already alerted</div></section>
+    <section class="card"><h2>Todoist tasks</h2><div class="metric">{{ data.task_created }}</div><div class="metric-sub">of {{ data.total }} alerts</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Alert history</h2>
+    <section class="card card-table">
+      {% if data.alerts %}
+      <table class="tbl">
+        <thead><tr><th>Event date</th><th>Type</th><th>Alerted</th><th>Task</th></tr></thead>
+        <tbody>
+        {% for a in data.alerts %}
+          <tr><td>{{ a.target_date }}</td><td>{{ a.alert_type|replace('_', ' ') }}</td><td>{{ a.created_at|fmt_dt }}</td>
+            <td>{{ 'created' if a.todoist_task_created else '—' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No alerts have been sent.</div>{% endif %}
+    </section>
+
+    <h2>Settings</h2>
+    <section class="card">
+      {% if data.config %}
+      <dl class="detail-list">
+        {% for c in data.config %}<dt>{{ c.key|replace('_', ' ') }}</dt><dd>{{ c.value }}</dd>{% endfor %}
+      </dl>
+      {% else %}<div class="empty-state">No weather settings configured.</div>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

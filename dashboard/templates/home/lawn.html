@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Lawn &amp; Garden</h1>
+  <p class="subtitle">Program progress for {{ data.year or '' }}, treatment history, open issues and what's in the cabinet.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <div class="grid stats">
+    <section class="card"><h2>Program rounds</h2><div class="metric">{{ data.rounds_done }} / {{ data.rounds_total }}</div><div class="metric-sub">done in {{ data.year }}</div></section>
+    <section class="card"><h2>Next round</h2>
+      {% if data.next_round %}<div class="metric">{{ data.next_round.round_number }}</div><div class="metric-sub">{{ data.next_round.task_label }} · {{ data.next_round.timing_desc }}</div>
+      {% else %}<div class="metric">—</div><div class="metric-sub">no rounds remaining</div>{% endif %}</section>
+    <section class="card"><h2>Active issues</h2><div class="metric {{ 'fail-count' if data.active_issues }}">{{ data.active_issues }}</div></section>
+    <section class="card"><h2>Out of stock</h2><div class="metric">{{ data.out_of_stock }}</div><div class="metric-sub">of {{ data.products|length }} products</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Program</h2>
+    <section class="card card-table">
+      {% if data.rounds %}
+      <table class="tbl">
+        <thead><tr><th>#</th><th>Step</th><th>Product</th><th>Timing</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for r in data.rounds %}
+          <tr><td>{{ r.round_number }}</td><td>{{ r.task_label }}</td><td>{{ r.product_name }}</td><td>{{ r.timing_desc }}</td>
+            <td><span class="pill {{ r.status|status_pill }}">{{ r.status }}</span>{% if r.applied_on %} <span class="muted">{{ r.applied_on }}</span>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No program steps are on file.</div>{% endif %}
+    </section>
+
+    <h2>Recent treatments <span class="muted">({{ data.treatment_count }} total)</span></h2>
+    <section class="card card-table">
+      {% if data.treatments %}
+      <table class="tbl">
+        <thead><tr><th>Date</th><th>Product</th><th>Method</th><th>Area</th><th>Targets</th></tr></thead>
+        <tbody>
+        {% for t in data.treatments %}
+          <tr><td>{{ t.treatment_date }}</td><td>{{ t.product_name }}{% if t.round_number %} <span class="muted">(round {{ t.round_number }})</span>{% endif %}</td>
+            <td>{{ t.method }}</td><td>{{ t.area or '' }}</td><td>{{ t.targets|join(', ') }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No treatments logged yet.</div>{% endif %}
+    </section>
+
+    <h2>Issues</h2>
+    <section class="card card-table">
+      {% if data.issues %}
+      <table class="tbl">
+        <thead><tr><th>Issue</th><th>Location</th><th>Status</th><th>First noted</th><th>Age</th></tr></thead>
+        <tbody>
+        {% for i in data.issues %}
+          <tr><td>{{ i.issue }}</td><td>{{ i.location or '' }}</td>
+            <td><span class="pill {{ i.status|status_pill if i.status == 'active' else 'pill-ok' }}">{{ i.status }}</span></td>
+            <td>{{ i.first_noted }}</td><td>{% if i.age_days is not none %}{{ i.age_days }} d{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No issues tracked.</div>{% endif %}
+    </section>
+
+    <h2>Products on hand</h2>
+    <section class="card card-table">
+      {% if data.products %}
+      <table class="tbl">
+        <thead><tr><th>Product</th><th>Category</th><th>Active ingredient</th><th>Container</th><th>Stock</th></tr></thead>
+        <tbody>
+        {% for p in data.products %}
+          <tr><td>{{ p.name }}</td><td>{{ p.category }}</td><td>{{ p.active_ingredient or '' }}</td><td>{{ p.container_desc or '' }}</td>
+            <td><span class="pill {{ 'pill-ok' if p.in_stock else 'pill-warn' }}">{{ 'in stock' if p.in_stock else 'out' }}</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No products recorded.</div>{% endif %}
+    </section>
+
+    <h2>Plants &amp; beds</h2>
+    <section class="card card-table">
+      {% if data.plants %}
+      <table class="tbl">
+        <thead><tr><th>Name</th><th>Type</th><th>Location</th></tr></thead>
+        <tbody>
+        {% for p in data.plants %}
+          <tr><td>{{ p.name }}</td><td>{{ p.plant_type or '' }}</td><td>{{ p.location }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">No plants or beds recorded.</div>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Home Maintenance</h1>
+  <p class="subtitle">What's overdue or coming due, based on each item's last completion and cadence.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data["items"] %}
+  <div class="card"><div class="empty-state">No maintenance items are tracked yet.</div></div>
+{% else %}
+  {% set c = data.counts %}
+  <div class="grid stats">
+    <section class="card"><h2>Overdue</h2><div class="metric {{ 'fail-count' if c.overdue }}">{{ c.overdue }}</div></section>
+    <section class="card"><h2>Due soon</h2><div class="metric">{{ c.soon }}</div><div class="metric-sub">within {{ data.due_soon_days }} days</div></section>
+    <section class="card"><h2>On track</h2><div class="metric ok-count">{{ c.ok }}</div></section>
+    <section class="card"><h2>Paused</h2><div class="metric">{{ c.paused }}</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Items</h2>
+    <section class="card card-table">
+      <table class="tbl">
+        <thead><tr><th>Item</th><th>Category</th><th>Every</th><th>Last done</th><th>Due</th><th>Status</th></tr></thead>
+        <tbody>
+        {% for i in data["items"] %}
+          <tr>
+            <td>{{ i.name }}</td>
+            <td>{{ i.category }}</td>
+            <td>{{ i.interval_days }} d</td>
+            <td>{% if i.never_done %}<span class="muted">never</span>{% else %}{{ i.last_done }}{% endif %}</td>
+            <td>{{ i.due_date }}
+              {% if i.bucket == 'overdue' %}<span class="muted">({{ -i.days_until_due }} d late)</span>
+              {% elif i.bucket != 'paused' %}<span class="muted">(in {{ i.days_until_due }} d)</span>{% endif %}</td>
+            <td><span class="pill {{ i.bucket|status_pill }}">{{ i.bucket if i.bucket != 'soon' else 'due soon' }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <h2>Recent completions</h2>
+    <section class="card card-table">
+      {% if data.recent %}
+      <table class="tbl">
+        <thead><tr><th>Date</th><th>Item</th><th>Notes</th></tr></thead>
+        <tbody>
+        {% for r in data.recent %}
+          <tr><td>{{ r.completed_date }}</td><td>{{ r.name }}</td><td>{{ r.notes or '' }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="empty-state">Nothing has been logged as done yet.</div>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

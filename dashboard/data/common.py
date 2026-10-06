@@ -53,3 +53,41 @@ def connect_ro() -> sqlite3.Connection:
     conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def guarded(fn):
+    """Decorator for data-layer readers: an unreadable database becomes {"error": ...}
+    instead of an exception, matching the contract templates branch on."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (FileNotFoundError, sqlite3.OperationalError) as exc:
+            return {"error": f"Database unavailable: {exc}"}
+    return wrapper
+
+
+def rows(conn, sql, params=()):
+    """Run a SELECT and return a list of plain dicts."""
+    return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def load_json(value, default):
+    try:
+        return json.loads(value) if value else default
+    except (TypeError, json.JSONDecodeError):
+        return default
+
+
+def today():
+    """Server-local calendar date (the DB's date columns are local wall-clock dates)."""
+    return datetime.now().date()
+
+
+def parse_date(value):
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None

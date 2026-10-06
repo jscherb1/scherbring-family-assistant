@@ -23,6 +23,16 @@ SECTIONS = [
         ],
     },
     {
+        "key": "home",
+        "label": "Home & Yard",
+        "href": "/home",
+        "pages": [
+            {"key": "maintenance", "label": "Maintenance", "href": "/home"},
+            {"key": "lawn", "label": "Lawn & Garden", "href": "/home/lawn"},
+            {"key": "weather", "label": "Weather Alerts", "href": "/home/weather"},
+        ],
+    },
+    {
         "key": "meals",
         "label": "Meal Planner",
         "href": "/meals",
@@ -82,8 +92,12 @@ def fmt_minutes(minutes):
 
 
 def status_pill(status):
-    return {"ok": "pill-ok", "failed": "pill-warn", "dispatch_failed": "pill-warn"}.get(
-        status, "pill-muted")
+    return {
+        "ok": "pill-ok", "done": "pill-ok", "synced": "pill-ok", "created": "pill-ok",
+        "failed": "pill-warn", "dispatch_failed": "pill-warn", "overdue": "pill-warn",
+        "missed": "pill-warn", "manual_needed": "pill-warn", "expired": "pill-warn",
+        "active": "pill-warn", "warn": "pill-warn",
+    }.get(status, "pill-muted")
 
 
 def stars(rating):

@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dashboard.app import app  # noqa: E402
-from dashboard.data import recipes, restarts, schedule  # noqa: E402
+from dashboard.data import home, recipes, restarts, schedule  # noqa: E402
 
 
 @pytest.fixture
@@ -43,9 +43,35 @@ def state(tmp_path, monkeypatch):
     conn.execute(
         "INSERT INTO recipes (id,title,ingredients_json,steps_json,meal_type) VALUES "
         "('r2','Plain Oatmeal','[]','[]','breakfast')")
+    seed_home(conn)
     conn.commit()
     conn.close()
     return tmp_path
+
+
+def seed_home(conn):
+    old = (datetime.now() - timedelta(days=200)).strftime("%Y-%m-%d")
+    recent = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+    ts = "2026-01-01T00:00:00"
+    for iid, name, cat, interval, active in (("h1", "HVAC filter", "hvac", 90, 1),
+                                             ("h2", "Smoke detectors", "safety", 180, 1),
+                                             ("h3", "Winterize <b>spigots</b>", "seasonal", 365, 0)):
+        conn.execute("INSERT INTO home_maintenance_items VALUES (?,?,?,?,?,NULL,?,?)",
+                     (iid, name, cat, interval, active, ts, ts))
+    conn.execute("INSERT INTO home_maintenance_completions VALUES ('c1','h1',?,NULL,?)", (old, ts))
+    conn.execute("INSERT INTO home_maintenance_completions VALUES ('c2','h2',?,'batteries',?)", (recent, ts))
+    year = datetime.now().year
+    conn.execute("INSERT INTO lawn_garden_program VALUES ('p1',1,'Pre-emerge','15-0-0','Mid April',1,NULL,NULL)")
+    conn.execute("INSERT INTO lawn_garden_program VALUES ('p2',2,'Weed control','Trimec','Late May',12,NULL,NULL)")
+    conn.execute("INSERT INTO lawn_garden_treatments VALUES ('t1',?,1,'15-0-0','broadcast','whole yard',?,NULL,?)",
+                 (f"{year}-02-01", json.dumps(["dandelion"]), ts))
+    conn.execute("INSERT INTO lawn_garden_issues VALUES ('i1','quackgrass','back','active',?,NULL,NULL,?,?)",
+                 (f"{year}-01-01", ts, ts))
+    conn.execute("INSERT INTO lawn_garden_products VALUES ('pr1','T-Zone','herbicide','Mesotrione',NULL,NULL,0,NULL,?,?)", (ts, ts))
+    conn.execute("INSERT INTO weather_config VALUES ('latitude','43.9')")
+    conn.execute("INSERT INTO weather_config VALUES ('rain_probability_threshold','60')")
+    conn.execute("INSERT INTO weather_alerts VALUES ('w1','rain_cushions',?,1,?)",
+                 (datetime.now().strftime("%Y-%m-%d"), ts))
 
 
 def write_restart_fixtures(state, kill=True):
@@ -166,6 +192,8 @@ def client(state):
     "/health", "/health/schedule", "/health/restarts", "/meals", "/meals/r1", "/meals/r2",
     "/meals/results?q=chicken", "/api/status", "/api/schedule", "/api/restarts",
     "/api/recipes", "/api/recipes/r1", "/api/docs",
+    "/home", "/home/lawn", "/home/weather",
+    "/api/home/maintenance", "/api/home/lawn", "/api/home/weather",
 ])
 def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
@@ -208,3 +236,40 @@ def test_output_is_escaped(state):
 def test_read_only_no_write_routes(client):
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
+
+
+# ---- home & yard ----
+
+def test_maintenance_buckets(state):
+    data = home.get_maintenance()
+    by = {i["id"]: i for i in data["items"]}
+    assert by["h1"]["bucket"] == "overdue" and by["h1"]["days_until_due"] < 0
+    assert by["h2"]["bucket"] == "ok"
+    assert by["h3"]["bucket"] == "paused"
+    assert data["counts"] == {"overdue": 1, "soon": 0, "ok": 1, "paused": 1}
+    assert data["items"][0]["id"] == "h1"  # overdue sorts first
+
+
+def test_lawn_progress(state):
+    data = home.get_lawn()
+    assert data["rounds_done"] == 1 and data["rounds_total"] == 2
+    assert data["active_issues"] == 1 and data["out_of_stock"] == 1
+    assert data["treatments"][0]["targets"] == ["dandelion"]
+
+
+def test_weather_hides_coordinates(state):
+    data = home.get_weather()
+    assert [c["key"] for c in data["config"]] == ["rain_probability_threshold"]
+    assert data["last_7d"] == 1
+
+
+def test_home_missing_db(tmp_path, monkeypatch):
+    monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path))
+    for fn in (home.get_maintenance, home.get_lawn, home.get_weather):
+        assert "error" in fn()
+    assert TestClient(app).get("/home").status_code == 200
+
+
+def test_home_output_escaped(client):
+    page = client.get("/home").text
+    assert "<b>spigots</b>" not in page and "&lt;b&gt;spigots" in page
