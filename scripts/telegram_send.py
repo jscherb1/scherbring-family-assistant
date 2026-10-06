@@ -9,7 +9,7 @@ without otherwise breaking the session. See memory: telegram_sse_reconnect_stale
 Being invoked at all IS the unhealthy signal: the only reason to call this
 script is that the real tool wasn't reachable. So every invocation also
 timestamps state/telegram_fallback_used.json, which
-watchdog_telegram_health.ps1 checks (alongside its existing debug-log grep)
+watchdog_telegram_health.py checks (alongside its existing debug-log grep)
 to detect and heal a stale binding by restarting the orchestrator — without
 this, the staleness can sit silently until a real reply attempt happens to
 produce the matching log error, which may never occur.

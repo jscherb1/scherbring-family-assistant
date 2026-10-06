@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Linux port of start_orchestrator.ps1: run the Claude Code orchestrator in a
-# loop, restarting it 10 seconds after every exit.
+# Run the Claude Code orchestrator in a loop, restarting it 10 seconds after
+# every exit.
 #
 # Run it inside a terminal (tmux): claude is an interactive TUI and needs a
 # pty. systemd/assistant-orchestrator.service starts it in a tmux session.

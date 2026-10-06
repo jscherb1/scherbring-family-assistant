@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Detect a stalled scheduler dispatcher, recover it, and alert over Telegram.
 
-Linux port of watchdog_scheduler_health.ps1. scheduler_dispatch.py stamps
+scheduler_dispatch.py stamps
 state/scheduler_loop_state.json `last_tick` on every run (every 2 minutes via
 systemd/assistant-scheduler.timer). A stale or missing tick means the timer
 stopped firing; a stale tick is not evidence that the orchestrator is broken.

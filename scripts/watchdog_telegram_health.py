@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Detect a stuck Telegram MCP binding in the running orchestrator and kill claude.
 
-Linux port of watchdog_telegram_health.ps1 (see that file's history for the
-incident write-ups behind each signal). start_orchestrator.sh's loop restarts
+The signals below each come from a past incident (see the notes in memory and git
+history). start_orchestrator.sh's loop restarts
 claude ~10 s after it dies, and telegram_context_bridge.py replays the last
 60 minutes of conversation into the fresh session.
 

@@ -31,11 +31,10 @@ You have two Home Assistant connections, for different jobs:
   the request goes beyond what a `Hass*` tool covers, or when you need to look up an
   entity/area the hosted connector's live-context snapshot didn't surface.
 
-The `ha` server runs locally (`scripts/start_ha_mcp.ps1`, auto-started at logon via
-the `PersonalAssistantHaMcp` scheduled task) and talks to Home Assistant using a
+The `ha` server runs locally (systemd user unit `assistant-ha-mcp.service`, started at boot) and talks to Home Assistant using a
 long-lived token from the gitignored `.env`. **If any `mcp__ha__*` call fails with
 an auth/connection error**, tell the user the local `ha` server may need attention —
-check it's running (`Get-Process -Name ha-mcp-web`) and that `HOMEASSISTANT_TOKEN`
+check it's running (`systemctl --user status assistant-ha-mcp`) and that `HOMEASSISTANT_TOKEN`
 in `.env` hasn't expired, rather than retrying silently.
 
 ## Reading state

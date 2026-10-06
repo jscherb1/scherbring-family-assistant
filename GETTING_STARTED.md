@@ -37,26 +37,32 @@ tasks, your finances, your kids' names). Keep your remote **private**.
 
 ## 2. Prerequisites
 
-- **Windows** (this repo's automation — Scheduled Tasks, PowerShell launchers — is
-  Windows-specific; the core Claude Code + Telegram loop is portable, but you'll need
-  to redo the "always-on" scripts for another OS).
+- **Linux with systemd.** This was built and is run on **WSL2 Ubuntu 24.04**, and it works
+  the same on plain Ubuntu or a small VPS. The always-on part is systemd user units plus
+  tmux. On WSL2 you also need `systemd=true` in `/etc/wsl.conf` and one Windows startup
+  task that keeps the VM alive (see **Always-on** in `README.md`). macOS would need the
+  units redone as launchd jobs.
 - **[Claude Code](https://claude.com/product/claude-code)** installed and logged in
   (`claude` on your PATH).
 - **[Bun](https://bun.sh)** — the Telegram channel plugin's MCP server runs on Bun,
   not Node. Without it, the channel silently never starts.
-  ```powershell
-  powershell -c "irm bun.sh/install.ps1 | iex"
   ```
-- **Python 3.10+** — several subagents (finance, retirement, fitness, Hy-Vee, Home
-  Assistant) shell out to Python scripts. `pip install` requirements are called out
-  per-agent in `README.md` as you turn them on.
-- **git**.
+  curl -fsSL https://bun.sh/install | bash
+  ```
+- **Python 3.12+, tmux, sqlite3, git, [uv](https://docs.astral.sh/uv/) and
+  [age](https://github.com/FiloSottile/age).** `scripts/setup_wsl.sh` builds the virtualenv
+  and installs every Python dependency, Playwright's Chromium, and the pinned Home
+  Assistant and Monarch servers, so you don't `pip install` anything by hand.
 
 ## 3. Core setup (do this first, everything else is optional)
 
 This gets you the minimum working loop: Telegram → orchestrator → Todoist subagent,
 with memory. Full detail is in `README.md` under **Setup**, but the short version:
 
+0. **Build the environment**: run `scripts/setup_wsl.sh` from the repo root. Then create
+   your secrets file, which lives **outside the repo**:
+   `~/.config/scherbring-assistant/.env` (directory mode 700, file mode 600), using
+   `.env.example` as the list of keys.
 1. **Create a Telegram bot** via [@BotFather](https://t.me/BotFather); copy the token.
 2. **Get your Telegram user ID** (e.g. via [@userinfobot](https://t.me/userinfobot)).
 3. **Configure the Telegram channel** (any `claude` session — this persists to
@@ -67,7 +73,8 @@ with memory. Full detail is in `README.md` under **Setup**, but the short versio
    ```
 4. **Launch the orchestrator with the channel attached:**
    ```
-   powershell -ExecutionPolicy Bypass -File scripts\start_orchestrator.ps1
+   tmux new-session -d -s assistant scripts/start_orchestrator.sh
+   tmux attach -t assistant      # to watch it; Ctrl-b d detaches
    ```
 5. **Pair your account** — this is the step that actually lets your messages through:
    ```
@@ -84,12 +91,15 @@ with memory. Full detail is in `README.md` under **Setup**, but the short versio
    shows up in Todoist and the bot replies, then ask "what did I just add?" and confirm
    it remembers — that continuity (not just the round trip) is the real test.
 
-Once that works, keep the orchestrator always running:
+Once that works, hand it over to systemd so it starts at boot and restarts if it crashes:
 ```
-powershell -ExecutionPolicy Bypass -File scripts\register_orchestrator_task.ps1
+sudo loginctl enable-linger "$USER"
+tmux kill-session -t assistant     # stop the manual one first
+scripts/install_systemd.sh assistant-orchestrator.service assistant-scheduler.timer \
+    assistant-watchdog.timer assistant-credential-check.timer assistant-backup.timer
 ```
-This registers a Windows Scheduled Task that starts the assistant at logon and
-restarts it if it crashes.
+`docs/OPERATIONS.md` is the day-to-day runbook (status, logs, restart, backups, expiring
+logins).
 
 ## 4. Everything else: ask your own assistant to build it
 
@@ -112,9 +122,8 @@ Once your orchestrator is running, try prompts like:
   equipment."** → seeds `lawn_garden_config` and offers to register the weekly
   Saturday check.
 - **"Every Sunday at 9am, plan next week's dinners and post the grocery list."**
-  → the `scheduler` subagent registers a recurring task — no Windows Task Scheduler
-  editing required for this one, it's a row in a SQLite registry the always-on poller
-  already watches.
+  → the `scheduler` subagent registers a recurring task — no systemd editing required
+  for this one, it's a row in a SQLite registry the always-on dispatcher already watches.
 - **"Track our HVAC filter, smoke detectors, and water softener salt."** → seeds
   `home-maintenance`'s recurring item list with sensible defaults you can adjust.
 - **"What subagents do I have set up, and what's still missing?"** → a good sanity
@@ -122,7 +131,7 @@ Once your orchestrator is running, try prompts like:
 
 For agents that need a **real credential** (Hy-Vee login, COROS login, Home Assistant
 long-lived token, Monarch Money session, Google Drive OAuth), the assistant can't do
-that part for you — those go in your gitignored `.env` or a one-time terminal
+that part for you — those go in your secrets file (`~/.config/scherbring-assistant/.env`) or a one-time terminal
 `login`/`auth` step, documented per-agent in `README.md`. Ask "what do I need to set up
 the finance agent?" and it'll walk you through exactly that agent's section rather than
 you hunting for it.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rolling short-term memory bridge for Telegram conversations across orchestrator restarts.
 
-Problem: start_orchestrator.ps1 always launches a brand-new Claude session (by
+Problem: start_orchestrator.sh always launches a brand-new Claude session (by
 design, to avoid unbounded context growth across restarts - see its 2026-08-12
 note). That means a watchdog-triggered restart (stale tool binding, wedged
 event loop, etc.) used to wipe whatever conversation was in progress, and the
@@ -30,7 +30,7 @@ Subcommands (all read/write state/telegram_conversation_log.jsonl):
   hook-session-start SessionStart hook - prunes, then emits the remaining
                      window as additionalContext (empty if nothing recent).
   prune              Standalone prune with no stdin, for periodic invocation
-                     from run_watchdog.ps1 so entries age out even during long
+                     from run_watchdog.sh so entries age out even during long
                      gaps with no Telegram traffic to trigger a write.
 
 All hook subcommands read a single JSON object from stdin (the harness's

@@ -54,7 +54,7 @@ answer in plain text — fall back immediately to:
     python scripts/telegram_send.py "<message text>"
 
 This sends directly via the Telegram Bot API, bypassing the broken tool binding, so the user
-still gets the reply. It also stamps a state file that the `watchdog_telegram_health.ps1` task
+still gets the reply. It also stamps a state file that the `watchdog_telegram_health.py` check
 picks up as an explicit unhealthy signal and uses to restart the orchestrator with a fresh,
 working tool binding — so use this fallback every single time the real tool fails, not just
 once. Restarting drops conversation context, so the watchdog sends its own heads-up before

@@ -7,9 +7,9 @@ now designed to feel seamless (see scripts/telegram_context_bridge.py), that
 also means they'd otherwise be invisible. This gives an explicit, queryable
 record instead of relying on him noticing.
 
-start_orchestrator.ps1 calls `record` at the top of every loop iteration,
+start_orchestrator.sh calls `record` at the top of every loop iteration,
 before each `claude` launch, tagging it "wrapper-start" (the first launch of
-a given wrapper process, e.g. after logon or a full manual restart) or
+a given wrapper process, e.g. after boot or a full manual restart) or
 "loop-restart" (claude.exe exited - crash, watchdog kill, etc - and the
 wrapper's own while loop brought it back up without the outer process dying).
 That single call site is the only place sessions are recorded, so a
