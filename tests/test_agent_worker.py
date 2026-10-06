@@ -152,3 +152,11 @@ def test_recover_in_flight_on_start(tmp_path):
     assert store.stats()["inbox_processing"] == 1
     store.recover_in_flight()
     assert asyncio.run(w.process_one()) is True
+
+
+def test_context_bridge_hooks_noop_for_bridge_worker(monkeypatch, capsys):
+    import telegram_context_bridge as tcb
+
+    monkeypatch.setenv("BRIDGE_WORKER", "1")
+    assert tcb.main(["hook-session-start"]) == 0
+    assert capsys.readouterr().out == ""

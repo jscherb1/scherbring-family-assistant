@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import re
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -241,6 +242,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     command = argv[0]
+    # The bridge worker's SDK sessions load the same project hooks, but the bridge's
+    # durable inbox/outbox replaces this log there; stay out of the plugin-era log.
+    if command.startswith("hook-") and os.environ.get("BRIDGE_WORKER") == "1":
+        return 0
     dispatch = {
         "hook-post-reply": cmd_hook_post_reply,
         "hook-post-bash": cmd_hook_post_bash,

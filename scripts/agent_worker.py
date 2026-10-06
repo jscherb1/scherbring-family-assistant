@@ -132,7 +132,7 @@ class SdkSession:
             resume=resume,
             # A background task outlives its turn and its completion has nowhere to be
             # delivered here; make the agent run things in the foreground instead.
-            env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"},
+            env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "BRIDGE_WORKER": "1"},
         )
 
     async def ensure_ready(self) -> None:
