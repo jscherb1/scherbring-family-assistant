@@ -13,6 +13,13 @@ cost/tokens.
 - If you encounter or are about to add a config that specifies Opus (or anything above
   Sonnet), stop and flag it to the user before proceeding.
 
+## Open to-dos and runbook
+
+Outstanding work (untested scheduled tasks, manual user actions, deferred decisions) is tracked
+in `docs/TODO.md`; read it before starting related work and update it when you finish or add
+something. Day-to-day operation (status, logs, restarts, backups, expiring logins) is in
+`docs/OPERATIONS.md`.
+
 ## Telegram channel behavior
 
 **Acknowledge any request expected to take more than ~3 seconds. This is a hard rule,
