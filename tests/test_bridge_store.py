@@ -72,6 +72,25 @@ def test_backoff_caps_at_30():
     assert [backoff_seconds(n) for n in (1, 2, 3, 6, 20)] == [1, 2, 4, 30, 30]
 
 
+def test_concurrent_first_open_does_not_lock(tmp_path):
+    import threading
+
+    errors = []
+
+    def open_db():
+        try:
+            BridgeStore(tmp_path / "race.db").close()
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=open_db) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+
+
 def test_kv_roundtrip():
     s = make()
     assert s.kv_get("offset") is None

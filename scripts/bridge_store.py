@@ -79,9 +79,18 @@ class BridgeStore:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path), timeout=10, isolation_level=None)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=FULL")  # durability over speed
-        self._conn.executescript(SCHEMA)
+        # Several connections can open a fresh DB at once; the WAL switch and schema
+        # creation need a lock that the busy timeout doesn't always cover, so retry.
+        for attempt in range(50):
+            try:
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                self._conn.execute("PRAGMA synchronous=FULL")  # durability over speed
+                self._conn.executescript(SCHEMA)
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" not in str(e) or attempt == 49:
+                    raise
+                time.sleep(0.1)
 
     def close(self) -> None:
         self._conn.close()
