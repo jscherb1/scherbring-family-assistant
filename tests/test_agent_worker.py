@@ -332,3 +332,31 @@ def test_legacy_export_is_gated_by_env(tmp_path, monkeypatch):
     asyncio.run(w.process_one())
     text = (tmp_path / "legacy.jsonl").read_text()
     assert "again" in text and "the answer" in text
+
+
+def test_brand_new_session_is_seeded_from_message_log(tmp_path):
+    import types, sys as _sys
+
+    store = BridgeStore(tmp_path / "i.db")
+    store.add_inbound("telegram", "1", "earlier question", external_id="1", now=time.time() - 300)
+    store.enqueue_outbound("telegram", "1", "earlier answer", now=time.time() - 290)
+    s = agent_worker.SdkSession("1", store, "sonnet")
+
+    class FakeClient:
+        def __init__(self, options=None):
+            pass
+
+        async def connect(self):
+            pass
+
+        async def get_mcp_status(self):
+            return {"mcpServers": []}
+
+    import claude_agent_sdk
+    orig = claude_agent_sdk.ClaudeSDKClient
+    claude_agent_sdk.ClaudeSDKClient = FakeClient
+    try:
+        asyncio.run(s.ensure_ready())
+    finally:
+        claude_agent_sdk.ClaudeSDKClient = orig
+    assert "earlier question" in s.seed and "earlier answer" in s.seed

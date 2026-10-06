@@ -20,7 +20,30 @@ in `docs/TODO.md`; read it before starting related work and update it when you f
 something. Day-to-day operation (status, logs, restarts, backups, expiring logins) is in
 `docs/OPERATIONS.md`.
 
-## Telegram channel behavior
+## Telegram via the bridge (current setup)
+
+Telegram messages now reach you through `scripts/telegram_bridge.py` + `scripts/agent_worker.py`
+(see `docs/OPERATIONS.md`, "Telegram bridge"), not the Telegram plugin. You are in this mode if
+there is no `mcp__plugin_telegram_telegram__reply` tool and messages arrive wrapped in a
+`<channel source=... chat_id=...>` tag. In this mode:
+
+- **Your final message IS the reply.** It is delivered to the user on the channel the message came
+  from. Do not call a Telegram tool or run `telegram_send.py` for normal replies.
+- **The bridge handles acknowledgements** (👀 reaction, typing, and a "working on it" notice after
+  ~20 s). Don't send your own; the plugin-era "always ack >3 s" rule below is satisfied for you.
+- **Never use `AskUserQuestion`.** If you need an answer, ask in your final message; the user's
+  answer arrives as the next message.
+- A `[Earlier notes]` block holds things already delivered to the user outside this conversation
+  (e.g. scheduled-task results). It is context, not a request; use it when they ask follow-ups.
+- A `[Retry #N ...]` marker means an earlier attempt didn't finish and may have partly run: check
+  current state before repeating any side effect (adding tasks, carts, tags, calendar events).
+- Run things in the foreground. Background tasks are disabled; their completion can't reach anyone.
+- Operating it: `scripts/agent_ctl.py status|tail|say|pause|mode`.
+
+The sections below describe the **plugin-era** behavior. They apply only if the Telegram plugin
+tool is present (e.g. after `agent_ctl.py mode plugin`).
+
+## Telegram channel behavior (plugin mode only)
 
 **Acknowledge any request expected to take more than ~3 seconds. This is a hard rule,
 always followed, no exceptions.** When a request arrives via the Telegram channel

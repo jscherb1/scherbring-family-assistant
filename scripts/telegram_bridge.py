@@ -36,7 +36,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bridge_store import BridgeStore  # noqa: E402
-from paths import REPO_ROOT, get_env  # noqa: E402
+from paths import REPO_ROOT, get_env, telegram_env_path  # noqa: E402
 
 log = logging.getLogger("bridge")
 
@@ -266,7 +266,8 @@ def main() -> int:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    token = get_env(args.token_env)
+    # Production token also lives in the old plugin's .env; same lookup order as telegram_send.py.
+    token = get_env(args.token_env, (telegram_env_path(),))
     if not token:
         print(f"telegram_bridge: {args.token_env} not set", file=sys.stderr)
         return 1

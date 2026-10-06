@@ -13,6 +13,8 @@ WatchdogSec=30
 WorkingDirectory=@REPO_ROOT@
 EnvironmentFile=-%h/.config/scherbring-assistant/.env
 Environment=PYTHONUNBUFFERED=1
+# Keep the plugin-era conversation log current so `agent_ctl.py mode plugin` rolls back with context.
+Environment=BRIDGE_EXPORT_LEGACY_LOG=1
 # claude lives in ~/.local/bin; the venv first so child 'python' calls resolve to it.
 Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/agent_worker.py

@@ -185,6 +185,9 @@ class SdkSession:
                 self._client = ClaudeSDKClient(options=self._options())
                 await self._client.connect()
             self.mcp_ready = False
+        if not self.store.kv_get(f"session_id:{self.key}") and not self.seed:
+            # A brand-new session (first run, or after a rotation): give it the recent conversation.
+            self.seed = format_seed(self.store.recent_conversation(self.key))
         deadline = time.time() + MCP_READY_TIMEOUT_S
         while time.time() < deadline:
             st = await self._client.get_mcp_status()

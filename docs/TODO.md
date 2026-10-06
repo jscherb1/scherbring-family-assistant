@@ -33,28 +33,27 @@ update it when you finish or add something. Dates are absolute.
 8. **Check the Windows backup folder is covered.** Backups land in `C:\Users\<you>\Backups\assistant`.
    Make sure File History or OneDrive includes it, and consider a periodic `wsl --export` of the distro.
 
-## Telegram bridge (branch `feat/telegram-bridge`, started 2026-10-06)
+## Telegram bridge (branch `feat/telegram-bridge`, cut over 2026-10-06)
 
-Replacing the plugin with `telegram_bridge.py` + `agent_worker.py` (design: `docs/OPERATIONS.md`
-"Telegram bridge"). Running on the test bot; production untouched.
+`telegram_bridge.py` + `agent_worker.py` now serve the production bot (design and runbook:
+`docs/OPERATIONS.md`, "Telegram bridge"). Roll back any time with
+`scripts/agent_ctl.py mode plugin --yes` (restarts the old orchestrator; the bridge keeps the old
+conversation log current so context survives). The user is soak-testing it for real use.
 
-Done: durable inbox/outbox, bridge, worker (resume, MCP-ready gate, redelivery), systemd units with
-watchdog, canary + alerts, `agent_ctl`, dashboard Agent section, scheduled-task context notes, resume
-fallback from the message log, rotation/compaction, daily-cost alert.
+Deferred by the user (do later, none urgent):
+- **Send files/photos back through the bridge** (the plugin could; the bridge only receives them
+  today and replies text-only). Also message edits and reactions from the agent side.
+- **External dead-man's switch** for whole-host outages (e.g. healthchecks.io ping from the canary;
+  user would create the free check and put `HEALTHCHECK_PING_URL` in `.env`). Not wanted for now.
+- **Full reboot drill** with the new units: `wsl --shutdown`, confirm bridge and worker come back and
+  the session resumes. Briefly takes everything down, so do it with the user present.
+- Dashboard "talk to the orchestrator" box and a full-content stream view: would need their own
+  token-protected page (the main dashboard has no login). `agent_ctl say` / `tail` cover it for now.
 
-Still to do before cutover:
-- Decide the dashboard "talk to the orchestrator" box (needs its own token-protected page; the main
-  dashboard has no login) and whether to add a token-protected full-content stream view.
-- External dead-man's switch for whole-host outages (healthchecks.io ping from the canary; needs the
-  user to create a free check and add `HEALTHCHECK_PING_URL` to `.env`).
-- `agent_ctl mode plugin|bridge` switch-back command + one-way exporter into the old
-  `telegram_conversation_log.jsonl` so a rollback keeps recent context.
-- Feature parity with the plugin: attachments from the agent side (sending files/photos back),
-  edits, reactions.
-- Update CLAUDE.md "Telegram channel behavior" (ack/reply handled by the bridge), switch the units to
-  the production token (`--token-env TELEGRAM_BOT_TOKEN`), rotate the bot token (item 5 above), soak
-  one week, then remove the plugin path.
-- Windows keepalive and full-reboot drill with the new units (`wsl --shutdown`, confirm both come back).
+After the soak (about a week of normal use): remove the plugin path (`start_orchestrator.sh`,
+`assistant-orchestrator.service`, the log-grep watchdog, the context-bridge hooks in
+`.claude/settings.json`), merge `feat/telegram-bridge`, and rotate the bot token (item 5 above).
+Known small gap: the dashboard's context-size figure reads 0 until the first turn after a compaction.
 
 ## Agent follow-ups
 
