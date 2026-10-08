@@ -152,3 +152,13 @@ def test_brief_poll_failures_do_not_alert(env):
     b.note_poll_result(store, "getUpdates: timeout", now=1000)
     b.note_poll_result(store, None, now=1010)
     assert store.stats()["outbox_pending"] == 0
+
+
+def test_poll_alert_is_not_retried_after_failed_send(env):
+    api, store, b = env
+    b.note_poll_result(store, "timed out", now=0)
+    b.note_poll_result(store, "timed out", now=100)
+    api.fail_send = True
+    assert b.flush_outbox_once(store) == 0
+    assert store.stats()["outbox_pending"] == 0  # abandoned, not rescheduled
+    assert store.stats()["outbox_failed"] == 1

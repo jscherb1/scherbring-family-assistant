@@ -135,6 +135,7 @@ class Bridge:
         self._notified_for: int | None = None  # inbox id we already sent the restart notice for
         self._poll_fail_since: float | None = None
         self._poll_alerted = False
+        self._send_once: set[int] = set()  # outbox ids that must never be retried
 
     # ---- inbound ----
     def handle_update(self, store: BridgeStore, update: dict) -> None:
@@ -192,6 +193,12 @@ class Bridge:
                 store.mark_sent(row["id"])
                 sent += 1
             except TelegramError as e:
+                if row["id"] in self._send_once:
+                    # Status alerts: a timeout may mean Telegram delivered it anyway; retrying duplicates it.
+                    self._send_once.discard(row["id"])
+                    status = store.mark_send_abandoned(row["id"], str(e))
+                    log.warning("send abandoned (no retry): %s", e)
+                    continue
                 status = store.mark_send_failed(row["id"], str(e))
                 log.warning("send failed (%s): %s", status, e)
                 return sent
@@ -229,7 +236,7 @@ class Bridge:
         chat = sorted(self.allowed)[0] if self.allowed else None
         if error is None:
             if self._poll_alerted and chat:
-                store.enqueue_outbound(CHANNEL, chat, "✅ Telegram polling recovered; messages are being received again.")
+                self._send_once.add(store.enqueue_outbound(CHANNEL, chat, "✅ Telegram polling recovered; messages are being received again."))
             self._poll_fail_since, self._poll_alerted = None, False
             return
         if self._poll_fail_since is None:
@@ -240,7 +247,7 @@ class Bridge:
                 why = "another process is polling this bot (for example a Claude session with the Telegram plugin enabled)"
             else:
                 why = f"Telegram can't be reached ({error[:120]})"
-            store.enqueue_outbound(CHANNEL, chat, f"⚠️ I'm not receiving your messages right now: {why}. Anything you send may be delayed until this clears.")
+            self._send_once.add(store.enqueue_outbound(CHANNEL, chat, f"⚠️ I'm not receiving your messages right now: {why}. Anything you send may be delayed until this clears."))
 
     # ---- run loops ----
     @staticmethod

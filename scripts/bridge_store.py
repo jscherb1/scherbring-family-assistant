@@ -280,6 +280,14 @@ class BridgeStore:
             (now if now is not None else time.time(), outbox_id),
         )
 
+    def mark_send_abandoned(self, outbox_id: int, error: str) -> str:
+        """Give up on a send without retrying (a timed-out send may already have been delivered)."""
+        self._conn.execute(
+            "UPDATE outbox SET status='failed', attempts=attempts+1, error=? WHERE id=?",
+            (error[:500], outbox_id),
+        )
+        return "failed"
+
     def mark_send_failed(self, outbox_id: int, error: str, now: float | None = None) -> str:
         """Record a failed send; reschedule with backoff or give up. Returns new status."""
         ts = now if now is not None else time.time()
