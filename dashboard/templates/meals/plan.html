@@ -34,7 +34,7 @@
       <table class="tbl">
         <thead><tr><th>Recipe</th><th>Rating</th><th>Last cooked</th></tr></thead>
         <tbody>{% for r in data.recently_cooked %}<tr><td><a href="/meals/{{ r.id|urlencode }}">{{ r.title }}</a></td>
-          <td>{{ r.rating|stars if r.rating else '—' }}</td><td>{{ r.last_cooked_at }} <span class="muted">({{ r.days_since_cooked }} d ago)</span></td></tr>{% endfor %}</tbody>
+          <td>{{ r.rating|stars if r.rating else '—' }}</td><td>{{ r.last_cooked_at|fmt_date }} <span class="muted">({{ r.days_since_cooked }} d ago)</span></td></tr>{% endfor %}</tbody>
       </table>
       {% else %}<div class="empty-state">No cooking history recorded.</div>{% endif %}
     </section>

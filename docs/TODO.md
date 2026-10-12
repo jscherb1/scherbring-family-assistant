@@ -47,8 +47,9 @@ Deferred by the user (do later, none urgent):
   user would create the free check and put `HEALTHCHECK_PING_URL` in `.env`). Not wanted for now.
 - **Full reboot drill** with the new units: `wsl --shutdown`, confirm bridge and worker come back and
   the session resumes. Briefly takes everything down, so do it with the user present.
-- Dashboard "talk to the orchestrator" box and a full-content stream view: would need their own
-  token-protected page (the main dashboard has no login). `agent_ctl say` / `tail` cover it for now.
+- Dashboard full-content stream view: would need a token-protected page (the dashboard has no
+  login). The one-shot "ask" box shipped 2026-10-07 (see `dashboard/README.md`). `agent_ctl say` /
+  `tail` cover the rest for now.
 
 After the soak (about a week of normal use): remove the plugin path (`start_orchestrator.sh`,
 `assistant-orchestrator.service`, the log-grep watchdog, the context-bridge hooks in
@@ -95,8 +96,9 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       auth exists; revisit what to reveal once there is a login.
     - Fitness shows planned workouts only: `completion_status` is never set by any automation.
     - The meal menu is read from `agent_results.detail_json`; a dedicated meal-plan table would be sturdier.
-    - The dashboard has no login; it relies on the bind address (localhost or Tailscale). Add auth before
-      any write routes exist.
+    - The dashboard has no login; it relies on the bind address (localhost or Tailscale). The Summary
+      page's ask box (2026-10-07) is the first write route and assumes a single user (Justin). Before
+      other family members use it, add real auth plus a per-user chat-id mapping.
 
 ## Not started (ideas, from README "Backlog")
 

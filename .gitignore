@@ -69,3 +69,6 @@ Desktop.ini
 # Legacy per-machine alert config (use TELEGRAM_ALERT_CHAT_ID instead)
 scripts/scheduler.config.json
 state/orchestrator.lock
+
+# --- Dashboard runtime state (dismissed attention items) ---
+state/dashboard_dismissed.json

@@ -2,16 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0f" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Scherbring">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="icon" type="image/svg+xml" href="/static/icons/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <title>{{ page_title }} · {{ APP_NAME }}</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/htmx.min.js" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version() }}">
+  <script src="/static/htmx.min.js?v={{ asset_version() }}" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>
   <header class="site-header">
     <div class="container">
-      <a class="brand" href="/">{{ APP_NAME }}</a>
+      <a class="brand" href="/"><img src="/static/icons/favicon.svg" alt="" width="28" height="28"><span>{{ APP_NAME }}</span></a>
+      <details class="mobile-menu">
+        <summary aria-label="Menu">{{ section.label }} <span class="chev" aria-hidden="true">▾</span></summary>
+        <nav aria-label="Sections (mobile)">
+          {% for s in sections %}
+            <a href="{{ s.href }}" class="{{ 'active' if s.key == section.key }}">{{ s.label }}</a>
+          {% endfor %}
+        </nav>
+      </details>
       <nav class="section-nav" aria-label="Sections">
         {% for s in sections %}
           <a href="{{ s.href }}" class="{{ 'active' if s.key == section.key }}"
@@ -37,6 +55,19 @@
     {% block content %}{% endblock %}
   </main>
 
+  <script>
+    // Label table cells with their column header so tables can stack on small screens.
+    function labelTables(root) {
+      (root || document).querySelectorAll("table.tbl").forEach(function (t) {
+        var heads = Array.prototype.map.call(t.querySelectorAll("thead th"), function (th) { return th.textContent.trim(); });
+        t.querySelectorAll("tbody tr").forEach(function (tr) {
+          Array.prototype.forEach.call(tr.children, function (td, i) { if (!td.hasAttribute("data-label")) td.setAttribute("data-label", heads[i] || ""); });
+        });
+      });
+    }
+    labelTables();
+    document.addEventListener("htmx:afterSwap", function (e) { labelTables(e.target); });
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

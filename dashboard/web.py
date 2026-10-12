@@ -13,6 +13,12 @@ HERE = Path(__file__).resolve().parent
 
 SECTIONS = [
     {
+        "key": "summary",
+        "label": "Summary",
+        "href": "/",
+        "pages": [{"key": "overview", "label": "Overview", "href": "/"}],
+    },
+    {
         "key": "health",
         "label": "Orchestrator Health",
         "href": "/health",
@@ -114,6 +120,14 @@ def fmt_dt(value, empty="never"):
     return dt.strftime("%b %-d, %-I:%M %p")
 
 
+def fmt_date(value, empty="never"):
+    """'Sep 8, 2025' for date-only values (no time of day)."""
+    dt = _to_datetime(value)
+    if dt is None:
+        return empty if not value else str(value)
+    return dt.strftime("%b %-d, %Y")
+
+
 def fmt_duration(seconds):
     if seconds is None:
         return "—"
@@ -161,10 +175,22 @@ def stars(rating):
 
 
 templates.env.filters.update(
-    fmt_dt=fmt_dt, fmt_duration=fmt_duration, fmt_minutes=fmt_minutes,
+    fmt_dt=fmt_dt, fmt_date=fmt_date, fmt_duration=fmt_duration, fmt_minutes=fmt_minutes,
     status_pill=status_pill, stars=stars, fmt_bytes=fmt_bytes,
 )
 templates.env.globals["APP_NAME"] = APP_NAME
+
+
+def asset_version() -> str:
+    """Newest mtime under static/, appended to CSS/JS URLs so browsers never pair new HTML
+    with a cached old stylesheet."""
+    try:
+        return str(int(max(f.stat().st_mtime for f in (HERE / "static").rglob("*") if f.is_file())))
+    except (OSError, ValueError):
+        return "0"
+
+
+templates.env.globals["asset_version"] = asset_version
 
 
 def render(request: Request, template: str, section: str, page: str,
