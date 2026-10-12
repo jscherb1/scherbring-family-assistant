@@ -72,3 +72,7 @@ state/orchestrator.lock
 
 # --- Dashboard runtime state (dismissed attention items) ---
 state/dashboard_dismissed.json
+
+# --- Runtime state: credential-expiry tracking and bridge token-usage logs ---
+state/credential_check.json
+state/usage*.jsonl
