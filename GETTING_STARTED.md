@@ -156,6 +156,7 @@ and its `state/schema.sql` tables):
 | Household facts (birthdays, allergies, sizes) | `profile` |
 | Weather-driven prep nudges | `weather-reminders` |
 | Habit / streak tracking | `habits` |
+| Kid chore chart with dollar rewards and streaks | `chores` |
 | Home maintenance cadence tracking | `home-maintenance` |
 | Smart home control (Home Assistant) | `home-assistant` |
 | Weekly workout planning (COROS) | `fitness` |

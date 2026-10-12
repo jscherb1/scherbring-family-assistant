@@ -100,6 +100,22 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       page's ask box (2026-10-07) is the first write route and assumes a single user (Justin). Before
       other family members use it, add real auth plus a per-user chat-id mapping.
 
+## Kid chore chart (built 2026-10-12; service, CLI, dashboard and kid page tested, not yet used live)
+
+- **User actions:** add the kids and chores (dashboard Chores → Chores & kids, or ask the `chores` agent); set a
+  couple of rewards and a savings goal; set up a tablet/old phone on the tailnet and add `/kids` to its home screen.
+- **Scheduled tasks not registered yet** (need the user's chat id; commands in README "Chores agent"):
+  `chores-weekly-payday` (Sun 5 PM) and optionally `chores-afternoon-check` (weekdays 4:30 PM). Neither has run
+  end to end; test the payday summary once real data exists. Reload agents (`/reload-plugins`) so the new `chores`
+  subagent is picked up.
+- **Visual check pending:** the kids' page was verified by HTML/route tests and a live request, not eyeballed on a
+  tablet. Check layout, tap targets, confetti/chime and read-aloud (browser speech voices vary) on the real device.
+  Web Audio needs one tap before sound plays (normal browser autoplay rule).
+- No login: a kid could browse to `/chores` and edit money. Every payout/adjustment is in the ledger; add a grown-up PIN
+  on the `/chores` write routes if that becomes a problem (see the auth note under Agent follow-ups).
+- Later ideas: per-kid themes and reading level, family team quest, streak freeze, Home Assistant speaker nudge
+  (`HassBroadcast`) when chores are still open, redeeming rewards from the kids' screen with a parent approval.
+
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 
 - `habits-daily-nudge` is registered (daily 7 PM) and live-tested 2026-10-12: silent path verified (nothing at risk).
