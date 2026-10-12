@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Money</h1>
+  <p class="subtitle">Balances, payouts and history. Record a payout here after you hand over the cash.</p>
+{% endblock %}
+
+{% block content %}
+<div class="chores-ui">
+{% include "chores/_notice.html" %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.kids %}
+  <div class="card"><div class="empty-state">No kids yet. <a href="/chores/manage">Add them first.</a></div></div>
+{% else %}
+  <div class="kid-grid">
+  {% for k in data.kids %}
+    <article class="card">
+      <div class="kid-card-head">
+        <div><h3>{{ k.avatar }} {{ k.name }}</h3></div>
+        <div class="balance">{{ k.balance }}<small>owed right now</small></div>
+      </div>
+      <form method="post" action="/chores/payout" class="form-row">
+        <input type="hidden" name="kid_id" value="{{ k.id }}">
+        <label class="field narrow"><span>Paid ($)</span><input name="amount" inputmode="decimal" value="{{ '%.2f' % (k.balance_cents / 100) }}"></label>
+        <label class="field"><span>Note</span><input name="note" maxlength="80" placeholder="cash"></label>
+        <button class="button" type="submit">Record payout</button>
+      </form>
+      <h4>Recent history</h4>
+      <div class="history">
+        {% for e in k.ledger %}
+        <div class="history-row">
+          <span class="muted-text">{{ e.created_at[5:10] }}</span>
+          <span class="pill {{ 'pill-ok' if e.kind == 'earn' else 'pill-muted' }}">{{ e.kind }}</span>
+          <span class="amt {{ 'ok-count' if e.amount_cents > 0 else 'fail-count' }}">{{ e.amount }}</span>
+          <span class="muted-text">{{ e.note or '' }}</span>
+        </div>
+        {% else %}<p class="note">Nothing yet.</p>{% endfor %}
+      </div>
+    </article>
+  {% endfor %}
+  </div>
+
+  <section class="card" style="margin-top: 16px">
+    <h2>Fix the record</h2>
+    <p class="note">Kids can only tick off today's chores. Use this for a chore done on another day, or to remove a mistaken tap.</p>
+    <form method="post" action="/chores/backfill" class="form-row">
+      <label class="field"><span>Kid</span><select name="kid_id">{% for k in data.kids %}<option value="{{ k.id }}">{{ k.name }}</option>{% endfor %}</select></label>
+      <label class="field grow"><span>Chore</span><select name="chore_id">{% for c in data.chores %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+      <label class="field"><span>Date (blank = today)</span><input name="log_date" type="date"></label>
+      <button class="button" type="submit">Mark done</button>
+      <button class="link-button danger" type="submit" formaction="/chores/undo">Remove latest</button>
+    </form>
+  </section>
+{% endif %}
+</div>
+{% endblock %}

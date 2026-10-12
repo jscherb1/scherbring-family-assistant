@@ -5,7 +5,7 @@ already safe to show (no finance amounts, no memory text).
 """
 from datetime import timedelta
 
-from . import activity, agent, common, family, finance, habits, health, home, ops, schedule, shopping_fitness
+from . import activity, agent, chores, common, family, finance, habits, health, home, ops, schedule, shopping_fitness
 from .. import dismissals
 from ..web import fmt_dt
 
@@ -124,6 +124,19 @@ def _habits_tile(attention):
     return {"title": "Habits", "href": "/habits", "headline": headline, "sub": sub, "state": state}
 
 
+def _chores_tile():
+    o = chores.get_overview()
+    href = "/chores"
+    if not _ok(o):
+        return {"title": "Chores", "href": href, "headline": "Unknown", "sub": "", "state": "warn"}
+    if not o["kids"]:
+        return {"title": "Chores", "href": href, "headline": "Not set up", "sub": "Add the kids and their chores", "state": "ok"}
+    if not o["total_count"]:
+        return {"title": "Chores", "href": href, "headline": "Nothing due today", "sub": f"{o['owed_total']} owed", "state": "ok"}
+    return {"title": "Chores", "href": href, "headline": f"{o['done_count']}/{o['total_count']} done today",
+            "sub": f"{o['owed_total']} owed to the kids", "state": "ok"}
+
+
 def _meals_tile():
     ins = activity.get_meal_insights()
     if not _ok(ins):
@@ -196,7 +209,7 @@ def get_summary():
     schedule_tile = _schedule_tile(attention)
     systems = _credentials(attention)
     tiles = [
-        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _meals_tile(), _finance_tile(),
+        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _chores_tile(), _meals_tile(), _finance_tile(),
         _fitness_tile(), _family_tile(), _hyvee_tile(systems),
     ]
     dismissed = dismissals.load()

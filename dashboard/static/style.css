@@ -1261,3 +1261,406 @@ a.chip {
   min-height: 44px;
   font-weight: 600;
 }
+
+/* ---- Chores (adult section) ----
+   Everything is scoped to .chores-ui so it can't leak into other pages. Inputs here are bare
+   (not wrapped in .field), so they get the same look as .field inputs. */
+
+.chores-ui .card {
+  margin-bottom: 16px;
+}
+
+.chores-ui .grid.stats .card,
+.chores-ui .habit-grid .card,
+.chores-ui .kid-grid .card {
+  margin-bottom: 0;
+}
+
+.chores-ui input:not([type="checkbox"]):not([type="hidden"]),
+.chores-ui select {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  min-height: 38px;
+}
+
+.chores-ui input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.chores-ui .link-button {
+  min-height: 0;
+  padding: 4px 6px;
+}
+
+.chores-ui .section-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 28px 0 12px;
+}
+
+.chores-ui .note {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin: -4px 0 14px;
+}
+
+.chores-ui h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 18px 0 6px;
+}
+
+.chores-ui .ask-note {
+  margin: 0 0 16px;
+}
+
+/* A row of labelled fields; .grow takes the spare width, .go is the submit button. */
+.form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.form-row + .form-row {
+  margin-top: 12px;
+}
+
+.form-row .field {
+  flex: 1 1 140px;
+}
+
+.form-row .field.narrow {
+  flex: 0 0 84px;
+}
+
+.form-row .field.grow {
+  flex: 3 1 220px;
+}
+
+.form-row .button {
+  min-height: 38px;
+  padding: 0 18px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.chores-ui .link-button.danger {
+  color: var(--warn);
+}
+
+.sep {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 18px 0 4px;
+}
+
+.inline-form {
+  display: inline;
+  margin: 0;
+}
+
+/* ---- people / rows ---- */
+
+.person-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.person-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.person-row input[name="avatar"] {
+  flex: 0 0 56px;
+  text-align: center;
+  font-size: 18px;
+}
+
+.person-row input[name="name"] {
+  flex: 1 1 auto;
+}
+
+.person-row.paused {
+  opacity: 0.55;
+}
+
+.muted-text {
+  color: var(--text-muted);
+}
+
+/* ---- today overview ---- */
+
+.kid-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.kid-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.kid-card-head h3 {
+  margin: 0 0 2px;
+  font-size: 18px;
+}
+
+.kid-card-head .sub {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted-bg);
+  overflow: hidden;
+  margin: 4px 0 12px;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  border-radius: 999px;
+}
+
+.chore-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.chore-row .what {
+  min-width: 0;
+}
+
+.chore-row.is-done .what {
+  color: var(--text-muted);
+}
+
+.chore-row .meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.card-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ---- manage ---- */
+
+.day-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* Toggle chips: the checkbox is visually hidden; a checked chip fills with the accent colour. */
+.day-picks label,
+.kid-picks label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.day-picks label {
+  flex: 1 1 34px;
+  min-width: 0;
+  padding: 6px 0;
+  font-size: 12px;
+}
+
+.day-picks input,
+.kid-picks input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.day-picks label:has(input:checked),
+.kid-picks label:has(input:checked) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.day-picks label:has(input:focus-visible),
+.kid-picks label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.kid-picks {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chores-ui .picks-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 4px;
+}
+
+.chore-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chore-edit .form-row .field {
+  flex: 1 1 90px;
+}
+
+.chore-edit .form-row .field.narrow {
+  flex: 0 0 64px;
+}
+
+.chore-edit .form-row .field.grow {
+  flex: 3 1 160px;
+}
+
+.chore-edit .head {
+  display: flex;
+  gap: 8px;
+}
+
+.chore-edit .head input[name="icon"] {
+  flex: 0 0 56px;
+  text-align: center;
+  font-size: 18px;
+}
+
+.chore-edit .head input[name="name"] {
+  flex: 1;
+  font-weight: 600;
+}
+
+.chore-edit .actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.chore-edit .actions .button {
+  min-height: 38px;
+  padding: 0 22px;
+  font-weight: 600;
+}
+
+/* ---- money ---- */
+
+.balance {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-align: right;
+}
+
+.balance small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: 42px 54px 54px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.history-row:first-child {
+  border-top: 0;
+}
+
+.history-row .pill {
+  justify-self: start;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.history-row .amt {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+
+  .history-row {
+    grid-template-columns: 42px 54px 54px minmax(0, 1fr);
+    font-size: 12px;
+  }
+
+  .chores-ui input:not([type="checkbox"]):not([type="hidden"]),
+  .chores-ui select {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .form-row .field.narrow {
+    flex: 0 0 72px;
+  }
+
+  .form-row .button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+}

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Chores &amp; kids</h1>
+  <p class="subtitle">Set up who is on the chart and what they do. Changes show on the kids' screen right away.</p>
+{% endblock %}
+
+{% block content %}
+<div class="chores-ui">
+{% include "chores/_notice.html" %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <section class="card">
+    <h2>Kids</h2>
+    {% for k in data.kids %}
+      <form method="post" action="/chores/kids/{{ k.id }}/update" class="person-row {{ 'paused' if not k.active }}">
+        <input name="avatar" value="{{ k.avatar }}" maxlength="8" aria-label="Avatar emoji">
+        <input name="name" value="{{ k.name }}" maxlength="40" aria-label="Name">
+        <button class="button" type="submit">Save</button>
+        <button class="link-button" name="active" value="{{ 0 if k.active else 1 }}" type="submit">{{ 'Pause' if k.active else 'Resume' }}</button>
+      </form>
+    {% else %}<p class="note">No kids yet. Add the first one below.</p>{% endfor %}
+    <hr class="sep">
+    <form method="post" action="/chores/kids" class="form-row">
+      <label class="field grow"><span>Add a kid</span><input name="name" required maxlength="40" placeholder="First name"></label>
+      <label class="field narrow"><span>Avatar</span><input name="avatar" maxlength="8" placeholder="🦄"></label>
+      <button class="button" type="submit">Add kid</button>
+    </form>
+  </section>
+
+  <h2 class="section-title">Chores</h2>
+  {% if data.chores %}
+  <div class="habit-grid">
+  {% for c in data.chores %}
+    <article class="card {{ 'paused' if not c.active }}">
+      <form method="post" action="/chores/chores/{{ c.id }}/update" class="chore-edit">
+        <input type="hidden" name="edit_schedule" value="1"><input type="hidden" name="edit_kids" value="1">
+        <div class="head">
+          <input name="icon" value="{{ c.icon or '' }}" maxlength="8" aria-label="Icon emoji">
+          <input name="name" value="{{ c.name }}" maxlength="80" aria-label="Name">
+        </div>
+        <div class="form-row">
+          <label class="field"><span>Pays ($)</span><input name="value" value="{{ '%.2f' % (c.value_cents / 100) }}" inputmode="decimal"></label>
+          <label class="field"><span>How often</span>
+            <select name="frequency"><option value="daily" {{ 'selected' if c.frequency == 'daily' }}>Daily</option>
+              <option value="weekly" {{ 'selected' if c.frequency == 'weekly' }}>Weekly</option></select></label>
+          <label class="field narrow"><span>Times</span><input name="target" type="number" min="1" max="7" value="{{ c.target_count }}"></label>
+        </div>
+        <div><span class="picks-label">Specific days (weekly only; leave empty for any day)</span>
+          <div class="day-picks">{% for d in data.weekdays %}<label><input type="checkbox" name="days" value="{{ d }}" {{ 'checked' if d in c.days }}>{{ d|title }}</label>{% endfor %}</div></div>
+        <div><span class="picks-label">Who does it</span>
+          <div class="kid-picks">{% for k in data.kids %}<label><input type="checkbox" name="kids" value="{{ k.id }}" {{ 'checked' if k.name in c.kids }}>{{ k.avatar }} {{ k.name }}</label>{% endfor %}</div></div>
+        <div class="actions">
+          <button class="button" type="submit">Save</button>
+          <button class="link-button" type="submit" name="active" value="{{ 0 if c.active else 1 }}">{{ 'Pause' if c.active else 'Resume' }}</button>
+          {% if not c.active %}<span class="pill pill-muted">paused</span>{% endif %}
+        </div>
+      </form>
+    </article>
+  {% endfor %}
+  </div>
+  {% else %}<div class="card"><div class="empty-state">No chores yet. Add the first one below.</div></div>{% endif %}
+
+  <section class="card" style="margin-top: 16px">
+    <h2>Add a chore</h2>
+    <form method="post" action="/chores/chores" class="chore-edit">
+      <div class="form-row">
+        <label class="field narrow"><span>Icon</span><input name="icon" maxlength="8" placeholder="🐶"></label>
+        <label class="field grow"><span>Name</span><input name="name" required maxlength="80" placeholder="e.g. Feed the dog"></label>
+        <label class="field"><span>Pays ($ each time)</span><input name="value" value="0.25" inputmode="decimal"></label>
+        <label class="field"><span>How often</span>
+          <select name="frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+        <label class="field narrow"><span>Times</span><input name="target" type="number" min="1" max="7" placeholder="1"></label>
+      </div>
+      <div><span class="picks-label">Specific days (weekly only; leave empty for any day)</span>
+        <div class="day-picks">{% for d in data.weekdays %}<label><input type="checkbox" name="days" value="{{ d }}">{{ d|title }}</label>{% endfor %}</div></div>
+      <div><span class="picks-label">Who does it</span>
+        <div class="kid-picks">{% for k in data.kids if k.active %}<label><input type="checkbox" name="kids" value="{{ k.id }}" checked>{{ k.avatar }} {{ k.name }}</label>{% endfor %}</div></div>
+      <label class="field"><span>Notes (optional)</span><input name="description" maxlength="200"></label>
+      <div class="actions"><button class="button" type="submit">Add chore</button></div>
+    </form>
+    <p class="note" style="margin: 14px 0 0">Tip: 3–4 easy chores a day per kid is plenty to start; quick wins build the streak habit.</p>
+  </section>
+{% endif %}
+</div>
+{% endblock %}

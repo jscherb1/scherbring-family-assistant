@@ -26,6 +26,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/lawn-garden.md` | Lawn & garden subagent — tracks the lawn care program, product inventory, plants, weed issues, and the weekly proactive weather/calendar check |
 | `.claude/agents/profile.md` | Profile subagent — captures/recalls structured facts about the user, family, and friends; other subagents read the store directly |
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
+| `.claude/agents/chores.md` | Chores subagent — kid chore chart (chores, dollar balances, streaks, payouts), the weekly payday summary and the optional afternoon open-chores check |
 | `.claude/agents/habits.md` | Habits subagent — habit/streak tracker (daily or weekly goals, no-goal counters), logging, streaks, and the daily at-risk nudge |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.claude/agents/home-assistant.md` | Home-assistant subagent (Phases 1-3) — ad-hoc smart-home control/query via the hosted Home Assistant connector plus a local `ha` MCP server (vendor/ha-mcp) for automation/script/scene/helper/dashboard authoring and history/log debugging; proactive monitoring is a later phase |
@@ -43,7 +44,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/add/feedback/mark-cooked) |
@@ -66,6 +67,8 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/lawn_garden_store.py` | Zero-dep CLI for lawn & garden data (plant/product/program/treatment/issue/config sub-commands) |
 | `scripts/profile_store.py` | Zero-dep CLI for the personal profile store (person/fact/global-fact sub-commands) — any subagent can call it directly |
 | `scripts/weather_store.py` | Zero-dep CLI for weather-reminders data (config/alert sub-commands) |
+| `scripts/chores.py` | Shared chore-chart service (completion rules, money ledger, badges; streaks via `habits.habit_status`). The single code path used by `chores_store.py`, the `/chores` dashboard section and the `/kids` page |
+| `scripts/chores_store.py` | Zero-dep CLI over `chores.py` for the chores subagent (kid/chore/done/undo/status/payout/config sub-commands) |
 | `scripts/habits.py` | Shared habit-tracker service (streak rules, logging, at-risk). The single code path used by both `habits_store.py` and the dashboard |
 | `scripts/habits_store.py` | Zero-dep CLI over `habits.py` for the habits subagent (habit/log/at-risk/config sub-commands) |
 | `scripts/home_maintenance_store.py` | Zero-dep CLI for home maintenance data (item/completion/due sub-commands) |
@@ -371,6 +374,41 @@ python scripts/scheduler_store.py add --name "habits-daily-nudge" \
   --prompt "Delegate to the habits subagent to run the daily at-risk check." \
   --cron "0 19 * * *" --target-chat-id "<your chat_id>"
 ```
+
+## Chores agent (kid chore chart)
+
+A chore chart with dollar payouts and streaks for the kids. The `chores` subagent, the adult
+**Chores** dashboard section and the kids' **/kids** page all run the **same code**
+(`scripts/chores.py`) against the same tables (`chore_*`), so "Claire fed the dog" in Telegram
+ticks the box on the kids' screen and a tap on the screen is visible to the agent. Streak math is
+reused from the habit tracker (`habits.habit_status`).
+
+- **Chores** are daily or weekly (optionally due on set weekdays, e.g. trash Tue/Fri), each worth
+  a fixed dollar amount per completion, assigned to one or more kids; each kid earns and streaks separately.
+- **Kids' screen (`/kids`)**: one shared, big-button page (Tailscale-only, no login). Tap a chore =
+  done; the balance ticks up with confetti and a chime (with a mute button), plus streak flames,
+  a week strip and badges. (Reading chores aloud was removed to keep it simple; easy to add back.)
+- **Trust mode**: a tap counts immediately; guardrails instead of approval (no double-dipping per
+  day/week, kids can only tick or undo *today*, every payout is in the ledger).
+- **Money**: integer cents. Balance = earned - payouts, never negative. Parents record payouts after
+  handing over cash (dashboard Money page, or "I paid Ruth $2" to the agent). Deliberately simple for
+  now: no bonuses, reward shop, savings goals or manual adjustments (ideas shelf in `docs/TODO.md`).
+- **Weekly payday summary** (scheduled, Sunday evening): who is owed what, earned this week, chores
+  done, best streaks. Optional **afternoon check** tells the adults which chores are still open
+  (silent when everyone is done).
+
+One-time setup: add the kids and chores (dashboard **Chores → Chores & kids**, or ask the agent), then
+register the scheduled tasks -
+```
+python scripts/scheduler_store.py add --name "chores-weekly-payday" \
+  --prompt "Delegate to the chores subagent to run the weekly payday summary." \
+  --cron "0 17 * * 0" --target-chat-id "<your chat_id>"
+python scripts/scheduler_store.py add --name "chores-afternoon-check" \
+  --prompt "Delegate to the chores subagent to run the afternoon open-chores check." \
+  --cron "30 16 * * 1-5" --target-chat-id "<your chat_id>"
+```
+Put a tablet or old phone on the tailnet, open `http://<tailscale-ip>:5151/kids` and add it to the home
+screen.
 
 ## Home maintenance agent
 

@@ -473,3 +473,64 @@ CREATE TABLE IF NOT EXISTS habit_config (
     value       TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+
+-- Kid chore chart (chores + dollar rewards + streaks). Shared service: scripts/chores.py
+-- (used by the chores subagent CLI, the adult /chores dashboard section and the kid /kids page).
+-- Money is integer cents. Streaks reuse scripts/habits.py habit_status.
+CREATE TABLE IF NOT EXISTS chore_kids (
+    id          TEXT PRIMARY KEY,        -- uuid4
+    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,  -- first name, e.g. 'Ruth' | 'Claire'
+    avatar      TEXT,                    -- emoji
+    color       TEXT,                    -- css colour for the kid's column
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chores (
+    id            TEXT PRIMARY KEY,      -- uuid4
+    name          TEXT NOT NULL,
+    icon          TEXT,                  -- emoji
+    description   TEXT,
+    frequency     TEXT NOT NULL,         -- 'daily' | 'weekly'
+    target_count  INTEGER NOT NULL DEFAULT 1,  -- completions needed per period
+    days          TEXT,                  -- weekly only: 'mon,thu' = due on those days (target_count = len)
+    value_cents   INTEGER NOT NULL DEFAULT 0,  -- earned per completion
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS chore_assignments (
+    chore_id  TEXT NOT NULL REFERENCES chores (id),
+    kid_id    TEXT NOT NULL REFERENCES chore_kids (id),
+    PRIMARY KEY (chore_id, kid_id)
+);
+
+CREATE TABLE IF NOT EXISTS chore_completions (
+    id          TEXT PRIMARY KEY,        -- uuid4
+    chore_id    TEXT NOT NULL REFERENCES chores (id),
+    kid_id      TEXT NOT NULL REFERENCES chore_kids (id),
+    done_date   TEXT NOT NULL,           -- YYYY-MM-DD
+    count       INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chore_completions_kid_chore_date ON chore_completions (kid_id, chore_id, done_date);
+
+-- Signed amounts; a kid's balance is SUM(amount_cents). kind: earn (+, per completion) | payout (-)
+CREATE TABLE IF NOT EXISTS chore_ledger (
+    id             TEXT PRIMARY KEY,     -- uuid4
+    kid_id         TEXT NOT NULL REFERENCES chore_kids (id),
+    kind           TEXT NOT NULL,
+    amount_cents   INTEGER NOT NULL,
+    completion_id  TEXT,                 -- earn rows are removed with their completion on undo
+    note           TEXT,
+    created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chore_ledger_kid ON chore_ledger (kid_id, created_at);
+
+CREATE TABLE IF NOT EXISTS chore_config (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);

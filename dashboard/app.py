@@ -3,7 +3,8 @@
 Reads existing state from ../state/ (SQLite + JSON/JSONL/log files) and never writes to
 it, with two exceptions: the landing page's one-shot "ask" box (routers/ask.py) queues a
 message in state/inbox.db for the agent, and the habits section (routers/habits.py) logs
-completions and edits habits through the shared service in scripts/habits.py. Run from the repo root:
+completions and edits habits through the shared service in scripts/habits.py, and the chores section (routers/chores.py)
+and kid page (routers/kids.py) do the same through scripts/chores.py. Run from the repo root:
 
     .venv/bin/python -m uvicorn dashboard.app:app --host 127.0.0.1 --port 5151
 """
@@ -11,7 +12,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routers import activity, agent, ask, family, finance, habits, health, home, home_summary, meals, shopping_fitness
+from .routers import (activity, agent, ask, chores, family, finance, habits, health, home, home_summary, kids, meals,
+                      shopping_fitness)
 from .web import APP_NAME, HERE
 
 app = FastAPI(
@@ -40,6 +42,8 @@ app.include_router(activity.router)
 app.include_router(family.router)
 app.include_router(home.router)
 app.include_router(habits.router)
+app.include_router(chores.router)
+app.include_router(kids.router)
 app.include_router(meals.router)
 app.include_router(shopping_fitness.router)
 

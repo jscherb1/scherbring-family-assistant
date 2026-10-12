@@ -100,6 +100,26 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       page's ask box (2026-10-07) is the first write route and assumes a single user (Justin). Before
       other family members use it, add real auth plus a per-user chat-id mapping.
 
+## Kid chore chart (built 2026-10-12; service, CLI, dashboard and kid page tested, not yet used live)
+
+- **User actions:** add the kids and chores (dashboard Chores → Chores & kids, or ask the `chores` agent); set a
+  set up a tablet/old phone on the tailnet and add `/kids` to its home screen.
+- **Scheduled tasks not registered yet** (need the user's chat id; commands in README "Chores agent"):
+  `chores-weekly-payday` (Sun 5 PM) and optionally `chores-afternoon-check` (weekdays 4:30 PM). Neither has run
+  end to end; test the payday summary once real data exists. Reload agents (`/reload-plugins`) so the new `chores`
+  subagent is picked up.
+- **Visual check pending:** the kids' page was verified by HTML/route tests and a live request, not eyeballed on a
+  tablet. Check layout, tap targets, confetti/chime on the real device. (Read-aloud of chore names was removed 2026-10-12; add it back with the
+  browser's `speechSynthesis` if the kids use the screen on their own and need to know the chore.)
+  Web Audio needs one tap before sound plays (normal browser autoplay rule).
+- No login: a kid could browse to `/chores` and edit money. Every payout is in the ledger; add a grown-up PIN
+  on the `/chores` write routes if that becomes a problem (see the auth note under Agent follow-ups).
+- **Deliberately left out of v1 (2026-10-12) to keep it simple; add back if wanted:** reward shop (cash balance in for
+  something), savings goals, bonuses (perfect week, streak milestones, mystery surprise) and manual balance adjustments.
+  The first version of all of these is in git history on `feat/chore-chart` (commits before the simplify commit).
+- Later ideas: per-kid themes and reading level, family team quest, streak freeze, Home Assistant speaker nudge
+  (`HassBroadcast`) when chores are still open.
+
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 
 - `habits-daily-nudge` is registered (daily 7 PM) and live-tested 2026-10-12: silent path verified (nothing at risk).
