@@ -42,13 +42,18 @@ from __future__ import annotations
 
 import json
 import re
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 
 from paths import REPO_ROOT, alert_chat_id
 
 LOG_FILE = REPO_ROOT / "state" / "telegram_conversation_log.jsonl"
-WINDOW_MINUTES = 60
+# Keep everything from the last 48 h, but never fewer than MIN_ENTRIES regardless of age (quiet days
+# must not empty the context); MAX_BYTES only trims beyond that floor. Err on the side of too much context.
+WINDOW_MINUTES = 48 * 60
+MIN_ENTRIES = 40
+MAX_BYTES = 300_000
 
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
@@ -92,14 +97,28 @@ def _save_entries(entries: list[dict]) -> None:
 
 def _prune(entries: list[dict]) -> list[dict]:
     cutoff = _now_utc() - timedelta(minutes=WINDOW_MINUTES)
-    kept = []
-    for e in entries:
+    keep_from = len(entries)
+    size = 0
+    for i in range(len(entries) - 1, -1, -1):
+        within_floor = (len(entries) - i) <= MIN_ENTRIES
         try:
-            if _parse_iso(e["ts"]) >= cutoff:
-                kept.append(e)
+            recent = _parse_iso(entries[i]["ts"]) >= cutoff
         except (KeyError, ValueError):
-            continue
-    return kept
+            recent = False
+        size += len(json.dumps(entries[i], ensure_ascii=False).encode())
+        if not within_floor and (not recent or size > MAX_BYTES):
+            break
+        keep_from = i
+    return entries[keep_from:]
+
+
+def export_legacy(direction: str, chat_id: str | None, text: str) -> None:
+    """Called by the bridge worker (when BRIDGE_EXPORT_LEGACY_LOG=1) so a rollback to the plugin
+    orchestrator still replays recent conversation. Best effort; never raises."""
+    try:
+        _append(direction, chat_id, text)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _append(direction: str, chat_id: str | None, text: str) -> None:
@@ -241,6 +260,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     command = argv[0]
+    # The bridge worker's SDK sessions load the same project hooks, but the bridge's
+    # durable inbox/outbox replaces this log there; stay out of the plugin-era log.
+    if command.startswith("hook-") and os.environ.get("BRIDGE_WORKER") == "1":
+        return 0
     dispatch = {
         "hook-post-reply": cmd_hook_post_reply,
         "hook-post-bash": cmd_hook_post_bash,

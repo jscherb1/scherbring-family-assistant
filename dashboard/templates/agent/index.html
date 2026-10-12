@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Agent</h1>
+  <p class="subtitle">The Telegram bridge and agent worker. Updates every 5 seconds.</p>
+{% endblock %}
+
+{% block content %}
+  <div id="agent-panel" hx-get="/agent/panel" hx-trigger="every 5s" hx-swap="innerHTML">
+    {% include "agent/_panel.html" %}
+  </div>
+{% endblock %}

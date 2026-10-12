@@ -1,7 +1,29 @@
 # Scherbring Family Assistant dashboard
 
-A read-only web app (FastAPI + Jinja templates + htmx) for the family assistant. It reads
-the state the assistant already keeps in `../state/` and never writes to it.
+A web app (FastAPI + Jinja templates + htmx) for the family assistant. It reads the state the
+assistant already keeps in `../state/` and never writes to it, with one exception: the one-shot
+"ask" box on the Summary page (below). It installs to a phone's home screen (web manifest and
+icons in `static/icons/`, no service worker).
+
+## Summary page and the ask box
+
+`/` is a minimal landing page: the ask box, one status line ("All good" or "N things need
+attention" with links), and one glance tile per section. `/api/summary` is its JSON twin.
+`data/summary.py` only composes the existing readers.
+
+Each needs-attention item has an ✕ to dismiss it. A dismissal is tied to the specific event (a
+failed run's timestamp, a login's last-auth time, a maintenance item's due date), so it stays hidden
+but a new failure or expiry shows up again. A "N dismissed" link under the list restores items.
+Stored in `state/dashboard_dismissed.json`; entries are dropped once the condition clears.
+
+The ask box (`routers/ask.py`, `POST /ask`) is deliberately not a chat app. It queues the text in
+`state/inbox.db` as a Telegram-channel message for the owner's chat (`DASHBOARD_ASK_CHAT_ID`,
+default: the first `BRIDGE_ALLOWED_CHAT_IDS` entry) with `via="web"` in the payload. The agent
+answers in Telegram through the normal bridge, in the same conversation, so there is nothing to
+keep in sync. Guards: Tailscale-only bind, same-origin check, 2000-character cap, 10 messages per
+minute. `POST /api/ask` (form field or JSON `text`, returns `{"ok","message"}`) is the same path for
+the iOS Shortcut: tagged `via="ios"`, no same-origin check (non-browser client). It assumes a single user (Justin); add real auth and a user mapping before opening it to
+other family members.
 
 ## Sections
 
@@ -11,6 +33,8 @@ the state the assistant already keeps in `../state/` and never writes to it.
 | | Scheduled Tasks | `/health/schedule` | Every scheduled task: what it does, schedule in plain English, next run, last run, 7-day ok/failed, recent runs |
 | | Restart History | `/health/restarts` | Every orchestrator launch with the inferred cause, previous exit code, downtime, and the raw log records behind it |
 | | Logins & Backups | `/health/system` | Days until the Hy-Vee/Drive/Monarch logins expire, newest backup age and files, scheduler heartbeat |
+| Agent | Live Status | `/agent` | Telegram bridge and agent worker liveness (heartbeats, Telegram polling, MCP servers, health-check result), queue depth, current turn, live event stream (refreshes every 5 s). Message text, tool inputs and results are **hidden** unless `DASHBOARD_SHOW_AGENT_CONTENT=1`; use `scripts/agent_ctl.py tail` for the full stream |
+| | Usage | `/agent/usage` | Per-day turns, tokens (fresh/cache) and API-rate cost from the worker's turn log, plus current context size |
 | Home & Yard | Maintenance | `/home` | Overdue / due soon / on-track items, last done, recent completions |
 | | Lawn & Garden | `/home/lawn` | 6-step program progress, treatments, issues, products on hand, plants |
 | | Weather Alerts | `/home/weather` | Alerts sent (7/30 days, by type), thresholds (coordinates hidden) |
@@ -70,8 +94,11 @@ an entry to `SECTIONS` in `web.py` (that entry drives the navigation).
 
 ## Notes
 
-- Read-only: the app opens `state/agent_results.db` in SQLite read-only mode and only reads
-  files under `state/`. There are no write routes.
+- Read-only except `POST /ask`: the app opens `state/agent_results.db` in SQLite read-only mode
+  and only reads files under `state/`; the ask box is the sole write (one row in `state/inbox.db`).
+- Mobile: below 760px the section pills collapse into a "Menu" dropdown, sub-nav scrolls
+  sideways, and `.tbl` tables stack into labelled cards (a small script in `base.html` copies
+  each column header onto its cells).
 - Restart causes are inferred. Only the launch type (`wrapper-start` / `loop-restart`) is
   recorded directly; the cause comes from matching timestamps in the exit log and the watchdog
   logs. Logs are pruned after 14 days, so older restarts show no watchdog detail.

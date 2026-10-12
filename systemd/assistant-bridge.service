@@ -1,0 +1,20 @@
+[Unit]
+Description=Scherbring assistant Telegram bridge (polls Telegram, durable inbox/outbox)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=PYTHONUNBUFFERED=1
+# Which env var holds the bot token: production by default (cut over 2026-10-06). For the test bot set
+# BRIDGE_TOKEN_ENV=TELEGRAM_TEST_BOT_TOKEN in ~/.config/scherbring-assistant/.env (EnvironmentFile overrides).
+Environment=BRIDGE_TOKEN_ENV=TELEGRAM_BOT_TOKEN
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/telegram_bridge.py --token-env ${BRIDGE_TOKEN_ENV}
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target

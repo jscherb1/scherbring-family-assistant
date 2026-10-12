@@ -258,9 +258,82 @@ def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
 
 
-def test_root_redirects(client):
-    r = client.get("/", follow_redirects=False)
-    assert r.status_code in (302, 307) and r.headers["location"] == "/health"
+def test_landing_page(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Ask or tell the assistant" in r.text
+    assert 'rel="manifest"' in r.text and "apple-touch-icon" in r.text
+    data = client.get("/api/summary").json()
+    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 8
+    assert "SECRET-MERCHANT" not in r.text
+
+
+def test_manifest_and_icons(client):
+    m = client.get("/manifest.webmanifest")
+    assert m.status_code == 200 and m.json()["display"] == "standalone"
+    for icon in m.json()["icons"]:
+        assert client.get(icon["src"]).status_code == 200
+    assert client.get("/favicon.ico").status_code == 200
+    assert client.get("/static/icons/apple-touch-icon.png").status_code == 200
+
+
+@pytest.fixture
+def ask_client(client, state, monkeypatch):
+    from dashboard.routers import ask
+    monkeypatch.setenv("DASHBOARD_ASK_CHAT_ID", "4242")
+    ask._recent.clear()
+    return client
+
+
+def _inbox_rows(state):
+    conn = sqlite3.connect(state / "inbox.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        return conn.execute("SELECT * FROM inbox").fetchall()
+    finally:
+        conn.close()
+
+
+def test_ask_queues_telegram_row(ask_client, state):
+    r = ask_client.post("/ask", data={"text": "add milk"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/?sent=1"
+    (row,) = _inbox_rows(state)
+    payload = json.loads(row["payload"])
+    assert (row["channel"], row["chat_ref"], row["text"], row["kind"], row["status"]) == (
+        "telegram", "4242", "add milk", "message", "pending")
+    assert payload["via"] == "web" and payload["user"] == "Justin"
+    htmx = ask_client.post("/ask", data={"text": "again"}, headers={"HX-Request": "true"})
+    assert htmx.status_code == 200 and "Telegram" in htmx.text
+
+
+@pytest.mark.parametrize("data,headers", [
+    ({"text": "   "}, {}),
+    ({"text": "x" * 2001}, {}),
+    ({"text": "hi"}, {"Origin": "https://evil.example"}),
+])
+def test_ask_rejects_bad_input(ask_client, state, data, headers):
+    r = ask_client.post("/ask", data=data, headers={"HX-Request": "true", **headers})
+    assert r.status_code == 400
+    assert not (state / "inbox.db").exists() or _inbox_rows(state) == []
+
+
+def test_api_ask_ios(ask_client, state):
+    r = ask_client.post("/api/ask", data={"text": "add eggs"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    j = ask_client.post("/api/ask", json={"text": "from json"}, headers={"Origin": "http://elsewhere"})
+    assert j.status_code == 200
+    rows = _inbox_rows(state)
+    assert [r["text"] for r in rows] == ["add eggs", "from json"]
+    assert all(json.loads(r["payload"])["via"] == "ios" for r in rows)
+    for bad in ({"text": "  "}, {"text": "x" * 2001}, {}):
+        assert ask_client.post("/api/ask", data=bad).status_code == 400
+
+
+def test_ask_rate_limited(ask_client):
+    from dashboard.routers import ask
+    codes = [ask_client.post("/ask", data={"text": f"m{i}"}, headers={"HX-Request": "true"}).status_code
+             for i in range(ask.RATE_LIMIT + 1)]
+    assert codes[:-1] == [200] * ask.RATE_LIMIT and codes[-1] == 400
 
 
 def test_unknown_recipe(client):
@@ -488,3 +561,50 @@ def test_activity_hides_sensitive_and_truncates(state):
 def test_activity_missing_db(tmp_path, monkeypatch):
     monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path))
     assert "error" in activity.get_activity() and "error" in activity.get_meal_insights()
+
+
+def _seed_recent_failure(state):
+    conn = sqlite3.connect(state / "agent_results.db")
+    run_at = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None).isoformat(timespec="seconds")
+    conn.execute("INSERT INTO scheduled_task_runs (task_id,run_at,status,summary) VALUES ('t1',?,?,?)",
+                 (run_at, "failed", "boom"))
+    conn.commit()
+    conn.close()
+    return run_at
+
+
+def _sched_items(client):
+    return [a for a in client.get("/api/summary").json()["attention"] if a["key"].startswith("sched:")]
+
+
+def test_dismiss_and_restore_attention(client, state):
+    _seed_recent_failure(state)
+    (item,) = _sched_items(client)
+    assert item["text"].startswith("daily-thing failed")
+    r = client.post("/attention/dismiss", data={"key": item["key"]}, follow_redirects=False)
+    assert r.status_code == 303
+    assert _sched_items(client) == []
+    page = client.get("/")
+    assert "1 dismissed" in page.text and item["text"] in page.text  # restorable
+    assert (state / "dashboard_dismissed.json").exists()
+    client.post("/attention/restore", data={"key": item["key"]})
+    assert len(_sched_items(client)) == 1
+
+
+def test_new_failure_shows_after_dismissal(client, state):
+    first = _seed_recent_failure(state)
+    (item,) = _sched_items(client)
+    client.post("/attention/dismiss", data={"key": item["key"]})
+    conn = sqlite3.connect(state / "agent_results.db")
+    later = (datetime.fromisoformat(first) + timedelta(minutes=5)).isoformat(timespec="seconds")
+    conn.execute("INSERT INTO scheduled_task_runs (task_id,run_at,status,summary) VALUES ('t1',?,?,?)",
+                 (later, "failed", "boom again"))
+    conn.commit()
+    conn.close()
+    (new_item,) = _sched_items(client)
+    assert new_item["key"] != item["key"]
+
+
+def test_dismiss_blocks_cross_origin(client):
+    r = client.post("/attention/dismiss", data={"key": "x"}, headers={"Origin": "https://evil.example"})
+    assert r.status_code == 403

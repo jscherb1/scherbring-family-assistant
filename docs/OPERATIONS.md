@@ -10,13 +10,15 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 
 | Unit | Job |
 |---|---|
-| `assistant-orchestrator.service` | Claude Code with the Telegram channel, in a tmux session named `assistant` |
+| `assistant-orchestrator.service` | **Stopped and disabled since the 2026-10-06 cutover** (rollback only): Claude Code with the Telegram plugin channel, in a tmux session named `assistant` |
+| `assistant-bridge.service` | Telegram bridge (**live, production bot**): polls Telegram into a durable inbox, delivers replies from the outbox. See "Telegram bridge" below |
+| `assistant-agent-worker.service` | agent worker (**live**): runs Claude turns for inbox messages via the Agent SDK, resumes its session on restart; systemd watchdog 30 s |
 | `assistant-scheduler.timer` | every 2 min: run due scheduled tasks (`scripts/scheduler_dispatch.py`) |
 | `assistant-watchdog.timer` | every 2 min: Telegram-health and scheduler-health checks, log pruning |
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
 | `assistant-credential-check.timer` | daily 09:30: warn before Hy-Vee, Drive, Monarch logins expire |
 | `assistant-backup.timer` | daily 03:15: back up the database, memory notes and secrets |
-| `assistant-dashboard.service` | optional web dashboard (`dashboard/README.md`): health, scheduled tasks, restart history, logins/backups, home & yard, family, finance, Hy-Vee, fitness, meals, activity (all view-only). Binds `DASHBOARD_HOST` (127.0.0.1 unless a drop-in overrides it) |
+| `assistant-dashboard.service` | optional web dashboard (`dashboard/README.md`): health, scheduled tasks, restart history, logins/backups, home & yard, family, finance, Hy-Vee, fitness, meals, activity (view-only except the Summary page's one-shot "ask" box, which queues a message for the agent and is answered in Telegram; the iOS Shortcut posts to `POST /api/ask` (`text` field, tagged `via="ios"`); `DASHBOARD_ASK_CHAT_ID` overrides the chat, default is the first `BRIDGE_ALLOWED_CHAT_IDS`). Binds `DASHBOARD_HOST` (127.0.0.1 unless a drop-in overrides it) |
 
 ## Is it healthy?
 
@@ -61,6 +63,58 @@ After editing a unit in `systemd/`, run `scripts/install_systemd.sh` (it re-temp
 paths and reloads), then restart the unit. Never run a second orchestrator by hand while the
 unit is up: two pollers on one bot token fight over Telegram updates. (The launcher refuses a
 second copy with a lock, but check `tmux ls` first.)
+
+## Telegram bridge (replaces the Telegram plugin; branch `feat/telegram-bridge`)
+
+The plugin ran Telegram polling inside the Claude TUI and died silently. The bridge splits that in
+two: `scripts/telegram_bridge.py` owns Telegram (saves every message to `state/inbox.db` *before*
+acknowledging it, delivers replies from an outbox with retry) and `scripts/agent_worker.py` runs the
+Claude turns and can be killed or restarted at any moment without losing a message or the
+conversation (the Claude session is resumed by id; if that fails it is rebuilt from the message log).
+
+**Status of the rollout:** cut over to the production bot on 2026-10-06 (the old orchestrator is
+stopped and disabled). Roll back with `scripts/agent_ctl.py mode plugin --yes`; `mode status` shows
+which stack is live. The test bot (`BRIDGE_TOKEN_ENV=TELEGRAM_TEST_BOT_TOKEN` in `.env`) is still there
+for experiments.
+
+**The Telegram plugin must stay disabled while the bridge runs** (`claude plugin disable
+telegram@claude-plugins-official`, done by `mode bridge`; `mode plugin` re-enables it). The plugin is a
+poller: any Claude session that loads it, even a pre-warmed spare from the Claude daemon, polls the same
+bot token and blocks the bridge with `getUpdates: Conflict`. This happened at cutover. If polling is
+blocked for more than a minute the bridge messages the user ("I'm not receiving your messages") and
+sends a recovery message afterwards; find the culprit with `ps -eo pid,ppid,etime,cmd | grep "bun run.*telegram"`.
+
+```
+scripts/agent_ctl.py status            # up/down, queue, current turn, MCP problems (exit 1 if unhealthy)
+scripts/agent_ctl.py tail              # live, full, read-only stream of what the agent is doing/thinking
+scripts/agent_ctl.py say "hello"       # talk to it from the terminal (replies print here)
+scripts/agent_ctl.py pause | resume    # worker stops/starts taking messages (finishes the current turn)
+scripts/agent_ctl.py sessions          # session ids; take over by hand: pause, `claude --resume <id>`, resume
+scripts/agent_ctl.py drill worker-kill|bridge-kill|hang|worker-stop|worker-start
+```
+
+Telegram commands answered by the bridge itself (work even if the agent is down): `/status`.
+If a message waits >10 s with the worker down, the user gets "agent is restarting, your message is
+saved". Dashboard: **Agent** section (`/agent`, `/agent/usage`).
+
+Health checks: bridge and worker heartbeats (`last_poll_ok` separates "bridge alive" from "Telegram
+reachable"); the worker pings its agent process every 30 s (no tokens) and makes a real minimal model
+call every 30 min; failures alert via Telegram once and send a recovery notice. systemd restarts a
+killed bridge in ~1 s, a killed worker in ~2 s, and a wedged worker within 30 s.
+
+Context hygiene (worker): scheduled-task results are stored as context notes and shown to the agent
+on the user's next message; sessions rotate above 150k context tokens or after 7 days (rebuilt from
+the last 48 h / 40 messages); a quiet-hours (03:xx) `/compact` runs if context > 40k tokens. Set
+`BRIDGE_DAILY_COST_ALERT_USD` in `.env` for a once-a-day usage alert. Per-turn usage is in
+`state/usage.jsonl`.
+
+Config (in `~/.config/scherbring-assistant/.env`): `TELEGRAM_TEST_BOT_TOKEN`,
+`BRIDGE_ALLOWED_CHAT_IDS` (comma-separated; empty = pairing mode, nobody is served and the bot
+replies with the sender's chat id), optional `BRIDGE_SESSION_MAP` (`{"chat_id":"shared-key"}` to
+put several chats in one session; default is one session per chat).
+
+Hard rules learned the hard way: the worker disables Claude background tasks (their completion has
+nowhere to be delivered) and ignores stale result events; never close a message without a reply.
 
 ## Keeping WSL alive (Windows side)
 

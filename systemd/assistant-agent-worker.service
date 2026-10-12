@@ -1,0 +1,27 @@
+[Unit]
+Description=Scherbring assistant agent worker (Claude Agent SDK, resumes session)
+After=network-online.target assistant-bridge.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+# Type=notify: the worker sends READY=1 and then WATCHDOG=1 every 2 s from its event
+# loop, so a wedged worker is killed and restarted by systemd within WatchdogSec.
+Type=notify
+NotifyAccess=all
+WatchdogSec=30
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=PYTHONUNBUFFERED=1
+# Keep the plugin-era conversation log current so `agent_ctl.py mode plugin` rolls back with context.
+Environment=BRIDGE_EXPORT_LEGACY_LOG=1
+# claude lives in ~/.local/bin; the venv first so child 'python' calls resolve to it.
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/agent_worker.py
+Restart=always
+RestartSec=2
+# Give an in-flight turn a moment to finish on a planned restart; unfinished messages are redelivered anyway.
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target
