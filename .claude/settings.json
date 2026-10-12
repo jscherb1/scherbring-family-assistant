@@ -35,6 +35,7 @@
       "Bash(python scripts/lawn_garden_store.py *)",
       "Bash(python scripts/weather_store.py *)",
       "Bash(python scripts/home_maintenance_store.py *)",
+      "Bash(python scripts/habits_store.py *)",
       "Bash(python scripts/kid_memories_store.py *)",
       "Bash(python scripts/fitness_store.py *)",
       "Bash(python scripts/fitness/library_sync.py *)",

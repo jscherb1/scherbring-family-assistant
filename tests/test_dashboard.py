@@ -252,6 +252,7 @@ def client(state):
     "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
     "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
+    "/habits", "/habits?owner=Justin", "/api/habits",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
 def test_routes_ok(client, path):
@@ -264,7 +265,7 @@ def test_landing_page(client):
     assert "Ask or tell the assistant" in r.text
     assert 'rel="manifest"' in r.text and "apple-touch-icon" in r.text
     data = client.get("/api/summary").json()
-    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 8
+    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 9
     assert "SECRET-MERCHANT" not in r.text
 
 
@@ -365,9 +366,77 @@ def test_output_is_escaped(state):
     assert "<script>alert(1)</script>" not in TestClient(app).get("/meals/x").text
 
 
-def test_read_only_no_write_routes(client):
+def test_read_only_except_allowlisted_write_routes(client):
+    """The dashboard is read-only apart from the ask box and the habits section. Adding a
+    write route elsewhere must be a deliberate change to this allow-list."""
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
+    allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore",
+               "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update"}
+    writes = {r.path for r in app.routes
+              if getattr(r, "methods", None) and r.methods & {"POST", "PUT", "PATCH", "DELETE"}}
+    assert writes <= allowed, f"unexpected write routes: {writes - allowed}"
+
+
+# ---- habits (shared service: scripts/habits.py) ----
+
+def test_habits_create_log_undo_pause_via_ui(client):
+    assert "No habits yet" in client.get("/habits").text
+    r = client.post("/habits", data={"name": "Stretch <b>", "frequency": "daily", "target": "1", "owner": "Justin"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    page = client.get("/habits").text
+    assert "Stretch &lt;b&gt;" in page and "Stretch <b>" not in page
+    hid = client.get("/api/habits").json()["habits"][0]["id"]
+
+    r = client.post(f"/habits/{hid}/log", headers={"HX-Request": "true"})
+    assert r.status_code == 200 and "1/1 today" in r.text
+    assert client.get(f"/api/habits/{hid}").json()["current_streak"] == 1
+
+    r = client.post(f"/habits/{hid}/undo", headers={"HX-Request": "true"})
+    assert client.get(f"/api/habits/{hid}").json()["total_count"] == 0
+    client.post(f"/habits/{hid}/update", data={"active": "0"}, headers={"HX-Request": "true"})
+    assert client.get("/api/habits?include_paused=false").json()["habits"] == []
+    assert "paused" in client.get("/habits").text
+
+
+def test_habits_ui_and_service_share_data(client, state):
+    """A habit created through the agent CLI's service shows in the UI, and vice versa."""
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import habits as service
+    hid = service.create_habit("Read", "weekly", 3, db_path=state / "agent_results.db")["id"]
+    assert any(h["id"] == hid for h in client.get("/api/habits").json()["habits"])
+    client.post(f"/habits/{hid}/log", headers={"HX-Request": "true"})
+    assert service.get_status(hid, db_path=state / "agent_results.db")["done_this_period"] == 1
+
+
+def test_habits_write_errors_and_origin_guard(client):
+    assert client.post("/habits", data={"name": " ", "frequency": "daily"}, follow_redirects=False).status_code == 303
+    r = client.post("/habits", data={"name": "x", "frequency": "daily", "target": "abc"}, follow_redirects=False)
+    assert "whole+number" in r.headers["location"]
+    r = client.post("/habits/nope/log", headers={"HX-Request": "true"})
+    assert r.status_code == 200 and "no habit" in r.text
+    assert client.get("/api/habits/nope").status_code == 404
+    blocked = client.post("/habits", data={"name": "x", "frequency": "daily"},
+                          headers={"Origin": "https://evil.example"}, follow_redirects=False)
+    assert blocked.status_code == 403
+    assert client.get("/api/habits").json()["habits"] == []
+
+
+def test_habits_summary_tile_flags_at_risk(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import habits as service
+    from datetime import date, timedelta
+    db = state / "agent_results.db"
+    hid = service.create_habit("Floss", "daily", 1, db_path=db)["id"]
+    yday = date.today() - timedelta(days=1)
+    service.log_completion(hid, log_date=yday.isoformat(), db_path=db)
+    data = client.get("/api/summary").json()
+    tile = next(t for t in data["tiles"] if t["title"] == "Habits")
+    assert tile["headline"] == "1 at risk"
+    assert any(a["text"].startswith("Floss streak") for a in data["attention"])
 
 
 # ---- home & yard ----

@@ -5,7 +5,7 @@ already safe to show (no finance amounts, no memory text).
 """
 from datetime import timedelta
 
-from . import activity, agent, common, family, finance, health, home, ops, schedule, shopping_fitness
+from . import activity, agent, common, family, finance, habits, health, home, ops, schedule, shopping_fitness
 from .. import dismissals
 from ..web import fmt_dt
 
@@ -104,6 +104,26 @@ def _home_tile(attention):
     return {"title": "Home & yard", "href": "/home", "headline": headline, "sub": sub, "state": state}
 
 
+def _habits_tile(attention):
+    h = habits.get_habits(include_paused=False)
+    if not _ok(h):
+        return {"title": "Habits", "href": "/habits", "headline": "Unknown", "sub": "", "state": "warn"}
+    items = h["habits"]
+    if not items:
+        return {"title": "Habits", "href": "/habits", "headline": "None yet", "sub": "Add one to start a streak", "state": "ok"}
+    at_risk = [i for i in items if i["at_risk"]]
+    for i in at_risk:
+        _flag(attention, f"habits:{i['id']}:{i['period_start']}",
+              f"{i['name']} streak ({i['current_streak']}) is at risk", "/habits", "Habits")
+    best = max((i for i in items if i["has_goal"]), key=lambda i: i["current_streak"], default=None)
+    if at_risk:
+        headline, state = f"{len(at_risk)} at risk", "warn"
+    else:
+        headline, state = f"{_plural(len(items), 'habit')} on track", "ok"
+    sub = f"Best streak: {best['name']} ({best['current_streak']})" if best and best["current_streak"] else "No active streaks yet"
+    return {"title": "Habits", "href": "/habits", "headline": headline, "sub": sub, "state": state}
+
+
 def _meals_tile():
     ins = activity.get_meal_insights()
     if not _ok(ins):
@@ -176,7 +196,7 @@ def get_summary():
     schedule_tile = _schedule_tile(attention)
     systems = _credentials(attention)
     tiles = [
-        agent_tile, schedule_tile, _home_tile(attention), _meals_tile(), _finance_tile(),
+        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _meals_tile(), _finance_tile(),
         _fitness_tile(), _family_tile(), _hyvee_tile(systems),
     ]
     dismissed = dismissals.load()

@@ -155,6 +155,7 @@ and its `state/schema.sql` tables):
 | Lawn/yard care tracking | `lawn-garden` |
 | Household facts (birthdays, allergies, sizes) | `profile` |
 | Weather-driven prep nudges | `weather-reminders` |
+| Habit / streak tracking | `habits` |
 | Home maintenance cadence tracking | `home-maintenance` |
 | Smart home control (Home Assistant) | `home-assistant` |
 | Weekly workout planning (COROS) | `fitness` |
