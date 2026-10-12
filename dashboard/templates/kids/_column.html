@@ -33,17 +33,18 @@
       <button class="chore-main" type="button" hx-post="/kids/{{ kid.id }}/chores/{{ i.chore_id }}/done"
               hx-target="#kid-{{ kid.id }}" hx-swap="outerHTML">
         <span class="chore-icon">{{ i.icon }}</span>
-        <span class="chore-name">{{ i.name }}{% if i.target_count > 1 and i.frequency == 'daily' %} <small>{{ i.done_this_period }}/{{ i.target_count }}</small>{% endif %}</span>
+        <span class="chore-name">{{ i.name }}{% if i.target_count > 1 and i.frequency == 'daily' %} <small>{{ i.done_this_period }}/{{ i.target_count }}</small>{% endif %}
+          {% if i.current_streak and i.current_streak >= 2 %}<span class="chore-streak" title="In a row">🔥 {{ i.current_streak }}</span>{% endif %}</span>
         {% if i.value_cents %}<span class="chore-pay">+{{ i.value }}</span>{% endif %}
       </button>
       {% else %}
       <div class="chore-main" aria-label="{{ i.name }} done">
         <span class="chore-icon">{{ i.icon }}</span>
-        <span class="chore-name">{{ i.name }}</span>
+        <span class="chore-name">{{ i.name }}
+          {% if i.current_streak and i.current_streak >= 2 %}<span class="chore-streak" title="In a row">🔥 {{ i.current_streak }}</span>{% endif %}</span>
         <span class="chore-check" aria-hidden="true">✅</span>
       </div>
       {% endif %}
-      {% if i.current_streak and i.current_streak >= 2 %}<span class="chore-streak" title="In a row">🔥{{ i.current_streak }}</span>{% endif %}
       {% if i.can_undo %}
       <button class="undo" type="button" hx-post="/kids/{{ kid.id }}/chores/{{ i.chore_id }}/undo"
               hx-target="#kid-{{ kid.id }}" hx-swap="outerHTML" aria-label="Undo {{ i.name }}" title="Oops, undo">↩</button>

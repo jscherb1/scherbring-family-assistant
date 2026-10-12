@@ -6,39 +6,46 @@
 {% endblock %}
 
 {% block content %}
+<div class="chores-ui">
 {% include "chores/_notice.html" %}
 {% if data.error %}
   <div class="card"><div class="error-state">{{ data.error }}</div></div>
 {% else %}
   <section class="card">
     <h2>Reward shop</h2>
-    <p class="muted">Kids see these as things to save toward. Redeem one from the Money page when they cash in.</p>
-    <ul class="chore-list">
+    <p class="note">Kids see these as things to save toward. Cash one in from the Money page.</p>
     {% for r in data.rewards %}
-      <li class="{{ '' if r.active else 'chore-done' }}">{{ r.icon or '🎁' }} {{ r.name }} <span class="muted">${{ '%.2f' % (r.cost_cents / 100) }}</span>
+      <div class="list-row {{ 'paused' if not r.active }}">
+        <span class="grow">{{ r.icon or '🎁' }} {{ r.name }}</span>
+        <span class="muted-text">${{ '%.2f' % (r.cost_cents / 100) }}</span>
         <form method="post" action="/chores/rewards/{{ r.id }}/update" class="inline-form">
-          <button class="link-button" name="active" value="{{ 0 if r.active else 1 }}" type="submit">{{ 'Remove' if r.active else 'Restore' }}</button></form></li>
-    {% else %}<li class="muted">No rewards yet.</li>{% endfor %}
-    </ul>
-    <form method="post" action="/chores/rewards" class="habit-form">
-      <label class="field"><span>Reward</span><input name="name" required maxlength="60" placeholder="Movie night pick"></label>
+          <button class="link-button {{ 'danger' if r.active }}" name="active" value="{{ 0 if r.active else 1 }}" type="submit">{{ 'Remove' if r.active else 'Restore' }}</button></form>
+      </div>
+    {% else %}<p class="note">No rewards yet.</p>{% endfor %}
+    <hr class="sep">
+    <form method="post" action="/chores/rewards" class="form-row">
+      <label class="field narrow"><span>Icon</span><input name="icon" maxlength="8" placeholder="🎬"></label>
+      <label class="field grow"><span>Reward</span><input name="name" required maxlength="60" placeholder="Movie night pick"></label>
       <label class="field"><span>Cost ($)</span><input name="cost" required inputmode="decimal" placeholder="3.00"></label>
-      <label class="field"><span>Icon emoji</span><input name="icon" maxlength="8" placeholder="🎬"></label>
       <button class="button" type="submit">Add reward</button>
     </form>
   </section>
 
   <section class="card">
     <h2>Savings goals</h2>
+    <p class="note">One goal per kid. It shows as a progress bar on their screen; setting a new one replaces the old.</p>
     {% for v in data.kids %}
-      <div class="chore-goal-row"><strong>{{ v.kid.avatar }} {{ v.kid.name }}</strong>
-        {% if v.goal %}: {{ v.goal.name }}, {{ v.goal.target }} ({{ v.goal.pct }}%{{ ', reached! 🎉' if v.goal.reached }})
-          <form method="post" action="/chores/goals/{{ v.kid.id }}/clear" class="inline-form"><button class="link-button" type="submit">Clear</button></form>
-        {% else %}<span class="muted"> no goal set</span>{% endif %}</div>
+      <div class="list-row">
+        <span class="grow"><strong>{{ v.kid.avatar }} {{ v.kid.name }}</strong>
+          {% if v.goal %}<span class="muted-text"> · {{ v.goal.name }}, {{ v.goal.target }} ({{ v.goal.pct }}%{{ ', reached! 🎉' if v.goal.reached }})</span>
+          {% else %}<span class="muted-text"> · no goal set</span>{% endif %}</span>
+        {% if v.goal %}<form method="post" action="/chores/goals/{{ v.kid.id }}/clear" class="inline-form"><button class="link-button danger" type="submit">Clear</button></form>{% endif %}
+      </div>
     {% endfor %}
-    <form method="post" action="/chores/goals" class="habit-form">
+    <hr class="sep">
+    <form method="post" action="/chores/goals" class="form-row">
       <label class="field"><span>Kid</span><select name="kid_id">{% for v in data.kids %}<option value="{{ v.kid.id }}">{{ v.kid.name }}</option>{% endfor %}</select></label>
-      <label class="field"><span>Saving for</span><input name="name" required maxlength="60" placeholder="Lego set"></label>
+      <label class="field grow"><span>Saving for</span><input name="name" required maxlength="60" placeholder="Lego set"></label>
       <label class="field"><span>Target ($)</span><input name="target" required inputmode="decimal" placeholder="20.00"></label>
       <button class="button" type="submit">Set goal</button>
     </form>
@@ -46,14 +53,21 @@
 
   <section class="card">
     <h2>Bonus rules</h2>
-    <p class="muted">Amounts are in cents. Streak milestones are JSON: streak length → bonus cents.</p>
-    {% for key, val in data.config.items() %}
-    <form method="post" action="/chores/config" class="chore-inline">
+    <p class="note">Extra money on top of what each chore pays. Amounts are in cents (100 = $1.00).</p>
+    {% for key, label, help, kind in data.config_meta %}
+    <form method="post" action="/chores/config" class="rule-row">
       <input type="hidden" name="key" value="{{ key }}">
-      <label class="field"><span>{{ key.replace('_', ' ') }}</span><input name="value" value="{{ val }}"></label>
+      <div class="what">{{ label }}<span class="help">{{ help }}</span></div>
+      {% if kind == 'onoff' %}
+        <select name="value" aria-label="{{ label }}"><option value="1" {{ 'selected' if data.config[key] == '1' }}>On</option>
+          <option value="0" {{ 'selected' if data.config[key] == '0' }}>Off</option></select>
+      {% else %}
+        <input name="value" value="{{ data.config[key] }}" aria-label="{{ label }}" {% if kind != 'json' %}inputmode="numeric"{% endif %}>
+      {% endif %}
       <button class="button" type="submit">Save</button>
     </form>
     {% endfor %}
   </section>
 {% endif %}
+</div>
 {% endblock %}

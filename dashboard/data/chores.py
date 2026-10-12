@@ -13,6 +13,16 @@ import chores as service  # noqa: E402
 
 WEEKDAYS = service.WEEKDAYS
 
+# Friendly labels for the bonus-rule form: key -> (label, help, kind). kind: cents | pct | onoff | json.
+CONFIG_META = [
+    ("perfect_week_bonus_cents", "Perfect-week bonus", "Paid once when a kid finishes every chore all week.", "cents"),
+    ("streak_milestones", "Streak milestones", 'Streak length → bonus cents, e.g. {"7": 50, "30": 250}.', "json"),
+    ("mystery_enabled", "Mystery bonus", "An occasional small surprise on a completion (one per kid per day).", "onoff"),
+    ("mystery_chance_pct", "Mystery chance", "Percent chance a completion earns the surprise.", "pct"),
+    ("mystery_max_cents", "Mystery bonus size", "Largest surprise, in cents (paid in 5¢ steps).", "cents"),
+    ("nudge_enabled", "Afternoon reminder", "Lets the optional afternoon check tell you about open chores.", "onoff"),
+]
+
 # Rotated by date on the kid page (static, deterministic: same all day, new tomorrow).
 DAILY_MESSAGES = [
     "Chore power activate! ⚡", "You're doing great today! 🌈", "Every chore makes you stronger 💪",
@@ -55,7 +65,7 @@ def get_rewards_page():
     db = common.db_path()
     return {"rewards": service.list_rewards(include_inactive=True, db_path=db),
             "kids": service.all_kid_views(db_path=db), "config": service.get_config(db_path=db),
-            "config_defaults": service.CONFIG_DEFAULTS}
+            "config_meta": CONFIG_META}
 
 
 @common.guarded
