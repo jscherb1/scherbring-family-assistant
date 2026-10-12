@@ -143,6 +143,9 @@ def test_prompt_includes_notes_and_retry_marker():
     p = format_turn_prompt(row)
     assert "[Earlier notes]" in p and "weekly summary delivered" in p
     assert "Retry #2" in p and "what did that mean?" in p
+    assert "via=" not in p
+    row["payload"]["via"] = "web"
+    assert 'via="web"' in format_turn_prompt(row)
 
 
 def test_recover_in_flight_on_start(tmp_path):

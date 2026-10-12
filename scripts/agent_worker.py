@@ -56,6 +56,8 @@ You are running behind a message bridge, not the Telegram plugin. Overrides to a
 - Acknowledgements (reaction, typing, a "working on it" notice for slow turns) are sent by the bridge automatically. Do not send your own.
 - Never use AskUserQuestion; if you need an answer, just ask in your final message and the user's reply will arrive as the next message.
 - Messages arrive wrapped in a <channel ...> tag with chat/user/time metadata; "[Earlier notes]" blocks are context (e.g. results of scheduled tasks already delivered to the user), not requests.
+- A message with via="web" was typed into the family dashboard's ask box instead of Telegram. Treat it like any other message: your reply still lands in the Telegram chat.
+- A message with via="ios" was sent from the user's iPhone Shortcut. Same handling: your reply lands in Telegram, where it will likely be read on a phone, so keep it concise.
 - If a message is marked as a retry, a previous attempt may have partially executed: check current state before repeating any side effect.
 """
 
@@ -87,7 +89,8 @@ def format_turn_prompt(row: dict) -> str:
     if row["attempts"] > 1:
         parts.append(f"[Retry #{row['attempts']}: a previous attempt at this message did not finish; it may have partially executed.]")
     ts = datetime.fromtimestamp(p.get("date") or row["received_at"]).isoformat(timespec="seconds")
-    attrs = f'source="{row["channel"]}" chat_id="{row["chat_ref"]}" message_id="{p.get("message_id", "")}" user="{p.get("user", "")}" ts="{ts}"'
+    via = f' via="{p["via"]}"' if p.get("via") else ""
+    attrs = f'source="{row["channel"]}" chat_id="{row["chat_ref"]}" message_id="{p.get("message_id", "")}" user="{p.get("user", "")}" ts="{ts}"{via}'
     body = row["text"]
     for att in p.get("attachments", []):
         if att.get("path"):
