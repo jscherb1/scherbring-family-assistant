@@ -102,9 +102,8 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 
-- **Register and live-test the nudge.** Not yet registered; run the `scheduler_store.py add` command in
-  README "Habits agent", then `python scripts/scheduler_run_now.py --name habits-daily-nudge` (expect silence
-  when nothing is at risk, a `[TEST]` message otherwise).
+- `habits-daily-nudge` is registered (daily 7 PM) and live-tested 2026-10-12: silent path verified (nothing at risk).
+  The message path (a real at-risk habit) is not yet seen end to end; watch the first real nudge.
 - The habits page is the dashboard's second write surface and still has no login (see the auth note under
   Agent follow-ups); real auth is needed before other family members use it.
 - Later ideas: history/heatmap view, per-habit reminder times, more frequent proactive nudges, monthly goals.
