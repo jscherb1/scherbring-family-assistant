@@ -109,7 +109,8 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
   end to end; test the payday summary once real data exists. Reload agents (`/reload-plugins`) so the new `chores`
   subagent is picked up.
 - **Visual check pending:** the kids' page was verified by HTML/route tests and a live request, not eyeballed on a
-  tablet. Check layout, tap targets, confetti/chime and read-aloud (browser speech voices vary) on the real device.
+  tablet. Check layout, tap targets, confetti/chime on the real device. (Read-aloud of chore names was removed 2026-10-12; add it back with the
+  browser's `speechSynthesis` if the kids use the screen on their own and need to know the chore.)
   Web Audio needs one tap before sound plays (normal browser autoplay rule).
 - No login: a kid could browse to `/chores` and edit money. Every payout is in the ledger; add a grown-up PIN
   on the `/chores` write routes if that becomes a problem (see the auth note under Agent follow-ups).

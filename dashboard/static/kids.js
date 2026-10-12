@@ -1,4 +1,4 @@
-// Kid chore page: sound, confetti, read-aloud. No dependencies; everything degrades silently.
+// Kid chore page: celebration sound and confetti. No dependencies; everything degrades silently.
 (function () {
   "use strict";
   var muted = false;
@@ -77,16 +77,6 @@
     (d.badges || []).forEach(function (b) { lines.push(b.icon + " New badge: " + b.label); });
     var big = !!(d.all_done || (d.badges && d.badges.length));
     toast(lines); chime(big); burst(big ? 160 : 60, 0.7);
-  });
-
-  // ---- read aloud (browser speech, great for pre-readers) ----
-  document.addEventListener("click", function (e) {
-    var btn = e.target.closest && e.target.closest(".speak");
-    if (!btn || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    var u = new SpeechSynthesisUtterance(btn.getAttribute("data-say") || "");
-    u.rate = 0.9; u.pitch = 1.1;
-    window.speechSynthesis.speak(u);
   });
 
   // Keep a wall-mounted tablet fresh (new day, edits made by the grown-ups).

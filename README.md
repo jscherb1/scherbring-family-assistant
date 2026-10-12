@@ -386,8 +386,8 @@ reused from the habit tracker (`habits.habit_status`).
 - **Chores** are daily or weekly (optionally due on set weekdays, e.g. trash Tue/Fri), each worth
   a fixed dollar amount per completion, assigned to one or more kids; each kid earns and streaks separately.
 - **Kids' screen (`/kids`)**: one shared, big-button page (Tailscale-only, no login). Tap a chore =
-  done; the balance ticks up with confetti and a chime, a speaker button reads the chore aloud
-  (for the 4-year-old), plus streak flames, a week strip and badges.
+  done; the balance ticks up with confetti and a chime (with a mute button), plus streak flames,
+  a week strip and badges. (Reading chores aloud was removed to keep it simple; easy to add back.)
 - **Trust mode**: a tap counts immediately; guardrails instead of approval (no double-dipping per
   day/week, kids can only tick or undo *today*, every payout is in the ledger).
 - **Money**: integer cents. Balance = earned - payouts, never negative. Parents record payouts after
