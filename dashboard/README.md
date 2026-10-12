@@ -47,8 +47,8 @@ other family members.
 | Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe |
 | | Menu & Insights | `/meals/plan` | Upcoming menu (from the meal-planner's logged plans), recently cooked, stale recipes, collection counts |
 | Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
-| Chores | Today, Chores & kids, Rewards & rules, Money | `/chores`, `/chores/manage`, `/chores/rewards`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, reward shop, savings goals, bonus rules, balances, payouts and adjustments. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |
-| (kids) | Chore Chart | `/kids` | Kid-facing page (no adult nav, not in the section bar): big tap-to-complete chores for each kid with balance, streaks, confetti/chime, read-aloud, week strip, goal bar, reward shop and badges |
+| Chores | Today, Chores & kids, Money | `/chores`, `/chores/manage`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, balances and payouts, and fixing a missed or mistaken completion. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |
+| (kids) | Chore Chart | `/kids` | Kid-facing page (no adult nav, not in the section bar): big tap-to-complete chores for each kid with balance, streaks, confetti/chime, read-aloud, week strip and badges |
 | Activity | Agent Activity | `/activity` | Latest agent results and last run per agent; sensitive agents' summaries are hidden |
 
 Everything is view-only except the Habits page (see Notes). Because there is no login, sensitive areas (finance, kids memories, profile)

@@ -26,19 +26,12 @@
         <label class="field"><span>Note</span><input name="note" maxlength="80" placeholder="cash"></label>
         <button class="button" type="submit">Record payout</button>
       </form>
-      <form method="post" action="/chores/adjust" class="form-row">
-        <input type="hidden" name="kid_id" value="{{ k.id }}">
-        <label class="field narrow"><span>Adjust</span><select name="direction"><option value="add">Add</option><option value="subtract">Take</option></select></label>
-        <label class="field narrow"><span>$</span><input name="amount" inputmode="decimal" placeholder="0.00"></label>
-        <label class="field"><span>Why</span><input name="note" maxlength="80" placeholder="birthday gift"></label>
-        <button class="button" type="submit">Apply</button>
-      </form>
       <h4>Recent history</h4>
       <div class="history">
         {% for e in k.ledger %}
         <div class="history-row">
           <span class="muted-text">{{ e.created_at[5:10] }}</span>
-          <span class="pill {{ 'pill-ok' if e.kind in ('earn', 'bonus') else 'pill-muted' }}">{{ e.kind }}</span>
+          <span class="pill {{ 'pill-ok' if e.kind == 'earn' else 'pill-muted' }}">{{ e.kind }}</span>
           <span class="amt {{ 'ok-count' if e.amount_cents > 0 else 'fail-count' }}">{{ e.amount }}</span>
           <span class="muted-text">{{ e.note or '' }}</span>
         </div>
@@ -57,16 +50,6 @@
       <label class="field"><span>Date (blank = today)</span><input name="log_date" type="date"></label>
       <button class="button" type="submit">Mark done</button>
       <button class="link-button danger" type="submit" formaction="/chores/undo">Remove latest</button>
-    </form>
-  </section>
-
-  <section class="card">
-    <h2>Cash in a reward</h2>
-    <p class="note">Takes the reward's cost out of the kid's balance.</p>
-    <form method="post" action="/chores/redeem" class="form-row">
-      <label class="field"><span>Kid</span><select name="kid_id">{% for k in data.kids %}<option value="{{ k.id }}">{{ k.name }} ({{ k.balance }})</option>{% endfor %}</select></label>
-      <label class="field grow"><span>Reward</span><select name="reward_id" required>{% for r in data.rewards %}<option value="{{ r.id }}">{{ r.icon or '🎁' }} {{ r.name }} (${{ '%.2f' % (r.cost_cents / 100) }})</option>{% endfor %}</select></label>
-      <button class="button" type="submit">Redeem</button>
     </form>
   </section>
 {% endif %}

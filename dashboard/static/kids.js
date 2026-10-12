@@ -74,9 +74,8 @@
     var d = e.detail || {}, lines = [];
     if (d.earned) lines.push("+" + d.earned + "! 🎉");
     else lines.push("Great job! 🎉");
-    (d.bonuses || []).forEach(function (b) { lines.push("🎁 " + b.label + " +" + b.amount); });
     (d.badges || []).forEach(function (b) { lines.push(b.icon + " New badge: " + b.label); });
-    var big = !!(d.all_done || (d.bonuses && d.bonuses.length) || (d.badges && d.badges.length));
+    var big = !!(d.all_done || (d.badges && d.badges.length));
     toast(lines); chime(big); burst(big ? 160 : 60, 0.7);
   });
 

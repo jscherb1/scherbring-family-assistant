@@ -103,7 +103,7 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 ## Kid chore chart (built 2026-10-12; service, CLI, dashboard and kid page tested, not yet used live)
 
 - **User actions:** add the kids and chores (dashboard Chores → Chores & kids, or ask the `chores` agent); set a
-  couple of rewards and a savings goal; set up a tablet/old phone on the tailnet and add `/kids` to its home screen.
+  set up a tablet/old phone on the tailnet and add `/kids` to its home screen.
 - **Scheduled tasks not registered yet** (need the user's chat id; commands in README "Chores agent"):
   `chores-weekly-payday` (Sun 5 PM) and optionally `chores-afternoon-check` (weekdays 4:30 PM). Neither has run
   end to end; test the payday summary once real data exists. Reload agents (`/reload-plugins`) so the new `chores`
@@ -111,10 +111,13 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - **Visual check pending:** the kids' page was verified by HTML/route tests and a live request, not eyeballed on a
   tablet. Check layout, tap targets, confetti/chime and read-aloud (browser speech voices vary) on the real device.
   Web Audio needs one tap before sound plays (normal browser autoplay rule).
-- No login: a kid could browse to `/chores` and edit money. Every payout/adjustment is in the ledger; add a grown-up PIN
+- No login: a kid could browse to `/chores` and edit money. Every payout is in the ledger; add a grown-up PIN
   on the `/chores` write routes if that becomes a problem (see the auth note under Agent follow-ups).
+- **Deliberately left out of v1 (2026-10-12) to keep it simple; add back if wanted:** reward shop (cash balance in for
+  something), savings goals, bonuses (perfect week, streak milestones, mystery surprise) and manual balance adjustments.
+  The first version of all of these is in git history on `feat/chore-chart` (commits before the simplify commit).
 - Later ideas: per-kid themes and reading level, family team quest, streak freeze, Home Assistant speaker nudge
-  (`HassBroadcast`) when chores are still open, redeeming rewards from the kids' screen with a parent approval.
+  (`HassBroadcast`) when chores are still open.
 
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 

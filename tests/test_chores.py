@@ -19,11 +19,6 @@ def db(tmp_path):
     return tmp_path / "t.db"
 
 
-@pytest.fixture
-def no_mystery(db):
-    chores.set_config("mystery_enabled", "0", db_path=db)
-
-
 def kid(db, name="Ruth"):
     return chores.add_kid(name, db_path=db)["id"]
 
@@ -92,7 +87,7 @@ def test_money_helpers():
 
 # ---- completion, money, caps ----
 
-def test_complete_earns_and_streak_reuses_habits(db, no_mystery):
+def test_complete_earns_and_streak_reuses_habits(db):
     k = kid(db)
     c = chore(db, k)
     do(db, k, c, MON)
@@ -134,7 +129,7 @@ def test_future_date_and_unassigned_and_paused_rejected(db):
         chores.complete(k, c, db_path=db, today=MON)
 
 
-def test_shared_chore_earns_and_streaks_separately(db, no_mystery):
+def test_shared_chore_earns_and_streaks_separately(db):
     a, b = kid(db), kid(db, "Claire")
     c = chore(db, a)
     chores.assign(c, b, db_path=db)
@@ -143,7 +138,7 @@ def test_shared_chore_earns_and_streaks_separately(db, no_mystery):
     assert chores.kid_view(b, db_path=db, today=MON)["todo"][0]["current_streak"] == 0
 
 
-def test_undo_removes_completion_and_money_today_only(db, no_mystery):
+def test_undo_removes_completion_and_money_today_only(db):
     k = kid(db)
     c = chore(db, k)
     do(db, k, c, MON)
@@ -158,7 +153,7 @@ def test_undo_removes_completion_and_money_today_only(db, no_mystery):
     chores.undo(k, c, any_date=True, db_path=db, today=MON + timedelta(days=1))
 
 
-def test_undo_refused_after_payout(db, no_mystery):
+def test_undo_refused_after_payout(db):
     k = kid(db)
     c = chore(db, k)
     do(db, k, c, MON)
@@ -169,93 +164,39 @@ def test_undo_refused_after_payout(db, no_mystery):
 
 # ---- ledger ----
 
-def test_payout_spend_adjust_never_overdraw(db, no_mystery):
+def test_payout_never_overdraws_and_is_logged(db):
     k = kid(db)
     c = chore(db, k, value=300)
     do(db, k, c, MON)
     with pytest.raises(chores.ChoreError):
         chores.payout(k, 301, db_path=db)
+    with pytest.raises(chores.ChoreError):
+        chores.payout(k, 0, db_path=db)
     assert chores.payout(k, 100, note="cash", db_path=db)["balance_cents"] == 200
-    assert chores.adjust(k, 50, note="gift", db_path=db)["balance_cents"] == 250
-    with pytest.raises(chores.ChoreError):
-        chores.adjust(k, -251, db_path=db)
-    r = chores.create_reward("Movie night", 200, db_path=db)
-    assert chores.redeem(k, r["id"], db_path=db)["balance_cents"] == 50
-    with pytest.raises(chores.ChoreError):
-        chores.redeem(k, r["id"], db_path=db)
-    kinds = [row["kind"] for row in chores.ledger(k, db_path=db)]
-    assert sorted(kinds) == ["adjust", "earn", "payout", "spend"]
+    assert sorted(row["kind"] for row in chores.ledger(k, db_path=db)) == ["earn", "payout"]
+    assert chores.ledger(k, db_path=db)[0]["note"] == "cash"
 
 
-# ---- bonuses ----
-
-def test_streak_milestone_bonus_paid_once_and_removed_on_undo(db, no_mystery):
-    k = kid(db)
-    c = chore(db, k, value=0)
-    chores.set_config("streak_milestones", '{"3": 40}', db_path=db)
-    chores.set_config("perfect_week_bonus_cents", "0", db_path=db)
-    do(db, k, c, MON)
-    do(db, k, c, MON + timedelta(days=1))
-    r = do(db, k, c, MON + timedelta(days=2))
-    assert r["bonus_cents"] == 40 and chores.balance(k, db_path=db) == 40
-    chores.undo(k, c, any_date=True, db_path=db, today=MON + timedelta(days=2))
-    assert chores.balance(k, db_path=db) == 0
-    r = do(db, k, c, MON + timedelta(days=2))
-    assert r["bonus_cents"] == 40  # re-earned legitimately, not doubled
-    assert chores.balance(k, db_path=db) == 40
-
-
-def test_perfect_week_bonus(db, no_mystery):
-    k = kid(db)
-    c = chore(db, k, value=0)
-    chores.set_config("streak_milestones", "{}", db_path=db)
-    chores.set_config("perfect_week_bonus_cents", "100", db_path=db)
-    last = None
-    for i in range(7):
-        last = do(db, k, c, MON + timedelta(days=i))
-        if i < 6:
-            assert last["bonus_cents"] == 0
-    assert [b["kind"] for b in last["bonuses"]] == ["perfect_week"]
-    assert chores.balance(k, db_path=db) == 100
-    assert any(b["key"] == "perfect_week" and b["earned"] for b in chores.badges(k, db_path=db, today=SUN))
-
-
-def test_mystery_bonus_deterministic_capped_and_toggle(db):
-    k = kid(db)
-    chores.set_config("mystery_chance_pct", "100", db_path=db)
-    chores.set_config("mystery_max_cents", "25", db_path=db)
-    chores.set_config("perfect_week_bonus_cents", "0", db_path=db)
-    c1 = chore(db, k, "A", value=0)
-    c2 = chore(db, k, "B", value=0)
-    r1 = do(db, k, c1, MON)
-    r2 = do(db, k, c2, MON)
-    assert r1["bonus_cents"] in (5, 10, 15, 20, 25) and r2["bonus_cents"] == 0  # one per kid per day
-    chores.undo(k, c1, db_path=db, today=MON)
-    assert do(db, k, c1, MON)["bonus_cents"] == r1["bonus_cents"]  # same roll after undo/redo
-    chores.set_config("mystery_enabled", "0", db_path=db)
-    k2 = kid(db, "Claire")
-    c3 = chore(db, k2, "C", value=0)
-    assert do(db, k2, c3, MON)["bonus_cents"] == 0
-
-
-def test_backfill_gets_base_pay_but_no_bonus(db):
+def test_backfill_pays_base_amount(db):
     k = kid(db)
     c = chore(db, k)
-    chores.set_config("mystery_chance_pct", "100", db_path=db)
     r = chores.complete(k, c, log_date=MON.isoformat(), db_path=db, today=MON + timedelta(days=3))
-    assert r["earned_cents"] == 50 and r["bonus_cents"] == 0
+    assert r["earned_cents"] == 50 and chores.balance(k, db_path=db) == 50
 
 
-def test_config_validation(db):
-    for key, bad in (("nope", "1"), ("mystery_enabled", "2"), ("mystery_chance_pct", "101"),
-                     ("perfect_week_bonus_cents", "-1"), ("streak_milestones", "[1]")):
+# ---- config ----
+
+def test_config_only_knows_the_nudge_switch(db):
+    assert chores.get_config(db_path=db) == {"nudge_enabled": "1"}
+    for key, bad in (("nope", "1"), ("mystery_enabled", "1"), ("nudge_enabled", "2")):
         with pytest.raises(chores.ChoreError):
             chores.set_config(key, bad, db_path=db)
+    assert chores.set_config("nudge_enabled", "0", db_path=db)["nudge_enabled"] == "0"
 
 
 # ---- views ----
 
-def test_kid_view_items_progress_and_week(db, no_mystery):
+def test_kid_view_items_progress_and_week(db):
     k = kid(db)
     daily_id = chore(db, k, "Teeth")
     chore(db, k, "Trash", "weekly", value=100, days="tue")
@@ -270,7 +211,7 @@ def test_kid_view_items_progress_and_week(db, no_mystery):
     assert {i["name"] for i in tue["todo"]} == {"Teeth", "Trash"}
 
 
-def test_flexible_weekly_chore_hidden_once_met(db, no_mystery):
+def test_flexible_weekly_chore_hidden_once_met(db):
     k = kid(db)
     c = chore(db, k, "Room", "weekly", target_count=1)
     assert len(chores.kid_view(k, db_path=db, today=MON)["todo"]) == 1
@@ -279,21 +220,7 @@ def test_flexible_weekly_chore_hidden_once_met(db, no_mystery):
     assert chores.kid_view(k, db_path=db, today=MON + timedelta(days=1))["todo"] == []
 
 
-def test_goal_progress_and_rewards_affordability(db, no_mystery):
-    k = kid(db)
-    c = chore(db, k, value=250)
-    do(db, k, c, MON)
-    chores.set_goal(k, "Lego set", 1000, db_path=db)
-    chores.create_reward("Sticker", 100, db_path=db)
-    chores.create_reward("Toy", 900, db_path=db)
-    v = chores.kid_view(k, db_path=db, today=MON)
-    assert v["goal"]["pct"] == 25 and not v["goal"]["reached"]
-    assert [r["affordable"] for r in v["rewards"]] == [True, False]
-    chores.clear_goal(k, db_path=db)
-    assert chores.kid_view(k, db_path=db, today=MON)["goal"] is None
-
-
-def test_badges_first_and_ten_chores(db, no_mystery):
+def test_badges_first_and_ten_chores(db):
     k = kid(db)
     c = chore(db, k)
     r = do(db, k, c, MON)
@@ -301,7 +228,7 @@ def test_badges_first_and_ten_chores(db, no_mystery):
     assert not any(b["earned"] for b in chores.badges(k, db_path=db, today=MON) if b["key"] == "ten_chores")
 
 
-def test_week_summary_and_open_today(db, no_mystery):
+def test_week_summary_and_open_today(db):
     a, b = kid(db), kid(db, "Claire")
     ca = chore(db, a, "Teeth")
     chores.assign(ca, b, db_path=db)
@@ -344,4 +271,4 @@ def test_cli_end_to_end(cli):
     assert code == 1 and "error" in json.loads(err)
     assert cli("undo", "--kid", "Ruth", "--chore", "dog")[0] == 2  # already paid out
     assert cli("week-summary")[0] == 0 and cli("open")[0] == 0
-    assert cli("config", "set", "--key", "mystery_enabled", "--value", "0")[0] == 0
+    assert cli("config", "set", "--key", "nudge_enabled", "--value", "0")[0] == 0

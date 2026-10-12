@@ -49,7 +49,7 @@ def done(request: Request, kid_id: str, chore_id: str):
     except service.ChoreError as exc:
         return _column(request, kid_id, exc.message)
     return _column(request, kid_id, celebrate={
-        "kid": r["kid"], "earned": r["earned"] if r["earned_cents"] else "", "bonuses": r["bonuses"],
+        "kid": r["kid"], "earned": r["earned"] if r["earned_cents"] else "",
         "badges": r["new_badges"], "all_done": r["all_done"],
     })
 

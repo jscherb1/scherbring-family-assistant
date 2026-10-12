@@ -517,37 +517,17 @@ CREATE TABLE IF NOT EXISTS chore_completions (
 );
 CREATE INDEX IF NOT EXISTS idx_chore_completions_kid_chore_date ON chore_completions (kid_id, chore_id, done_date);
 
--- Signed amounts; a kid's balance is SUM(amount_cents). kind: earn | bonus | payout | spend | adjust
+-- Signed amounts; a kid's balance is SUM(amount_cents). kind: earn (+, per completion) | payout (-)
 CREATE TABLE IF NOT EXISTS chore_ledger (
     id             TEXT PRIMARY KEY,     -- uuid4
     kid_id         TEXT NOT NULL REFERENCES chore_kids (id),
     kind           TEXT NOT NULL,
     amount_cents   INTEGER NOT NULL,
-    completion_id  TEXT,                 -- earn/bonus rows are removed with their completion on undo
-    reward_id      TEXT,
-    ref            TEXT,                 -- idempotency key for bonuses, e.g. 'perfect_week:2026-10-12'
+    completion_id  TEXT,                 -- earn rows are removed with their completion on undo
     note           TEXT,
     created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chore_ledger_kid ON chore_ledger (kid_id, created_at);
-
-CREATE TABLE IF NOT EXISTS chore_rewards (
-    id          TEXT PRIMARY KEY,        -- uuid4
-    name        TEXT NOT NULL,
-    icon        TEXT,
-    cost_cents  INTEGER NOT NULL,
-    active      INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS chore_goals (
-    id            TEXT PRIMARY KEY,      -- uuid4
-    kid_id        TEXT NOT NULL REFERENCES chore_kids (id),
-    name          TEXT NOT NULL,
-    target_cents  INTEGER NOT NULL,
-    active        INTEGER NOT NULL DEFAULT 1,  -- one active goal per kid
-    created_at    TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS chore_config (
     key         TEXT PRIMARY KEY,

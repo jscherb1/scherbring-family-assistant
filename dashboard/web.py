@@ -100,7 +100,6 @@ SECTIONS = [
         "pages": [
             {"key": "overview", "label": "Today", "href": "/chores"},
             {"key": "manage", "label": "Chores & kids", "href": "/chores/manage"},
-            {"key": "rewards", "label": "Rewards & rules", "href": "/chores/rewards"},
             {"key": "ledger", "label": "Money", "href": "/chores/ledger"},
         ],
     },

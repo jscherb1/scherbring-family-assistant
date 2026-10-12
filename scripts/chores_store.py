@@ -4,7 +4,7 @@
 A thin wrapper over scripts/chores.py (the shared service the dashboard uses too), so the agent
 and the web UI run the exact same code. Zero-dependency (Python stdlib only).
 
---kid / --chore / --reward accept an id, an exact name, or a unique name fragment (case-insensitive).
+--kid / --chore accept an id, an exact name, or a unique name fragment (case-insensitive).
 Money arguments are dollars ("0.50", "$2"); JSON output carries integer cents plus a formatted string.
 
 Usage:
@@ -23,23 +23,16 @@ Usage:
     python scripts/chores_store.py done --kid <ref> --chore <ref> [--date YYYY-MM-DD]
     python scripts/chores_store.py undo --kid <ref> --chore <ref> [--any-date]
     python scripts/chores_store.py status [--kid <ref>]
-        (today's to-do list, progress, streaks, balance, week strip, goal, badges)
+        (today's to-do list, progress, streaks, balance, week strip, badges)
     python scripts/chores_store.py balance [--kid <ref>]
     python scripts/chores_store.py ledger --kid <ref> [--limit 50]
 
     python scripts/chores_store.py payout --kid <ref> --amount D [--note ".."]
-    python scripts/chores_store.py adjust --kid <ref> --amount +D|-D [--note ".."]
-    python scripts/chores_store.py reward add --name "Movie night" --cost D [--icon 🎬]
-    python scripts/chores_store.py reward update --reward <ref> [--name ..] [--cost D] [--icon ..] [--active 0|1]
-    python scripts/chores_store.py reward list [--all]
-    python scripts/chores_store.py reward redeem --kid <ref> --reward <ref>
-    python scripts/chores_store.py goal set --kid <ref> --name "Lego set" --target D
-    python scripts/chores_store.py goal clear --kid <ref>
 
     python scripts/chores_store.py week-summary     (payday numbers per kid)
     python scripts/chores_store.py open [--nudge]    (kids with chores still open today)
     python scripts/chores_store.py config get
-    python scripts/chores_store.py config set --key <key> --value <value>
+    python scripts/chores_store.py config set --key nudge_enabled --value 0|1
 
 All commands print JSON to stdout. Errors are {"error": ...} on stderr with exit code 1
 (not found) or 2 (bad input).
@@ -68,12 +61,6 @@ def _kid_id(ref: str) -> str:
 
 def _chore_id(ref: str) -> str:
     return chores.resolve_chore(ref)["id"]
-
-
-def _signed_money(text: str) -> int:
-    text = text.strip()
-    sign = -1 if text.startswith("-") else 1
-    return sign * chores.parse_money(text.lstrip("+-"))
 
 
 def cmd_kid_add(args) -> int:
@@ -165,47 +152,6 @@ def cmd_payout(args) -> int:
     return 0
 
 
-def cmd_adjust(args) -> int:
-    _print(chores.adjust(_kid_id(args.kid), _signed_money(args.amount), note=args.note))
-    return 0
-
-
-def cmd_reward_add(args) -> int:
-    _print(chores.create_reward(args.name, chores.parse_money(args.cost), icon=args.icon))
-    return 0
-
-
-def cmd_reward_update(args) -> int:
-    changes = {k: getattr(args, k) for k in ("name", "icon") if getattr(args, k) is not None}
-    if args.cost is not None:
-        changes["cost_cents"] = chores.parse_money(args.cost)
-    if args.active is not None:
-        changes["active"] = bool(args.active)
-    _print(chores.update_reward(chores.resolve_reward(args.reward)["id"], **changes))
-    return 0
-
-
-def cmd_reward_list(args) -> int:
-    _print(chores.list_rewards(include_inactive=args.all))
-    return 0
-
-
-def cmd_reward_redeem(args) -> int:
-    _print(chores.redeem(_kid_id(args.kid), chores.resolve_reward(args.reward)["id"]))
-    return 0
-
-
-def cmd_goal_set(args) -> int:
-    _print(chores.set_goal(_kid_id(args.kid), args.name, chores.parse_money(args.target)))
-    return 0
-
-
-def cmd_goal_clear(args) -> int:
-    chores.clear_goal(_kid_id(args.kid))
-    _print({"cleared": True})
-    return 0
-
-
 def cmd_week_summary(args) -> int:
     _print(chores.week_summary())
     return 0
@@ -288,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("done", help="Record a chore as done.")
     p.add_argument("--kid", required=True)
     p.add_argument("--chore", required=True)
-    p.add_argument("--date", default=None, help="YYYY-MM-DD backfill (base pay only, no bonuses).")
+    p.add_argument("--date", default=None, help="YYYY-MM-DD backfill.")
     p.set_defaults(func=cmd_done)
     p = sub.add_parser("undo", help="Remove the latest completion (today's unless --any-date).")
     p.add_argument("--kid", required=True)
@@ -311,50 +257,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--amount", required=True)
     p.add_argument("--note", default=None)
     p.set_defaults(func=cmd_payout)
-    p = sub.add_parser("adjust", help="Signed manual correction, e.g. --amount -0.50.")
-    p.add_argument("--kid", required=True)
-    p.add_argument("--amount", required=True)
-    p.add_argument("--note", default=None)
-    p.set_defaults(func=cmd_adjust)
-
-    rs = group("reward", "Reward shop.")
-    p = rs.add_parser("add")
-    p.add_argument("--name", required=True)
-    p.add_argument("--cost", required=True)
-    p.add_argument("--icon", default=None)
-    p.set_defaults(func=cmd_reward_add)
-    p = rs.add_parser("update")
-    p.add_argument("--reward", required=True)
-    p.add_argument("--name", default=None)
-    p.add_argument("--cost", default=None)
-    p.add_argument("--icon", default=None)
-    p.add_argument("--active", type=int, choices=[0, 1], default=None)
-    p.set_defaults(func=cmd_reward_update)
-    p = rs.add_parser("list")
-    p.add_argument("--all", action="store_true")
-    p.set_defaults(func=cmd_reward_list)
-    p = rs.add_parser("redeem")
-    p.add_argument("--kid", required=True)
-    p.add_argument("--reward", required=True)
-    p.set_defaults(func=cmd_reward_redeem)
-
-    gs = group("goal", "Savings goal.")
-    p = gs.add_parser("set")
-    p.add_argument("--kid", required=True)
-    p.add_argument("--name", required=True)
-    p.add_argument("--target", required=True)
-    p.set_defaults(func=cmd_goal_set)
-    p = gs.add_parser("clear")
-    p.add_argument("--kid", required=True)
-    p.set_defaults(func=cmd_goal_clear)
-
     p = sub.add_parser("week-summary", help="Payday numbers per kid.")
     p.set_defaults(func=cmd_week_summary)
     p = sub.add_parser("open", help="Chores still open today.")
     p.add_argument("--nudge", action="store_true", help="Apply the nudge switch; empty when off or all done.")
     p.set_defaults(func=cmd_open)
 
-    cfg = group("config", "Bonus and nudge settings.")
+    cfg = group("config", "Nudge setting.")
     p = cfg.add_parser("get")
     p.set_defaults(func=cmd_config_get)
     p = cfg.add_parser("set")

@@ -68,16 +68,6 @@ button.chore-main:active { transform: translateY(4px); box-shadow: none; }
 .day-name { display: block; font-size: 14px; font-weight: 700; }
 .day-mark { font-size: 24px; }
 
-.goal-title { font-weight: 700; font-size: 20px; }
-.goal-bar { height: 26px; border-radius: 999px; background: #e9ecef; overflow: hidden; margin: 6px 0 2px; }
-.goal-fill { height: 100%; background: linear-gradient(90deg, #51cf66, #ffd43b); border-radius: 999px; transition: width 0.5s; }
-.goal-sub { font-size: 16px; }
-
-.shop summary { font-size: 20px; font-weight: 700; cursor: pointer; padding: 8px 0; }
-.shop ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 18px; }
-.shop li.can-buy { background: #d3f9d8; border-radius: 12px; padding: 4px 8px; }
-.shop em { display: block; font-size: 15px; }
-
 .badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .badge { font-size: 34px; width: 52px; height: 52px; display: grid; place-items: center; background: #fff3bf; border-radius: 50%; }
 .badge.locked { filter: grayscale(1); opacity: 0.35; background: #f1f3f5; }
@@ -92,7 +82,6 @@ button.chore-main:active { transform: translateY(4px); box-shadow: none; }
   .speak { flex-basis: 44px; font-size: 20px; }
   .undo { flex-basis: 40px; }
   .chore-streak { display: block; width: fit-content; margin: 2px 0 0; font-size: 13px; }
-  .goal-title { font-size: 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

@@ -1,10 +1,10 @@
-"""Adult chore-chart configuration: kids, chores, rewards, goals, bonus rules, payouts.
+"""Adult chore-chart configuration: kids, chores, payouts and record fixes.
 
 Every read and write goes through the shared service in scripts/chores.py (via data/chores.py),
 the same code the `chores` subagent's CLI uses. This router only does web plumbing: forms in,
 303 redirect back with a one-line result or error. Writes are guarded by the same-origin
 check the ask box uses; access control is the network (Tailscale-only bind). There is no login:
-the kid page links nowhere near this section, and every payout/adjustment is in the ledger.
+the kid page links nowhere near this section, and every payout is in the ledger.
 """
 from urllib.parse import quote_plus
 
@@ -61,11 +61,6 @@ def overview_page(request: Request, error: str = "", ok: str = ""):
 @router.get("/chores/manage", include_in_schema=False)
 def manage_page(request: Request, error: str = "", ok: str = ""):
     return _page(request, "chores/manage.html", "manage", "Manage chores", data.get_manage, error, ok)
-
-
-@router.get("/chores/rewards", include_in_schema=False)
-def rewards_page(request: Request, error: str = "", ok: str = ""):
-    return _page(request, "chores/rewards.html", "rewards", "Rewards & rules", data.get_rewards_page, error, ok)
 
 
 @router.get("/chores/ledger", include_in_schema=False)
@@ -152,51 +147,6 @@ def update_chore(request: Request, chore_id: str, name: str = Form(""), icon: st
     return _run("/chores/manage", go, "Chore saved")
 
 
-# ---- writes: rewards, goals, rules ----
-
-@router.post("/chores/rewards", include_in_schema=False)
-def create_reward(request: Request, name: str = Form(""), cost: str = Form(""), icon: str = Form("")):
-    if (resp := _blocked(request)):
-        return resp
-    return _run("/chores/rewards", lambda: service.create_reward(
-        name, service.parse_money(cost or "0"), icon=icon.strip() or None, db_path=common.db_path()), "Reward added")
-
-
-@router.post("/chores/rewards/{reward_id}/update", include_in_schema=False)
-def update_reward(request: Request, reward_id: str, active: str = Form(""), cost: str = Form("")):
-    if (resp := _blocked(request)):
-        return resp
-    changes = {}
-    if active in ("0", "1"):
-        changes["active"] = active == "1"
-    if cost.strip():
-        changes["cost_cents"] = service.parse_money(cost)
-    return _run("/chores/rewards", lambda: service.update_reward(reward_id, db_path=common.db_path(), **changes),
-                "Reward updated")
-
-
-@router.post("/chores/goals", include_in_schema=False)
-def set_goal(request: Request, kid_id: str = Form(""), name: str = Form(""), target: str = Form("")):
-    if (resp := _blocked(request)):
-        return resp
-    return _run("/chores/rewards", lambda: service.set_goal(
-        kid_id, name, service.parse_money(target or "0"), db_path=common.db_path()), "Savings goal set")
-
-
-@router.post("/chores/goals/{kid_id}/clear", include_in_schema=False)
-def clear_goal(request: Request, kid_id: str):
-    if (resp := _blocked(request)):
-        return resp
-    return _run("/chores/rewards", lambda: service.clear_goal(kid_id, db_path=common.db_path()), "Goal cleared")
-
-
-@router.post("/chores/config", include_in_schema=False)
-def set_config(request: Request, key: str = Form(""), value: str = Form("")):
-    if (resp := _blocked(request)):
-        return resp
-    return _run("/chores/rewards", lambda: service.set_config(key, value, db_path=common.db_path()), "Rule saved")
-
-
 # ---- writes: money and backfill ----
 
 @router.post("/chores/payout", include_in_schema=False)
@@ -206,25 +156,6 @@ def payout(request: Request, kid_id: str = Form(""), amount: str = Form(""), not
     return _run("/chores/ledger", lambda: service.payout(
         kid_id, service.parse_money(amount or "0"), note=note.strip() or None, db_path=common.db_path()),
         "Payout recorded")
-
-
-@router.post("/chores/adjust", include_in_schema=False)
-def adjust(request: Request, kid_id: str = Form(""), amount: str = Form(""), direction: str = Form("add"),
-           note: str = Form("")):
-    if (resp := _blocked(request)):
-        return resp
-    sign = -1 if direction == "subtract" else 1
-    return _run("/chores/ledger", lambda: service.adjust(
-        kid_id, sign * service.parse_money(amount or "0"), note=note.strip() or None, db_path=common.db_path()),
-        "Adjustment recorded")
-
-
-@router.post("/chores/redeem", include_in_schema=False)
-def redeem(request: Request, kid_id: str = Form(""), reward_id: str = Form("")):
-    if (resp := _blocked(request)):
-        return resp
-    return _run("/chores/ledger", lambda: service.redeem(kid_id, reward_id, db_path=common.db_path()),
-                "Reward redeemed")
 
 
 @router.post("/chores/backfill", include_in_schema=False)

@@ -253,7 +253,7 @@ def client(state):
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
     "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
     "/habits", "/habits?owner=Justin", "/api/habits",
-    "/chores", "/chores/manage", "/chores/rewards", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
+    "/chores", "/chores/manage", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
 def test_routes_ok(client, path):
@@ -375,9 +375,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore",
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
-               "/chores/rewards", "/chores/rewards/{reward_id}/update", "/chores/goals",
-               "/chores/goals/{kid_id}/clear", "/chores/config", "/chores/payout", "/chores/adjust",
-               "/chores/redeem", "/chores/backfill", "/chores/undo",
+               "/chores/payout", "/chores/backfill", "/chores/undo",
                "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo"}
     writes = {r.path for r in app.routes
               if getattr(r, "methods", None) and r.methods & {"POST", "PUT", "PATCH", "DELETE"}}
@@ -697,7 +695,6 @@ def chores_svc(state):
 
 def _seed_chart(chores_svc):
     service, db = chores_svc
-    service.set_config("mystery_enabled", "0", db_path=db)
     kid = service.add_kid("Ruth <b>", db_path=db)["id"]
     chore = service.create_chore("Feed dog", "daily", value_cents=50, kids=["Ruth"], db_path=db)["id"]
     return service, db, kid, chore
@@ -759,12 +756,8 @@ def test_chores_adult_config_writes(client, chores_svc):
     c = service.list_chores(db_path=db)[0]
     assert c["frequency"] == "daily" and c["days"] == [] and c["value_cents"] == 200 and c["kids"] == []
 
-    client.post("/chores/rewards", data={"name": "Movie", "cost": "3"})
-    client.post("/chores/goals", data={"kid_id": claire, "name": "Lego", "target": "20"})
-    client.post("/chores/config", data={"key": "perfect_week_bonus_cents", "value": "150"})
-    assert service.get_config(db_path=db)["perfect_week_bonus_cents"] == "150"
-    assert service.list_rewards(db_path=db)[0]["cost_cents"] == 300
-    assert "Lego" in client.get("/chores/rewards").text
+    assert client.get("/chores/rewards").status_code == 404  # simplified: no rewards page for now
+    assert "Rewards" not in client.get("/chores/manage").text
 
 
 def test_chores_write_errors_and_origin_guard(client, chores_svc):

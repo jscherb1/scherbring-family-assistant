@@ -1401,28 +1401,6 @@ a.chip {
   opacity: 0.55;
 }
 
-.list-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 0;
-  border-top: 1px solid var(--border);
-  font-size: 14px;
-}
-
-.list-row:first-child {
-  border-top: 0;
-}
-
-.list-row .grow {
-  flex: 1;
-  min-width: 0;
-}
-
-.list-row.paused {
-  opacity: 0.5;
-}
-
 .muted-text {
   color: var(--text-muted);
 }
@@ -1616,39 +1594,6 @@ a.chip {
   font-weight: 600;
 }
 
-/* ---- rules ---- */
-
-.rule-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 220px) auto;
-  gap: 8px 12px;
-  align-items: center;
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
-}
-
-.rule-row:first-of-type {
-  border-top: 0;
-}
-
-.rule-row .what {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.rule-row .help {
-  display: block;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.rule-row .button {
-  min-height: 36px;
-  padding: 0 16px;
-}
-
 /* ---- money ---- */
 
 .balance {
@@ -1698,13 +1643,6 @@ a.chip {
 }
 
 @media (max-width: 560px) {
-  .rule-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .rule-row .what {
-    grid-column: 1 / -1;
-  }
 
   .history-row {
     grid-template-columns: 42px 54px 54px minmax(0, 1fr);

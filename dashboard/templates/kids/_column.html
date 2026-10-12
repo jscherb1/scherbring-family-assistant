@@ -64,26 +64,6 @@
     {% endfor %}
   </div>
 
-  {% if v.goal %}
-  <div class="goal">
-    <div class="goal-title">🎯 Saving for: {{ v.goal.name }}</div>
-    <div class="goal-bar"><div class="goal-fill" style="width: {{ v.goal.pct }}%"></div></div>
-    <div class="goal-sub">{{ v.balance }} of {{ v.goal.target }}{% if v.goal.reached %} · You did it! Ask a grown-up 🎉{% endif %}</div>
-  </div>
-  {% endif %}
-
-  {% if v.rewards %}
-  <details class="shop">
-    <summary>🛍️ Reward shop</summary>
-    <ul>
-      {% for r in v.rewards %}
-      <li class="{{ 'can-buy' if r.affordable }}">{{ r.icon or '🎁' }} {{ r.name }} <b>{{ r.cost }}</b>
-        {% if r.affordable %}<em>You can get this! Ask a grown-up.</em>{% endif %}</li>
-      {% endfor %}
-    </ul>
-  </details>
-  {% endif %}
-
   <div class="badges" aria-label="Badges">
     {% for b in v.badges %}
     <span class="badge {{ '' if b.earned else 'locked' }}" title="{{ b.label }}: {{ b.description }}">{{ b.icon }}</span>

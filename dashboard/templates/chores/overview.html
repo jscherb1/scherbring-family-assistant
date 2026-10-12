@@ -41,8 +41,6 @@
       {% else %}<div class="chore-row"><div class="what muted-text">Nothing due today.</div></div>{% endfor %}
       <div class="card-foot">
         <span class="pill pill-muted">{{ s.earned_this_week }} earned this week</span>
-        {% if s.perfect_week %}<span class="pill pill-ok">perfect week so far</span>{% endif %}
-        {% if v.goal %}<span>🎯 {{ v.goal.name }} · {{ v.goal.pct }}%</span>{% endif %}
       </div>
     </article>
   {% endfor %}
