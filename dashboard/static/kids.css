@@ -1,0 +1,84 @@
+/* Kid chore page: bright, big, touch-first. Standalone from style.css (no adult nav, fixed light theme). */
+:root { --paper: #fff4d6; --ink: #3b2f5c; --card: #ffffff; --ok: #2f9e44; --shadow: 0 6px 0 rgba(59, 47, 92, 0.12); }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body.kids {
+  margin: 0; padding: 12px 12px 48px; min-height: 100vh; color: var(--ink);
+  background: radial-gradient(circle at 15% 10%, #ffe9a8 0, transparent 40%),
+              radial-gradient(circle at 90% 20%, #d0ebff 0, transparent 40%), var(--paper);
+  font-family: "Comic Sans MS", "Chalkboard SE", "Trebuchet MS", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+.toast {
+  position: fixed; left: 50%; top: 18px; transform: translate(-50%, -140%); z-index: 60; background: #fff;
+  border: 4px solid #ffd43b; border-radius: 22px; padding: 12px 22px; font-size: 24px; font-weight: 700;
+  text-align: center; box-shadow: var(--shadow); transition: transform 0.35s cubic-bezier(.3, 1.6, .5, 1); max-width: 92vw;
+}
+.toast.show { transform: translate(-50%, 0); }
+.kids-top { position: relative; text-align: center; padding: 4px 56px 8px; }
+.kids-top h1 { margin: 0; font-size: clamp(26px, 5vw, 44px); letter-spacing: 0.02em; }
+.kids-message { margin: 4px 0 0; font-size: clamp(15px, 2.4vw, 22px); }
+.icon-btn { position: absolute; right: 4px; top: 4px; width: 48px; height: 48px; border-radius: 50%; border: 0;
+  background: #fff; font-size: 24px; box-shadow: var(--shadow); cursor: pointer; }
+.kids-empty { text-align: center; font-size: 24px; margin-top: 48px; }
+.kids-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); max-width: 1200px; margin: 0 auto; }
+
+.kid-col { background: var(--card); border: 5px solid var(--kid, #4dabf7); border-radius: 28px; padding: 16px;
+  box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; }
+.kid-head { display: flex; align-items: center; gap: 12px; }
+.kid-avatar { font-size: 54px; line-height: 1; width: 76px; height: 76px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--kid) 25%, #fff); border-radius: 50%; }
+.kid-who h2 { margin: 0; font-size: clamp(26px, 4vw, 36px); }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.chip { font-size: 20px; font-weight: 700; padding: 4px 12px; border-radius: 999px; background: #f1f3f5; }
+.chip-money { background: #d3f9d8; }
+.chip-streak { background: #ffe8cc; }
+
+.progress { position: relative; height: 34px; border-radius: 999px; background: #e9ecef; overflow: hidden; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--kid), #ffd43b); border-radius: 999px; transition: width 0.5s; }
+.progress-text { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 18px; }
+.all-done { text-align: center; font-size: 24px; font-weight: 700; background: #fff3bf; border-radius: 18px; padding: 10px;
+  animation: pop 0.6s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.kid-error { background: #ffe3e3; border-radius: 14px; padding: 8px 12px; font-weight: 700; margin: 0; }
+
+.chores { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.chore { position: relative; display: flex; align-items: stretch; gap: 6px; }
+.chore-main { flex: 1; display: flex; align-items: center; gap: 12px; min-height: 84px; padding: 10px 16px; border: 4px solid var(--kid);
+  border-radius: 22px; background: #fff; color: inherit; font: inherit; font-size: clamp(20px, 3vw, 28px); font-weight: 700;
+  text-align: left; box-shadow: var(--shadow); cursor: pointer; }
+button.chore-main:active { transform: translateY(4px); box-shadow: none; }
+.chore-icon { font-size: 44px; line-height: 1; }
+.chore-name { flex: 1; } .chore-name small { font-weight: 400; opacity: 0.7; }
+.chore-pay { background: #d3f9d8; border-radius: 999px; padding: 4px 12px; font-size: 20px; }
+.chore.is-done .chore-main { background: #ebfbee; border-color: var(--ok); cursor: default; }
+.chore.is-done .chore-name { text-decoration: line-through; opacity: 0.75; }
+.chore-check { font-size: 36px; }
+.chore-streak { position: absolute; right: 74px; top: -8px; background: #ffe8cc; border-radius: 999px; padding: 2px 10px; font-size: 16px; font-weight: 700; }
+.speak, .undo { flex: 0 0 56px; border: 0; border-radius: 18px; background: #f1f3f5; font-size: 24px; cursor: pointer; }
+.undo { background: #fff0f0; flex-basis: 48px; }
+.chore-none { text-align: center; font-size: 22px; padding: 18px; }
+
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.day { border-radius: 14px; padding: 4px 0; background: #f8f9fa; }
+.day.today { background: #fff3bf; outline: 3px solid #ffd43b; }
+.day.future { opacity: 0.45; }
+.day-name { display: block; font-size: 14px; font-weight: 700; }
+.day-mark { font-size: 24px; }
+
+.goal-title { font-weight: 700; font-size: 20px; }
+.goal-bar { height: 26px; border-radius: 999px; background: #e9ecef; overflow: hidden; margin: 6px 0 2px; }
+.goal-fill { height: 100%; background: linear-gradient(90deg, #51cf66, #ffd43b); border-radius: 999px; transition: width 0.5s; }
+.goal-sub { font-size: 16px; }
+
+.shop summary { font-size: 20px; font-weight: 700; cursor: pointer; padding: 8px 0; }
+.shop ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 18px; }
+.shop li.can-buy { background: #d3f9d8; border-radius: 12px; padding: 4px 8px; }
+.shop em { display: block; font-size: 15px; }
+
+.badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.badge { font-size: 34px; width: 52px; height: 52px; display: grid; place-items: center; background: #fff3bf; border-radius: 50%; }
+.badge.locked { filter: grayscale(1); opacity: 0.35; background: #f1f3f5; }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

@@ -253,6 +253,7 @@ def client(state):
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
     "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
     "/habits", "/habits?owner=Justin", "/api/habits",
+    "/chores", "/chores/manage", "/chores/rewards", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
 def test_routes_ok(client, path):
@@ -265,7 +266,7 @@ def test_landing_page(client):
     assert "Ask or tell the assistant" in r.text
     assert 'rel="manifest"' in r.text and "apple-touch-icon" in r.text
     data = client.get("/api/summary").json()
-    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 9
+    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 10
     assert "SECRET-MERCHANT" not in r.text
 
 
@@ -367,12 +368,17 @@ def test_output_is_escaped(state):
 
 
 def test_read_only_except_allowlisted_write_routes(client):
-    """The dashboard is read-only apart from the ask box and the habits section. Adding a
+    """The dashboard is read-only apart from the ask box, the habits section and the chore chart. Adding a
     write route elsewhere must be a deliberate change to this allow-list."""
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
     allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore",
-               "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update"}
+               "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update",
+               "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
+               "/chores/rewards", "/chores/rewards/{reward_id}/update", "/chores/goals",
+               "/chores/goals/{kid_id}/clear", "/chores/config", "/chores/payout", "/chores/adjust",
+               "/chores/redeem", "/chores/backfill", "/chores/undo",
+               "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo"}
     writes = {r.path for r in app.routes
               if getattr(r, "methods", None) and r.methods & {"POST", "PUT", "PATCH", "DELETE"}}
     assert writes <= allowed, f"unexpected write routes: {writes - allowed}"
@@ -677,3 +683,105 @@ def test_new_failure_shows_after_dismissal(client, state):
 def test_dismiss_blocks_cross_origin(client):
     r = client.post("/attention/dismiss", data={"key": "x"}, headers={"Origin": "https://evil.example"})
     assert r.status_code == 403
+
+
+# ---- chores (shared service: scripts/chores.py) ----
+
+@pytest.fixture
+def chores_svc(state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import chores as service
+    return service, state / "agent_results.db"
+
+
+def _seed_chart(chores_svc):
+    service, db = chores_svc
+    service.set_config("mystery_enabled", "0", db_path=db)
+    kid = service.add_kid("Ruth <b>", db_path=db)["id"]
+    chore = service.create_chore("Feed dog", "daily", value_cents=50, kids=["Ruth"], db_path=db)["id"]
+    return service, db, kid, chore
+
+
+def test_kids_page_tap_done_and_undo_via_ui(client, chores_svc):
+    service, db, kid, chore = _seed_chart(chores_svc)
+    page = client.get("/kids").text
+    assert "Ruth &lt;b&gt;" in page and "Ruth <b>" not in page and "Feed dog" in page
+
+    r = client.post(f"/kids/{kid}/chores/{chore}/done", headers={"HX-Request": "true"})
+    assert r.status_code == 200 and "1 of 1 done" in r.text and "$0.50" in r.text
+    trigger = json.loads(r.headers["hx-trigger"])["chore-celebrate"]
+    assert trigger["earned"] == "$0.50" and trigger["all_done"] is True
+    assert service.balance(kid, db_path=db) == 50
+
+    again = client.post(f"/kids/{kid}/chores/{chore}/done", headers={"HX-Request": "true"})
+    assert again.status_code == 200 and "already done" in again.text and "hx-trigger" not in again.headers
+    assert service.balance(kid, db_path=db) == 50
+
+    r = client.post(f"/kids/{kid}/chores/{chore}/undo", headers={"HX-Request": "true"})
+    assert "0 of 1 done" in r.text and service.balance(kid, db_path=db) == 0
+
+
+def test_kids_routes_origin_guard_and_unknown_ids(client, chores_svc):
+    service, db, kid, chore = _seed_chart(chores_svc)
+    blocked = client.post(f"/kids/{kid}/chores/{chore}/done", headers={"Origin": "https://evil.example"})
+    assert blocked.status_code == 403 and service.balance(kid, db_path=db) == 0
+    r = client.post(f"/kids/nope/chores/{chore}/done", headers={"HX-Request": "true"})
+    assert r.status_code == 200 and "no kid" in r.text
+
+
+def test_chores_ui_and_service_share_data(client, chores_svc):
+    """Everything created through the service (agent CLI path) shows in the UI/API, and UI writes land in the service."""
+    service, db, kid, chore = _seed_chart(chores_svc)
+    api = client.get("/api/chores").json()
+    assert api["kids"][0]["todo"][0]["name"] == "Feed dog"
+    client.post(f"/kids/{kid}/chores/{chore}/done", headers={"HX-Request": "true"})
+    assert client.get(f"/api/chores/kids/{kid}").json()["balance_cents"] == 50
+    r = client.post("/chores/payout", data={"kid_id": kid, "amount": "0.25", "note": "cash"}, follow_redirects=False)
+    assert r.status_code == 303 and "ok=" in r.headers["location"]
+    assert service.balance(kid, db_path=db) == 25
+    assert any(e["kind"] == "payout" for e in client.get("/api/chores/ledger").json()["kids"][0]["ledger"])
+    assert client.get("/api/chores/kids/nope").status_code == 404
+
+
+def test_chores_adult_config_writes(client, chores_svc):
+    service, db = chores_svc
+    assert client.post("/chores/kids", data={"name": "Claire"}, follow_redirects=False).status_code == 303
+    claire = service.resolve_kid("Claire", db)["id"]
+    r = client.post("/chores/chores", data={"name": "Trash", "frequency": "weekly", "days": ["tue", "fri"],
+                                            "value": "1.00", "kids": [claire]}, follow_redirects=False)
+    assert "ok=" in r.headers["location"]
+    c = service.list_chores(db_path=db)[0]
+    assert c["days"] == ["tue", "fri"] and c["target_count"] == 2 and c["value_cents"] == 100 and c["kids"] == ["Claire"]
+
+    client.post(f"/chores/chores/{c['id']}/update", data={
+        "edit_schedule": "1", "edit_kids": "1", "frequency": "daily", "value": "2.00", "name": "Trash"})
+    c = service.list_chores(db_path=db)[0]
+    assert c["frequency"] == "daily" and c["days"] == [] and c["value_cents"] == 200 and c["kids"] == []
+
+    client.post("/chores/rewards", data={"name": "Movie", "cost": "3"})
+    client.post("/chores/goals", data={"kid_id": claire, "name": "Lego", "target": "20"})
+    client.post("/chores/config", data={"key": "perfect_week_bonus_cents", "value": "150"})
+    assert service.get_config(db_path=db)["perfect_week_bonus_cents"] == "150"
+    assert service.list_rewards(db_path=db)[0]["cost_cents"] == 300
+    assert "Lego" in client.get("/chores/rewards").text
+
+
+def test_chores_write_errors_and_origin_guard(client, chores_svc):
+    service, db, kid, chore = _seed_chart(chores_svc)
+    r = client.post("/chores/payout", data={"kid_id": kid, "amount": "5"}, follow_redirects=False)
+    assert "error=" in r.headers["location"] and "cannot+pay+out" in r.headers["location"]
+    r = client.post("/chores/chores", data={"name": "x", "target": "abc"}, follow_redirects=False)
+    assert "whole+number" in r.headers["location"]
+    blocked = client.post("/chores/kids", data={"name": "Evil"}, headers={"Origin": "https://evil.example"},
+                          follow_redirects=False)
+    assert blocked.status_code == 403 and len(service.list_kids(db_path=db)) == 1
+    
+
+def test_chores_summary_tile(client, chores_svc):
+    service, db, kid, chore = _seed_chart(chores_svc)
+    tile = next(t for t in client.get("/api/summary").json()["tiles"] if t["title"] == "Chores")
+    assert tile["headline"] == "0/1 done today"
+    client.post(f"/kids/{kid}/chores/{chore}/done", headers={"HX-Request": "true"})
+    tile = next(t for t in client.get("/api/summary").json()["tiles"] if t["title"] == "Chores")
+    assert tile["headline"] == "1/1 done today" and "$0.50" in tile["sub"]

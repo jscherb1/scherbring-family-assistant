@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Chores</h1>
+  <p class="subtitle">Who has done what today, and what the kids are owed.
+    <a href="/kids" target="_blank" rel="noopener">Open the kids' screen ↗</a></p>
+{% endblock %}
+
+{% block content %}
+{% include "chores/_notice.html" %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.kids %}
+  <div class="card"><div class="empty-state">No kids yet. <a href="/chores/manage">Add the kids and their chores</a> to get started.</div></div>
+{% else %}
+  <div class="grid stats">
+    <section class="card"><h2>Done today</h2><div class="metric">{{ data.done_count }}/{{ data.total_count }}</div></section>
+    <section class="card"><h2>Owed to the kids</h2><div class="metric ok-count">{{ data.owed_total }}</div>
+      <div class="metric-sub"><a href="/chores/ledger">Record a payout</a></div></section>
+  </div>
+  <div class="habit-grid">
+  {% for v in data.kids %}
+    {% set s = data.summary[v.kid.id] %}
+    <article class="card chore-adult-card">
+      <header class="habit-head">
+        <div><h3 class="habit-name">{{ v.kid.avatar }} {{ v.kid.name }}</h3>
+          <div class="habit-meta">{{ v.done_count }}/{{ v.total_count }} done today · {{ v.balance }} owed</div></div>
+        <div class="habit-streak" title="Best current streak"><span class="habit-streak-num">{{ v.best_streak }}</span>
+          <span class="habit-streak-label">streak</span></div>
+      </header>
+      <ul class="chore-list">
+        {% for i in v.todo %}
+        <li class="{{ 'chore-done' if i.done }}">{{ i.icon }} {{ i.name }}
+          <span class="muted">{{ i.value }}{% if i.current_streak %} · 🔥{{ i.current_streak }}{% endif %}</span>
+          <span class="pill {{ 'pill-ok' if i.done else 'pill-muted' }}">{{ 'done' if i.done else 'to do' }}</span></li>
+        {% else %}<li class="muted">Nothing due today.</li>{% endfor %}
+      </ul>
+      <div class="habit-progress">
+        <span class="pill pill-muted">{{ s.earned_this_week }} earned this week</span>
+        {% if s.perfect_week %}<span class="pill pill-ok">perfect week so far</span>{% endif %}
+        {% if v.goal %}<span class="muted">Goal: {{ v.goal.name }} ({{ v.goal.pct }}%)</span>{% endif %}
+      </div>
+    </article>
+  {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

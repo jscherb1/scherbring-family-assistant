@@ -1261,3 +1261,66 @@ a.chip {
   min-height: 44px;
   font-weight: 600;
 }
+
+/* ---- Chores (adult section) ---- */
+
+.chore-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.chore-list li.chore-done {
+  opacity: 0.6;
+}
+
+.chore-inline {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.chore-inline input[name="avatar"],
+.chore-inline input[name="icon"] {
+  width: 56px;
+}
+
+.chore-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chore-days {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.chore-days legend {
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.chore-kids {
+  margin-bottom: 12px;
+}
+
+.chore-goal-row {
+  margin-bottom: 8px;
+}
+
+.inline-form {
+  display: inline;
+}

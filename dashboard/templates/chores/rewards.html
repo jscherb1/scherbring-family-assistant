@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Rewards &amp; rules</h1>
+  <p class="subtitle">The reward shop, savings goals and the bonus rules that keep it fun.</p>
+{% endblock %}
+
+{% block content %}
+{% include "chores/_notice.html" %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <section class="card">
+    <h2>Reward shop</h2>
+    <p class="muted">Kids see these as things to save toward. Redeem one from the Money page when they cash in.</p>
+    <ul class="chore-list">
+    {% for r in data.rewards %}
+      <li class="{{ '' if r.active else 'chore-done' }}">{{ r.icon or '🎁' }} {{ r.name }} <span class="muted">${{ '%.2f' % (r.cost_cents / 100) }}</span>
+        <form method="post" action="/chores/rewards/{{ r.id }}/update" class="inline-form">
+          <button class="link-button" name="active" value="{{ 0 if r.active else 1 }}" type="submit">{{ 'Remove' if r.active else 'Restore' }}</button></form></li>
+    {% else %}<li class="muted">No rewards yet.</li>{% endfor %}
+    </ul>
+    <form method="post" action="/chores/rewards" class="habit-form">
+      <label class="field"><span>Reward</span><input name="name" required maxlength="60" placeholder="Movie night pick"></label>
+      <label class="field"><span>Cost ($)</span><input name="cost" required inputmode="decimal" placeholder="3.00"></label>
+      <label class="field"><span>Icon emoji</span><input name="icon" maxlength="8" placeholder="🎬"></label>
+      <button class="button" type="submit">Add reward</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Savings goals</h2>
+    {% for v in data.kids %}
+      <div class="chore-goal-row"><strong>{{ v.kid.avatar }} {{ v.kid.name }}</strong>
+        {% if v.goal %}: {{ v.goal.name }}, {{ v.goal.target }} ({{ v.goal.pct }}%{{ ', reached! 🎉' if v.goal.reached }})
+          <form method="post" action="/chores/goals/{{ v.kid.id }}/clear" class="inline-form"><button class="link-button" type="submit">Clear</button></form>
+        {% else %}<span class="muted"> no goal set</span>{% endif %}</div>
+    {% endfor %}
+    <form method="post" action="/chores/goals" class="habit-form">
+      <label class="field"><span>Kid</span><select name="kid_id">{% for v in data.kids %}<option value="{{ v.kid.id }}">{{ v.kid.name }}</option>{% endfor %}</select></label>
+      <label class="field"><span>Saving for</span><input name="name" required maxlength="60" placeholder="Lego set"></label>
+      <label class="field"><span>Target ($)</span><input name="target" required inputmode="decimal" placeholder="20.00"></label>
+      <button class="button" type="submit">Set goal</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Bonus rules</h2>
+    <p class="muted">Amounts are in cents. Streak milestones are JSON: streak length → bonus cents.</p>
+    {% for key, val in data.config.items() %}
+    <form method="post" action="/chores/config" class="chore-inline">
+      <input type="hidden" name="key" value="{{ key }}">
+      <label class="field"><span>{{ key.replace('_', ' ') }}</span><input name="value" value="{{ val }}"></label>
+      <button class="button" type="submit">Save</button>
+    </form>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}
