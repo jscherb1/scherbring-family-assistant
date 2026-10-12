@@ -88,6 +88,12 @@ SECTIONS = [
         ],
     },
     {
+        "key": "habits",
+        "label": "Habits",
+        "href": "/habits",
+        "pages": [{"key": "habits", "label": "Streaks", "href": "/habits"}],
+    },
+    {
         "key": "activity",
         "label": "Activity",
         "href": "/activity",

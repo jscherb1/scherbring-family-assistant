@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Habits</h1>
+  <p class="subtitle">Tap Done to log a habit. Streaks reset when a goal period ends unmet.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
+  {% set c = data.counts %}
+  <div class="grid stats">
+    <section class="card"><h2>Active habits</h2><div class="metric">{{ c.active }}</div></section>
+    <section class="card"><h2>Streaks at risk</h2><div class="metric {{ 'fail-count' if c.at_risk }}">{{ c.at_risk }}</div></section>
+    <section class="card"><h2>Goals met</h2><div class="metric ok-count">{{ c.met }}</div><div class="metric-sub">this period</div></section>
+    <section class="card"><h2>Best streak</h2><div class="metric">{{ c.best_streak }}</div></section>
+  </div>
+
+  <nav class="habit-filter" aria-label="Filter by owner">
+    <a href="/habits" class="pill {{ 'pill-ok' if not data.owner else 'pill-muted' }}">Everyone</a>
+    {% for o in data.owners %}
+      <a href="/habits?owner={{ o }}" class="pill {{ 'pill-ok' if data.owner == o else 'pill-muted' }}">{{ o }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if data.habits %}
+  <div class="habit-grid">
+    {% for h in data.habits %}{% include "habits/_card.html" %}{% endfor %}
+  </div>
+  {% else %}
+  <div class="card"><div class="empty-state">No habits yet. Add your first one below.</div></div>
+  {% endif %}
+
+  <section class="card habit-new">
+    <h2>Add a habit</h2>
+    <form method="post" action="/habits" class="habit-form">
+      <label class="field"><span>Name</span><input name="name" required maxlength="80" placeholder="e.g. Stretch"></label>
+      <label class="field"><span>How often</span>
+        <select name="frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+      <label class="field"><span>Goal per period</span>
+        <input name="target" type="number" min="1" placeholder="blank = just count it"></label>
+      <label class="field"><span>Owner</span>
+        <select name="owner"><option value="">Shared</option>
+          {% for o in data.owners %}<option>{{ o }}</option>{% endfor %}</select></label>
+      <label class="field habit-form-wide"><span>Notes (optional)</span><input name="description" maxlength="200"></label>
+      <button class="button" type="submit">Add habit</button>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,62 @@
+<article class="card habit-card{{ ' paused' if h.error is not defined and not h.active }}{{ ' at-risk' if h.at_risk }}"
+         {% if h.id %}id="habit-{{ h.id }}"{% endif %}>
+{% if h.error %}
+  <div class="error-state">{{ h.error }}</div>
+{% else %}
+  {% set per = 'today' if h.frequency == 'daily' else 'this week' %}
+  <header class="habit-head">
+    <div>
+      <h3 class="habit-name">{{ h.name }}</h3>
+      <div class="habit-meta">
+        {{ 'Daily' if h.frequency == 'daily' else 'Weekly' }}{% if h.has_goal %} · goal {{ h.target_count }}×{% else %} · tracking only{% endif %}
+        {% if h.owner %}<span class="pill pill-muted">{{ h.owner }}</span>{% endif %}
+        {% if not h.active %}<span class="pill pill-muted">paused</span>{% endif %}
+      </div>
+    </div>
+    {% if h.has_goal %}
+    <div class="habit-streak" title="Current streak (longest: {{ h.longest_streak }})">
+      <span class="habit-streak-num">{{ h.current_streak }}</span>
+      <span class="habit-streak-label">{{ 'day' if h.frequency == 'daily' else 'week' }}{{ '' if h.current_streak == 1 else 's' }}</span>
+    </div>
+    {% else %}
+    <div class="habit-streak" title="Total times logged">
+      <span class="habit-streak-num">{{ h.total_count }}</span>
+      <span class="habit-streak-label">total</span>
+    </div>
+    {% endif %}
+  </header>
+
+  <div class="habit-progress">
+    {% if h.has_goal %}
+      <span class="pill {{ 'pill-ok' if h.period_status == 'met' else ('pill-warn' if h.period_status == 'at_risk' else 'pill-muted') }}">
+        {{ h.done_this_period }}/{{ h.target_count }} {{ per }}
+        {%- if h.period_status == 'at_risk' %} · streak at risk{% elif h.period_status == 'met' %} · done{% endif %}
+      </span>
+      <span class="muted">best {{ h.longest_streak }}</span>
+    {% else %}
+      <span class="pill pill-muted">{{ h.count_this_week }} this week</span>
+      <span class="muted">{{ h.count_last_30_days }} in 30 days{% if h.avg_gap_days is not none %} · every ~{{ h.avg_gap_days }} d{% endif %}</span>
+    {% endif %}
+    <span class="muted">last: {{ h.last_done|fmt_date('never') if h.last_done else 'never' }}</span>
+  </div>
+
+  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
+
+  {% if h.active %}
+  <div class="habit-actions">
+    <button class="button habit-done" hx-post="/habits/{{ h.id }}/log" hx-target="#habit-{{ h.id }}" hx-swap="outerHTML">
+      {{ '✓ Done' if h.has_goal else '+ Log it' }}
+    </button>
+    <button class="link-button" hx-post="/habits/{{ h.id }}/undo" hx-target="#habit-{{ h.id }}" hx-swap="outerHTML"
+            {% if not h.total_count %}disabled{% endif %}>Undo</button>
+    <button class="link-button" hx-post="/habits/{{ h.id }}/update" hx-vals='{"active": "0"}'
+            hx-target="#habit-{{ h.id }}" hx-swap="outerHTML">Pause</button>
+  </div>
+  {% else %}
+  <div class="habit-actions">
+    <button class="button" hx-post="/habits/{{ h.id }}/update" hx-vals='{"active": "1"}'
+            hx-target="#habit-{{ h.id }}" hx-swap="outerHTML">Resume</button>
+  </div>
+  {% endif %}
+{% endif %}
+</article>

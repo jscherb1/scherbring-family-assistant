@@ -100,6 +100,17 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       page's ask box (2026-10-07) is the first write route and assumes a single user (Justin). Before
       other family members use it, add real auth plus a per-user chat-id mapping.
 
+## Habits tracker (built 2026-10-12; agent and dashboard verified live)
+
+- **Register and live-test the nudge.** Not yet registered; run the `scheduler_store.py add` command in
+  README "Habits agent", then `python scripts/scheduler_run_now.py --name habits-daily-nudge` (expect silence
+  when nothing is at risk, a `[TEST]` message otherwise).
+- The habits page is the dashboard's second write surface and still has no login (see the auth note under
+  Agent follow-ups); real auth is needed before other family members use it.
+- Later ideas: history/heatmap view, per-habit reminder times, more frequent proactive nudges, monthly goals.
+- Migrate older features (home-maintenance, lawn-garden, ...) to the shared-service pattern in `CLAUDE.md`
+  so their CLI and dashboard reader stop duplicating logic.
+
 ## Not started (ideas, from README "Backlog")
 
 See the Backlog section of `README.md`.

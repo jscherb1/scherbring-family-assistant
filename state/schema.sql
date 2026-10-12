@@ -442,3 +442,34 @@ CREATE TABLE IF NOT EXISTS fitness_weekly_plans (
     created_at          TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fitness_weekly_plans_week ON fitness_weekly_plans (week_start_date);
+
+-- Habit / streak tracker. Definition table + append-only log + key/value config.
+-- Shared service: scripts/habits.py (used by both the habits subagent CLI and the dashboard).
+CREATE TABLE IF NOT EXISTS habits (
+    id            TEXT PRIMARY KEY,      -- uuid4
+    name          TEXT NOT NULL,
+    description   TEXT,
+    owner         TEXT,                  -- NULL = shared; else e.g. 'Justin' | 'Caroline' | 'Kids' | 'Family'
+    frequency     TEXT NOT NULL,         -- 'daily' | 'weekly'
+    target_count  INTEGER,               -- completions needed per period; NULL = no goal (count only)
+    remind        INTEGER NOT NULL DEFAULT 1,  -- 0/1: include in the daily at-risk nudge
+    active        INTEGER NOT NULL DEFAULT 1,  -- 0/1: pause instead of delete
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS habit_logs (
+    id          TEXT PRIMARY KEY,        -- uuid4
+    habit_id    TEXT NOT NULL REFERENCES habits (id),
+    log_date    TEXT NOT NULL,           -- YYYY-MM-DD the habit was done (backfill allowed)
+    count       INTEGER NOT NULL DEFAULT 1,
+    note        TEXT,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_habit_logs_habit_date ON habit_logs (habit_id, log_date);
+
+CREATE TABLE IF NOT EXISTS habit_config (
+    key         TEXT PRIMARY KEY,        -- e.g. 'nudge_enabled'
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);

@@ -46,13 +46,14 @@ other family members.
 | Fitness | Overview | `/fitness` | This week's plan, COROS push status, library. Planned workouts only (no completion tracking) |
 | Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe |
 | | Menu & Insights | `/meals/plan` | Upcoming menu (from the meal-planner's logged plans), recently cooked, stale recipes, collection counts |
+| Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
 | Activity | Agent Activity | `/activity` | Latest agent results and last run per agent; sensitive agents' summaries are hidden |
 
-Everything is view-only. Because there is no login, sensitive areas (finance, kids memories, profile)
+Everything is view-only except the Habits page (see Notes). Because there is no login, sensitive areas (finance, kids memories, profile)
 show summaries only.
 
 JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/restarts`, `/api/system`,
-`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/activity`), with interactive docs at `/api/docs`.
+`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/activity`), with interactive docs at `/api/docs`.
 
 ## Run it
 
@@ -94,7 +95,10 @@ an entry to `SECTIONS` in `web.py` (that entry drives the navigation).
 
 ## Notes
 
-- Read-only except `POST /ask`: the app opens `state/agent_results.db` in SQLite read-only mode
+- New features follow the **"New feature standard"** in the repo `CLAUDE.md`: the data module and write
+  routes call one shared service in `scripts/` (as `routers/habits.py` does), never their own copy of the rules.
+- Read-only except `POST /ask` and the habits write routes (`POST /habits...`, same-origin guarded, going
+  through `scripts/habits.py`): the app opens `state/agent_results.db` in SQLite read-only mode
   and only reads files under `state/`; the ask box is the sole write (one row in `state/inbox.db`).
 - Mobile: below 760px the section pills collapse into a "Menu" dropdown, sub-nav scrolls
   sideways, and `.tbl` tables stack into labelled cards (a small script in `base.html` copies

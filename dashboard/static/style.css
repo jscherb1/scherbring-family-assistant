@@ -1146,3 +1146,118 @@ a.chip {
   color: var(--accent);
   cursor: pointer;
 }
+
+/* ---- Habits ---- */
+
+.habit-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.habit-filter a {
+  text-decoration: none;
+}
+
+.habit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.habit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.habit-card.at-risk {
+  border-color: var(--warn);
+}
+
+.habit-card.paused {
+  opacity: 0.6;
+}
+
+.habit-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.habit-name {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+
+.habit-meta {
+  color: var(--text-muted);
+  font-size: 13px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.habit-streak {
+  text-align: center;
+  min-width: 56px;
+}
+
+.habit-streak-num {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.habit-streak-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.habit-progress {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.habit-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.habit-done {
+  flex: 1;
+  min-height: 48px;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.habit-new {
+  margin-top: 8px;
+}
+
+.habit-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.habit-form-wide {
+  grid-column: 1 / -1;
+}
+
+.habit-form .button {
+  min-height: 44px;
+  font-weight: 600;
+}
