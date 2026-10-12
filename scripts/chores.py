@@ -929,7 +929,7 @@ def kid_view(kid_id: str, *, db_path=None, today: date | None = None) -> dict:
                    for r in conn.execute("SELECT * FROM chore_rewards WHERE active = 1 ORDER BY cost_cents, name")]
         week = _week_strip(conn, kid_id, chores, today_d)
         return {
-            "kid": kid, "date": today_d.isoformat(), "items": items,
+            "kid": kid, "date": today_d.isoformat(), "todo": items,
             "done_count": done, "total_count": len(items),
             "progress_pct": int(done * 100 / len(items)) if items else 0,
             "all_done": bool(items) and done == len(items),
@@ -986,7 +986,7 @@ def open_today(*, db_path=None, today: date | None = None) -> list[dict]:
         return []
     out = []
     for v in all_kid_views(db_path=db_path, today=today):
-        todo = [i["name"] for i in v["items"] if not i["done"]]
+        todo = [i["name"] for i in v["todo"] if not i["done"]]
         if todo:
             out.append({"kid": v["kid"]["name"], "remaining": todo, "done_count": v["done_count"],
                         "total_count": v["total_count"]})

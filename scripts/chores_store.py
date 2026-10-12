@@ -213,7 +213,7 @@ def cmd_week_summary(args) -> int:
 
 def cmd_open(args) -> int:
     _print(chores.open_today() if args.nudge else [
-        {"kid": v["kid"]["name"], "remaining": [i["name"] for i in v["items"] if not i["done"]],
+        {"kid": v["kid"]["name"], "remaining": [i["name"] for i in v["todo"] if not i["done"]],
          "done_count": v["done_count"], "total_count": v["total_count"]}
         for v in chores.all_kid_views()])
     return 0

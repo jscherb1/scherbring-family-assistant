@@ -140,7 +140,7 @@ def test_shared_chore_earns_and_streaks_separately(db, no_mystery):
     chores.assign(c, b, db_path=db)
     do(db, a, c, MON)
     assert chores.balance(b, db_path=db) == 0
-    assert chores.kid_view(b, db_path=db, today=MON)["items"][0]["current_streak"] == 0
+    assert chores.kid_view(b, db_path=db, today=MON)["todo"][0]["current_streak"] == 0
 
 
 def test_undo_removes_completion_and_money_today_only(db, no_mystery):
@@ -260,23 +260,23 @@ def test_kid_view_items_progress_and_week(db, no_mystery):
     daily_id = chore(db, k, "Teeth")
     chore(db, k, "Trash", "weekly", value=100, days="tue")
     v = chores.kid_view(k, db_path=db, today=MON)
-    assert [i["name"] for i in v["items"]] == ["Teeth"]  # trash not due Monday
+    assert [i["name"] for i in v["todo"]] == ["Teeth"]  # trash not due Monday
     assert v["progress_pct"] == 0 and not v["all_done"]
     do(db, k, daily_id, MON)
     v = chores.kid_view(k, db_path=db, today=MON)
     assert v["all_done"] and v["progress_pct"] == 100 and v["earned_today_cents"] == 50
     assert v["week"][0]["is_today"] and v["week"][0]["perfect"] and v["week"][1]["future"]
     tue = chores.kid_view(k, db_path=db, today=MON + timedelta(days=1))
-    assert {i["name"] for i in tue["items"]} == {"Teeth", "Trash"}
+    assert {i["name"] for i in tue["todo"]} == {"Teeth", "Trash"}
 
 
 def test_flexible_weekly_chore_hidden_once_met(db, no_mystery):
     k = kid(db)
     c = chore(db, k, "Room", "weekly", target_count=1)
-    assert len(chores.kid_view(k, db_path=db, today=MON)["items"]) == 1
+    assert len(chores.kid_view(k, db_path=db, today=MON)["todo"]) == 1
     do(db, k, c, MON)
-    assert chores.kid_view(k, db_path=db, today=MON)["items"][0]["done"]
-    assert chores.kid_view(k, db_path=db, today=MON + timedelta(days=1))["items"] == []
+    assert chores.kid_view(k, db_path=db, today=MON)["todo"][0]["done"]
+    assert chores.kid_view(k, db_path=db, today=MON + timedelta(days=1))["todo"] == []
 
 
 def test_goal_progress_and_rewards_affordability(db, no_mystery):

@@ -90,7 +90,7 @@ Mistake? `undo --kid ... --chore ...` removes the latest completion (today's onl
 ## Recall & chat (read-only)
 
 Never let a question trigger `done`/`payout`/`adjust`/`add`:
-- "What's left for Ruth?" → `status --kid Ruth` (items where `done` is false)
+- "What's left for Ruth?" → `status --kid Ruth` (`todo` entries where `done` is false)
 - "How are the streaks?" → `status` (best streaks, week strip)
 - "What did we pay out?" → `ledger`
 
