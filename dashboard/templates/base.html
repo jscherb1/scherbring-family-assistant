@@ -67,6 +67,9 @@
     }
     labelTables();
     document.addEventListener("htmx:afterSwap", function (e) { labelTables(e.target); });
+    // Back/forward can restore a frozen copy of a page (browser back-forward cache), which shows
+    // data from before an edit. Reload those so every page is current.
+    window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
   </script>
   {% block scripts %}{% endblock %}
 </body>
