@@ -149,7 +149,7 @@ and its `state/schema.sql` tables):
 | Keep if you want... | Agent(s) |
 |---|---|
 | Task/shopping lists | `todoist` |
-| Meal planning + grocery list | `meal-planner` |
+| Meal planning + grocery list (recipes can also be added, edited and deleted in the dashboard) | `meal-planner` |
 | Recurring proactive reminders | `scheduler` (needed by several others below) |
 | A family memory log | `kids-memory` (rename/regeneralize — it's kid-specific today) |
 | Lawn/yard care tracking | `lawn-garden` |

@@ -2,9 +2,10 @@
 """Recipe library CLI for the meal-planner subagent.
 
 Zero-dependency (Python stdlib only), same SQLite file as state_store.py
-(state/agent_results.db, schema in state/schema.sql). Subagents call this via the
+(state/agent_results.db, schema in state/schema.sql). A thin wrapper over the shared
+service in scripts/recipes.py, which the dashboard also uses. Subagents call this via the
 Bash tool to look up recipe candidates, save newly-generated meals back into the
-library, and record cooking history / user feedback.
+library, edit or delete recipes, and record cooking history / user feedback.
 
 Usage:
     python scripts/recipes_store.py import --file recipes.json
@@ -15,26 +16,32 @@ Usage:
     python scripts/recipes_store.py add --title "..." --ingredients-json '[...]'
         --steps-json '[...]' [--description ...] [--tags-json '[...]']
         [--protein-type chicken] [--meal-type dinner] [--prep-time-min 20]
-        [--cook-time-min 30] [--servings 4] [--source-url ...]
+        [--cook-time-min 30] [--servings 4] [--source-url ...] [--notes ...]
+    python scripts/recipes_store.py update --id <id> [--title ...] [--description ...]
+        [--ingredients-json '[...]'] [--steps-json '[...]'] [--tags-json '[...]']
+        [--protein-type ...] [--meal-type ...] [--prep-time-min N] [--cook-time-min N]
+        [--total-time-min N] [--servings N] [--source-url ...] [--notes ...]
+        [--clear description source_url ...]   (clear optional fields)
+    python scripts/recipes_store.py delete --id <id>      (permanent; confirm with the user first)
     python scripts/recipes_store.py mark-cooked --id <id> --date 2026-07-20
     python scripts/recipes_store.py feedback --id <id> --comment "too dry" [--rating 2]
 
-All commands print JSON to stdout.
+All commands print JSON to stdout. Errors print {"error": ...} to stderr and exit 1 (not found)
+or 2 (bad input).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = REPO_ROOT / "state" / "agent_results.db"
-SCHEMA_PATH = REPO_ROOT / "state" / "schema.sql"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import recipes as service  # noqa: E402
+
+DB_PATH = service.DB_PATH
 
 # Recipe text contains non-ASCII characters (½, —, etc.); force UTF-8 on stdout/stderr
 # so this never crashes on Windows' default console codepage, regardless of caller env.
@@ -43,37 +50,8 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8")
 
 
-def _connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-    return conn
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _row_to_dict(row: sqlite3.Row) -> dict:
-    d = dict(row)
-    for key in ("ingredients_json", "steps_json", "tags_json", "feedback_json"):
-        if d.get(key):
-            d[key] = json.loads(d[key])
-    return d
-
-
-COMPACT_FIELDS = (
-    "id", "title", "meal_type", "protein_type", "tags_json",
-    "total_time_min", "rating", "last_cooked_at",
-)
-
-
-def _compact(row: dict) -> dict:
-    """Just what is needed to choose candidates; use `get --id` for full detail."""
-    out = {k: row.get(k) for k in COMPACT_FIELDS}
-    out["tags"] = out.pop("tags_json") or []
-    return out
+def _connect():
+    return service.connect(DB_PATH)
 
 
 def cmd_import(args: argparse.Namespace) -> int:
@@ -123,157 +101,74 @@ def cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_list(args: argparse.Namespace) -> int:
-    conn = _connect()
-    try:
-        sql = "SELECT * FROM recipes WHERE 1=1"
-        params: list = []
-        if args.meal_type:
-            sql += " AND meal_type = ?"
-            params.append(args.meal_type)
-        if args.protein_type:
-            sql += " AND protein_type = ?"
-            params.append(args.protein_type)
-        if args.tag:
-            sql += " AND tags_json LIKE ?"
-            params.append(f'%"{args.tag}"%')
-        if args.search:
-            sql += " AND (title LIKE ? OR description LIKE ?)"
-            like = f"%{args.search}%"
-            params.extend([like, like])
-        if args.exclude_cooked_since:
-            sql += " AND (last_cooked_at IS NULL OR last_cooked_at < ?)"
-            params.append(args.exclude_cooked_since)
-        if args.min_rating is not None:
-            sql += " AND (rating IS NULL OR rating >= ?)"
-            params.append(args.min_rating)
-        sql += " ORDER BY title"
-        if args.limit is not None:
-            sql += " LIMIT ?"
-            params.append(args.limit)
-        rows = conn.execute(sql, params).fetchall()
-    finally:
-        conn.close()
+def _emit(recipe: dict) -> int:
+    print(json.dumps(recipe, ensure_ascii=False, indent=2))
+    return 0
 
-    items = [_row_to_dict(r) for r in rows]
+
+def _json_arg(value: str | None, name: str):
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise service.RecipeError(f"--{name} is not valid JSON: {exc}") from None
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    items = service.list_recipes(
+        meal_type=args.meal_type, protein_type=args.protein_type, tag=args.tag, search=args.search,
+        exclude_cooked_since=args.exclude_cooked_since, min_rating=args.min_rating, limit=args.limit,
+        db_path=DB_PATH)
     if args.compact:
-        print(json.dumps([_compact(i) for i in items], ensure_ascii=False, separators=(",", ":")))
+        print(json.dumps([service.compact(i) for i in items], ensure_ascii=False, separators=(",", ":")))
     else:
         print(json.dumps(items, ensure_ascii=False, indent=2))
     return 0
 
 
 def cmd_get(args: argparse.Namespace) -> int:
-    conn = _connect()
-    try:
-        row = conn.execute("SELECT * FROM recipes WHERE id = ?", (args.id,)).fetchone()
-    finally:
-        conn.close()
-
-    if row is None:
-        print(json.dumps({"error": f"no recipe with id {args.id}"}), file=sys.stderr)
-        return 1
-
-    print(json.dumps(_row_to_dict(row), ensure_ascii=False, indent=2))
-    return 0
+    return _emit(service.get_recipe(args.id, db_path=DB_PATH))
 
 
 def cmd_add(args: argparse.Namespace) -> int:
-    for name, value in (("ingredients-json", args.ingredients_json), ("steps-json", args.steps_json)):
-        try:
-            json.loads(value)
-        except json.JSONDecodeError as exc:
-            print(f"error: --{name} is not valid JSON: {exc}", file=sys.stderr)
-            return 2
-    if args.tags_json is not None:
-        try:
-            json.loads(args.tags_json)
-        except json.JSONDecodeError as exc:
-            print(f"error: --tags-json is not valid JSON: {exc}", file=sys.stderr)
-            return 2
+    return _emit(service.add_recipe(
+        args.title, _json_arg(args.ingredients_json, "ingredients-json"), _json_arg(args.steps_json, "steps-json"),
+        description=args.description, tags=_json_arg(args.tags_json, "tags-json"),
+        protein_type=args.protein_type, meal_type=args.meal_type, prep_time_min=args.prep_time_min,
+        cook_time_min=args.cook_time_min, total_time_min=args.total_time_min, servings=args.servings,
+        source_url=args.source_url, notes=args.notes, db_path=DB_PATH))
 
-    new_id = str(uuid.uuid4())
-    conn = _connect()
-    try:
-        conn.execute(
-            """
-            INSERT INTO recipes (
-                id, title, description, ingredients_json, steps_json, tags_json,
-                protein_type, meal_type, prep_time_min, cook_time_min, servings,
-                source_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                new_id,
-                args.title,
-                args.description,
-                args.ingredients_json,
-                args.steps_json,
-                args.tags_json,
-                args.protein_type,
-                args.meal_type,
-                args.prep_time_min,
-                args.cook_time_min,
-                args.servings,
-                args.source_url,
-            ),
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM recipes WHERE id = ?", (new_id,)).fetchone()
-    finally:
-        conn.close()
 
-    print(json.dumps(_row_to_dict(row), ensure_ascii=False, indent=2))
+# CLI flag -> update_recipe keyword, for the plain (non-JSON) fields; only flags that were passed apply.
+_UPDATE_FIELDS = ("title", "description", "protein_type", "meal_type", "prep_time_min", "cook_time_min",
+                  "total_time_min", "servings", "source_url", "notes")
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    changes: dict = {f: getattr(args, f) for f in _UPDATE_FIELDS if getattr(args, f) is not None}
+    for flag, key in (("ingredients_json", "ingredients"), ("steps_json", "steps"), ("tags_json", "tags")):
+        if getattr(args, flag) is not None:
+            changes[key] = _json_arg(getattr(args, flag), flag.replace("_", "-"))
+    for field in args.clear or []:
+        changes[field] = None
+    if not changes:
+        raise service.RecipeError("nothing to update: pass at least one field flag or --clear")
+    return _emit(service.update_recipe(args.id, db_path=DB_PATH, **changes))
+
+
+def cmd_delete(args: argparse.Namespace) -> int:
+    removed = service.delete_recipe(args.id, db_path=DB_PATH)
+    print(json.dumps({"deleted": removed["id"], "title": removed["title"]}, ensure_ascii=False))
     return 0
 
 
 def cmd_mark_cooked(args: argparse.Namespace) -> int:
-    conn = _connect()
-    try:
-        cur = conn.execute(
-            "UPDATE recipes SET last_cooked_at = ? WHERE id = ?", (args.date, args.id)
-        )
-        conn.commit()
-        if cur.rowcount == 0:
-            print(json.dumps({"error": f"no recipe with id {args.id}"}), file=sys.stderr)
-            return 1
-        row = conn.execute("SELECT * FROM recipes WHERE id = ?", (args.id,)).fetchone()
-    finally:
-        conn.close()
-
-    print(json.dumps(_row_to_dict(row), ensure_ascii=False, indent=2))
-    return 0
+    return _emit(service.mark_cooked(args.id, args.date, db_path=DB_PATH))
 
 
 def cmd_feedback(args: argparse.Namespace) -> int:
-    conn = _connect()
-    try:
-        row = conn.execute("SELECT * FROM recipes WHERE id = ?", (args.id,)).fetchone()
-        if row is None:
-            print(json.dumps({"error": f"no recipe with id {args.id}"}), file=sys.stderr)
-            return 1
-
-        feedback = json.loads(row["feedback_json"]) if row["feedback_json"] else []
-        feedback.append(
-            {
-                "date": _utc_now_iso()[:10],
-                "comment": args.comment,
-                "rating": args.rating,
-            }
-        )
-        new_rating = args.rating if args.rating is not None else row["rating"]
-
-        conn.execute(
-            "UPDATE recipes SET feedback_json = ?, rating = ? WHERE id = ?",
-            (json.dumps(feedback, ensure_ascii=False), new_rating, args.id),
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM recipes WHERE id = ?", (args.id,)).fetchone()
-    finally:
-        conn.close()
-
-    print(json.dumps(_row_to_dict(row), ensure_ascii=False, indent=2))
-    return 0
+    return _emit(service.add_feedback(args.id, args.comment, args.rating, db_path=DB_PATH))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -315,7 +210,34 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--cook-time-min", dest="cook_time_min", type=int, default=None)
     add.add_argument("--servings", type=int, default=None)
     add.add_argument("--source-url", dest="source_url", default=None)
+    add.add_argument("--total-time-min", dest="total_time_min", type=int, default=None)
+    add.add_argument("--notes", default=None)
     add.set_defaults(func=cmd_add)
+
+    upd = sub.add_parser("update", help="Edit fields of an existing recipe (only passed fields change).")
+    upd.add_argument("--id", required=True)
+    upd.add_argument("--title", default=None)
+    upd.add_argument("--description", default=None)
+    upd.add_argument("--ingredients-json", dest="ingredients_json", default=None)
+    upd.add_argument("--steps-json", dest="steps_json", default=None)
+    upd.add_argument("--tags-json", dest="tags_json", default=None)
+    upd.add_argument("--protein-type", dest="protein_type", default=None)
+    upd.add_argument("--meal-type", dest="meal_type", default=None)
+    upd.add_argument("--prep-time-min", dest="prep_time_min", type=int, default=None)
+    upd.add_argument("--cook-time-min", dest="cook_time_min", type=int, default=None)
+    upd.add_argument("--total-time-min", dest="total_time_min", type=int, default=None)
+    upd.add_argument("--servings", type=int, default=None)
+    upd.add_argument("--source-url", dest="source_url", default=None)
+    upd.add_argument("--notes", default=None)
+    upd.add_argument("--clear", nargs="+", default=None,
+                     choices=["description", "protein_type", "prep_time_min", "cook_time_min",
+                              "total_time_min", "servings", "source_url", "notes", "tags"],
+                     help="set these optional fields back to empty")
+    upd.set_defaults(func=cmd_update)
+
+    dele = sub.add_parser("delete", help="Permanently delete a recipe.")
+    dele.add_argument("--id", required=True)
+    dele.set_defaults(func=cmd_delete)
 
     mc = sub.add_parser("mark-cooked", help="Record when a recipe was planned/cooked.")
     mc.add_argument("--id", required=True)
@@ -334,7 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except service.RecipeError as exc:
+        print(json.dumps({"error": exc.message}), file=sys.stderr)
+        return exc.code
 
 
 if __name__ == "__main__":

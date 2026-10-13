@@ -102,6 +102,24 @@ unless the user names that meal specifically. Generate a fresh, constraint-fitti
 when nothing in the library fits, or the user asks for something new or references an
 ingredient/season/constraint the library doesn't cover.
 
+### Editing and deleting recipes
+
+The user can also manage the library from the dashboard (Meal Planner, `/meals`); both use the
+same code and data. When they ask you to change or remove a recipe ("make the chili serve 8",
+"fix the cook time on the curry", "delete the tuna casserole"), find it with
+`list --compact --search "..."`, then:
+```
+python scripts/recipes_store.py update --id <id> [--title ...] [--description ...] \
+  [--ingredients-json '[...]'] [--steps-json '[...]'] [--tags-json '[...]'] \
+  [--protein-type ...] [--meal-type ...] [--prep-time-min N] [--cook-time-min N] \
+  [--total-time-min N] [--servings N] [--source-url ...] [--notes ...] [--clear <field> ...]
+python scripts/recipes_store.py delete --id <id>
+```
+`update` changes only the flags you pass (lists are replaced whole, so `get` first and send the
+full new list). **`delete` is permanent: name the recipe and get an explicit yes from the user
+before running it.** Confirm briefly what changed. These are quick tasks, not planning, so skip
+the planning gates.
+
 ## Frozen-protein thaw reminders
 
 Assume these proteins are bought frozen, never fresh, unless a recipe/ingredient note

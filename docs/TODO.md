@@ -91,7 +91,8 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       after 14 days. Recording a structured cause (for example a `cause` field in
       `state/orchestrator_restarts.jsonl` written by the watchdog) would make the history exact and permanent.
     - Every dashboard page is view-only (insights for home, family, finance, Hy-Vee, fitness, meals, activity
-      added 2026-10-06). Create/update/delete is the next phase, starting with recipes.
+      added 2026-10-06). Recipes can now be added, edited and
+      deleted (2026-10-12); the other sections are still view-only (habits and chores aside).
     - Sensitive areas (kids memory text, profile fact values, finance amounts) are deliberately hidden until
       auth exists; revisit what to reveal once there is a login.
     - Fitness shows planned workouts only: `completion_status` is never set by any automation.
