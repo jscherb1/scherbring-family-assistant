@@ -1664,3 +1664,68 @@ a.chip {
     min-height: 44px;
   }
 }
+
+/* ---- Recipe add/edit form and detail actions ---- */
+
+.recipe-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.recipe-form-wide {
+  grid-column: 1 / -1;
+}
+
+.recipe-form .field textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.recipe-form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.recipe-form-actions form {
+  margin: 0;
+}
+
+.recipe-form-actions .button,
+a.button {
+  display: inline-block;
+  text-decoration: none;
+  min-height: 44px;
+  line-height: 28px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button-quiet {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.button-danger {
+  background: transparent;
+  color: var(--warn);
+  border: 1px solid currentColor;
+}
+
+@media (max-width: 640px) {
+  .recipe-form .field textarea {
+    font-size: 16px;
+  }
+}

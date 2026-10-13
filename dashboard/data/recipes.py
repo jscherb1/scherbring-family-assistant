@@ -1,8 +1,16 @@
-"""Recipe browsing (read-only) over the `recipes` table in agent_results.db."""
+"""Recipe browsing over the `recipes` table in agent_results.db.
+
+Reads are shaped here for display; every write (add / edit / delete) goes through the shared
+service in scripts/recipes.py, the same code the `meal-planner` subagent's CLI runs.
+"""
 import json
 import sqlite3
+import sys
 
 from . import common
+
+sys.path.insert(0, str(common.SCRIPTS_DIR))
+import recipes as service  # noqa: E402
 
 SORTS = {
     "title": lambda r: r["title"].lower(),
@@ -130,3 +138,39 @@ def get_recipe(recipe_id: str):
     recipe = _shape(row, full=True)
     recipe.pop("_search", None)
     return recipe
+
+
+def form_values(recipe: dict | None = None) -> dict:
+    """Text-field values for the add/edit form: blank for a new recipe, else from get_recipe()."""
+    if recipe is None:
+        return {"meal_type": "dinner", "ingredients": "", "steps": "", "tags": ""}
+    return {
+        **recipe,
+        "ingredients": "\n".join(i["text"] + ("" if i["shopping"] else service.PANTRY_SUFFIX)
+                                 for i in recipe["ingredients"]),
+        "steps": "\n".join(recipe["steps"]),
+        "tags": ", ".join(recipe["tags"]),
+    }
+
+
+def form_to_fields(form: dict) -> dict:
+    """Turn submitted form text into service keyword arguments (blank optional fields clear).
+    A blank total time is left out so the service fills it in as prep + cook."""
+    fields = {
+        "title": form.get("title", ""),
+        "description": form.get("description", ""),
+        "ingredients": service.ingredients_from_text(form.get("ingredients", "")),
+        "steps": service.lines_from_text(form.get("steps", "")),
+        "tags": service.tags_from_text(form.get("tags", "")),
+        "protein_type": form.get("protein_type", ""),
+        "meal_type": form.get("meal_type", ""),
+        "prep_time_min": form.get("prep_time_min", ""),
+        "cook_time_min": form.get("cook_time_min", ""),
+        "total_time_min": form.get("total_time_min", ""),
+        "servings": form.get("servings", ""),
+        "source_url": form.get("source_url", ""),
+        "notes": form.get("notes", ""),
+    }
+    if not str(fields["total_time_min"]).strip():
+        del fields["total_time_min"]
+    return fields

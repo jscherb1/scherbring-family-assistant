@@ -4,6 +4,13 @@
   <a class="back-link" href="/meals">← All recipes</a>
   <h1>{{ recipe.title }}</h1>
   {% if recipe.description %}<p class="subtitle">{{ recipe.description }}</p>{% endif %}
+  <div class="recipe-form-actions">
+    <a class="button" href="/meals/{{ recipe.id }}/edit">Edit</a>
+    <form method="post" action="/meals/{{ recipe.id }}/delete"
+          onsubmit="return confirm('Delete this recipe permanently?');">
+      <button class="button button-danger" type="submit">Delete</button>
+    </form>
+  </div>
 {% endblock %}
 
 {% block content %}

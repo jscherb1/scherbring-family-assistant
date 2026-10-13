@@ -373,6 +373,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
     allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore",
+               "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
                "/chores/payout", "/chores/backfill", "/chores/undo",
@@ -778,3 +779,63 @@ def test_chores_summary_tile(client, chores_svc):
     client.post(f"/kids/{kid}/chores/{chore}/done", headers={"HX-Request": "true"})
     tile = next(t for t in client.get("/api/summary").json()["tiles"] if t["title"] == "Chores")
     assert tile["headline"] == "1/1 done today" and "$0.50" in tile["sub"]
+
+
+# ---- recipes: add / edit / delete (shared service: scripts/recipes.py) ----
+
+def test_recipes_add_edit_delete_via_ui(client):
+    assert client.get("/meals/new").status_code == 200
+    r = client.post("/meals", data={
+        "title": "Chili <b>", "meal_type": "dinner", "protein_type": "beef", "tags": "Crockpot, Spicy",
+        "prep_time_min": "10", "cook_time_min": "50", "servings": "6",
+        "ingredients": "1 lb beef\n2 cans beans\nsalt (pantry)", "steps": "Brown beef\nSimmer"},
+        follow_redirects=False)
+    assert r.status_code == 303
+    rid = r.headers["location"].rsplit("/", 1)[1]
+    page = client.get(f"/meals/{rid}").text
+    assert "Chili &lt;b&gt;" in page and "Chili <b>" not in page and "(pantry)" in page
+    recipe = client.get(f"/api/recipes/{rid}").json()
+    assert recipe["total_time_min"] == 60 and recipe["tags"] == ["Crockpot", "Spicy"]
+    assert [i["shopping"] for i in recipe["ingredients"]] == [True, True, False]
+
+    edit = client.get(f"/meals/{rid}/edit").text
+    assert "salt (pantry)" in edit and "Brown beef" in edit
+    r = client.post(f"/meals/{rid}/update", data={
+        "title": "Chili", "tags": "Crockpot", "prep_time_min": "5", "cook_time_min": "50",
+        "ingredients": "1 lb beef", "steps": "Cook"}, follow_redirects=False)
+    assert r.status_code == 303
+    recipe = client.get(f"/api/recipes/{rid}").json()
+    assert recipe["title"] == "Chili" and recipe["total_time_min"] == 55 and recipe["servings"] is None
+
+    assert client.post(f"/meals/{rid}/delete", follow_redirects=False).status_code == 303
+    assert client.get(f"/api/recipes/{rid}").status_code == 404
+
+
+def test_recipes_write_errors_and_origin_guard(client):
+    r = client.post("/meals", data={"title": " ", "ingredients": "x"})
+    assert r.status_code == 400 and "title is required" in r.text
+    r = client.post("/meals", data={"title": "T", "prep_time_min": "abc"})
+    assert r.status_code == 400 and "whole number" in r.text and 'value="T"' in r.text
+    assert client.post("/meals/nope/update", data={"title": "T"}).status_code == 404
+    assert client.post("/meals/nope/delete").status_code == 404
+    assert client.get("/meals/nope/edit").status_code == 404
+    evil = {"Origin": "https://evil.example"}
+    assert client.post("/meals", data={"title": "T"}, headers=evil).status_code == 403
+    assert client.post("/meals/r1/update", data={"title": "T"}, headers=evil).status_code == 403
+    assert client.post("/meals/r1/delete", headers=evil).status_code == 403
+    assert client.get("/api/recipes/r1").json()["title"] == "Teriyaki Chicken"
+
+
+def test_recipes_ui_and_service_share_data(client, state):
+    """A recipe written through the agent CLI's service shows in the UI, and vice versa."""
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import recipes as service
+    db = state / "agent_results.db"
+    rid = service.add_recipe("Service Soup", ["water"], ["boil"], db_path=db)["id"]
+    assert any(r["id"] == rid for r in client.get("/api/recipes").json()["recipes"])
+    client.post(f"/meals/{rid}/update", data={"title": "Edited Soup", "ingredients": "water", "steps": "boil"})
+    assert service.get_recipe(rid, db_path=db)["title"] == "Edited Soup"
+    client.post(f"/meals/{rid}/delete")
+    with pytest.raises(service.RecipeError):
+        service.get_recipe(rid, db_path=db)
