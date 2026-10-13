@@ -24,6 +24,7 @@ body.kids {
   background: #fff; font-size: 24px; box-shadow: var(--shadow); cursor: pointer; }
 .kids-empty { text-align: center; font-size: 24px; margin-top: 48px; }
 .kids-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); max-width: 1200px; margin: 0 auto; align-items: stretch; }
+.kids-grid.solo { grid-template-columns: minmax(0, 640px); justify-content: center; }
 
 .kid-col { min-width: 0; background: var(--card); border: 5px solid var(--kid, #4dabf7); border-radius: 28px; padding: 16px;
   box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; }

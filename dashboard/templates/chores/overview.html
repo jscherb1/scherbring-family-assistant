@@ -3,7 +3,9 @@
 {% block page_header %}
   <h1>Chores</h1>
   <p class="subtitle">Who has done what today, and what the kids are owed.
-    <a href="/kids" target="_blank" rel="noopener">Open the kids' screen ↗</a></p>
+    <a href="/kids" target="_blank" rel="noopener">Open the kids' screen ↗</a>
+    {% if data.kids %}<br>Single-kid pages for tablets:
+    {% for k in data.kids %}<a href="/kids/{{ k.kid.name|lower }}" target="_blank" rel="noopener">{{ k.kid.name }} ↗</a>{% if not loop.last %} · {% endif %}{% endfor %}{% endif %}</p>
 {% endblock %}
 
 {% block content %}

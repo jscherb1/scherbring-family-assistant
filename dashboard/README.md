@@ -49,6 +49,7 @@ other family members.
 | Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
 | Chores | Today, Chores & kids, Money | `/chores`, `/chores/manage`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, balances and payouts, and fixing a missed or mistaken completion. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |
 | (kids) | Chore Chart | `/kids` | Kid-facing page (no adult nav, not in the section bar): big tap-to-complete chores for each kid with balance, streaks, confetti/chime, week strip and badges |
+| (kids) | One kid's chart | `/kids/<name>` | Same page as `/kids` filtered to a single kid (e.g. `/kids/ruth`), for that kid's tablet bookmark. Hides the other kid's chart but is not access control (no login) |
 | Activity | Agent Activity | `/activity` | Latest agent results and last run per agent; sensitive agents' summaries are hidden |
 
 Everything is view-only except the Habits page (see Notes). Because there is no login, sensitive areas (finance, kids memories, profile)

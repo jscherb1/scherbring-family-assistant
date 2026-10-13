@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#fff4d6">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Chores">
+  <meta name="apple-mobile-web-app-title" content="{{ page_title }}">
   <link rel="icon" type="image/svg+xml" href="/static/icons/favicon.svg">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-  <title>Chore Chart</title>
+  <title>{{ page_title }}</title>
   <link rel="stylesheet" href="/static/kids.css?v={{ asset_version() }}">
   <script src="/static/htmx.min.js?v={{ asset_version() }}" defer></script>
   <script src="/static/kids.js?v={{ asset_version() }}" defer></script>
@@ -18,7 +18,7 @@
   <canvas id="confetti" aria-hidden="true"></canvas>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <header class="kids-top">
-    <h1>⭐ Chore Chart ⭐</h1>
+    <h1>⭐ {{ page_title }} ⭐</h1>
     <p class="kids-message">{% if not data.error %}{{ data.message }}{% endif %}</p>
     <button id="sound-toggle" class="icon-btn" type="button" aria-label="Sound on or off">🔊</button>
   </header>
@@ -27,7 +27,7 @@
   {% elif not data.kids %}
     <p class="kids-empty">No kids on the chart yet. Ask a grown-up to set it up! 🎈</p>
   {% else %}
-  <main class="kids-grid">
+  <main class="kids-grid{% if solo %} solo{% endif %}">
     {% for v in data.kids %}{% include "kids/_column.html" %}{% endfor %}
   </main>
   {% endif %}
