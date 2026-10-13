@@ -720,6 +720,26 @@ def test_kids_page_tap_done_and_undo_via_ui(client, chores_svc):
     assert "0 of 1 done" in r.text and service.balance(kid, db_path=db) == 0
 
 
+def test_kid_solo_pages_show_only_that_kid(client, chores_svc):
+    service, db = chores_svc
+    ruth = service.add_kid("Ruth", db_path=db)["id"]
+    claire = service.add_kid("Claire", db_path=db)["id"]
+    rc = service.create_chore("Feed dog", "daily", value_cents=50, kids=["Ruth"], db_path=db)["id"]
+    service.create_chore("Practice piano", "daily", value_cents=25, kids=["Claire"], db_path=db)
+    both = client.get("/kids").text
+    assert "Ruth" in both and "Claire" in both
+    r = client.get("/kids/RUTH").text
+    assert "Ruth&#39;s Chores" in r and "Feed dog" in r
+    assert "Claire" not in r and "Practice piano" not in r and claire not in r
+    c = client.get("/kids/claire").text
+    assert "Practice piano" in c and "Ruth" not in c and "Feed dog" not in c and ruth not in c
+    assert client.get("/kids/nobody").status_code == 404
+    assert client.get("/kids/r").status_code == 404
+    # tapping from the solo page still works through the shared write route
+    done = client.post(f"/kids/{ruth}/chores/{rc}/done", headers={"HX-Request": "true"})
+    assert "1 of 1 done" in done.text and service.balance(ruth, db_path=db) == 50
+
+
 def test_kids_routes_origin_guard_and_unknown_ids(client, chores_svc):
     service, db, kid, chore = _seed_chart(chores_svc)
     blocked = client.post(f"/kids/{kid}/chores/{chore}/done", headers={"Origin": "https://evil.example"})
