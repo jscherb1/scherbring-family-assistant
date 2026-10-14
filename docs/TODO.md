@@ -121,6 +121,17 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - Later ideas: per-kid themes and reading level, family team quest, streak freeze, Home Assistant speaker nudge
   (`HassBroadcast`) when chores are still open.
 
+## My Hub (built 2026-10-14)
+
+- [ ] Registered `myhub-refresh-morning` (6:30 AM) and `myhub-refresh-evening` (5 PM); neither has fired yet. Until the
+      first run the page says calendar/tasks are "not synced yet". Check `scheduler_store.py runs`.
+- [ ] The look (JARVIS theme) and the phone layout have not been viewed in a browser; only tested by route tests.
+- [ ] Not on the hub yet (phase 2): finance items waiting on a decision (e.g. WHO tags; Monarch is live-only, so it
+      needs a snapshot like calendar/tasks), Hy-Vee cart state, upcoming birthdays, Costco/shopping list counts, an
+      expiring-login warning before it dies (only dead ones show now), per-area detail tabs.
+- [ ] Older features (home maintenance, system health) have their rules re-read inside `hub_providers/` rather than shared;
+      migrate with the rest of the old-feature duplication above.
+
 ## Day rating + insights (built 2026-10-14)
 
 - [ ] Registered `dayrating-nightly-nudge` (8:30 PM) and `dayrating-weekly-insights` (Sun 7:30 PM); neither has fired yet.

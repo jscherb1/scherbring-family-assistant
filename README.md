@@ -27,6 +27,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/profile.md` | Profile subagent — captures/recalls structured facts about the user, family, and friends; other subagents read the store directly |
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
 | `.claude/agents/chores.md` | Chores subagent — kid chore chart (chores, dollar balances, streaks, payouts), the weekly payday summary and the optional afternoon open-chores check |
+| `.claude/agents/myhub.md` | My Hub subagent: answers "what needs my attention?" and keeps the hub's calendar/Todoist snapshot fresh (scheduled morning + evening) |
 | `.claude/agents/dayrating.md` | Day-rating subagent: daily 1-10 rating with a note, the nightly nudge, and the weekly insights report (stats plus an AI-written story) |
 | `.claude/agents/habits.md` | Habits subagent — habit/streak tracker (daily or weekly goals, no-goal counters), logging, streaks, and the daily at-risk nudge |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
@@ -45,7 +46,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `calendar_load`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `calendar_load`, `hub_items`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -71,6 +72,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/weather_store.py` | Zero-dep CLI for weather-reminders data (config/alert sub-commands) |
 | `scripts/chores.py` | Shared chore-chart service (completion rules, money ledger, badges; streaks via `habits.habit_status`). The single code path used by `chores_store.py`, the `/chores` dashboard section and the `/kids` page |
 | `scripts/chores_store.py` | Zero-dep CLI over `chores.py` for the chores subagent (kid/chore/done/undo/status/payout/config sub-commands) |
+| `scripts/myhub.py` | Shared My Hub service: runs every provider in `scripts/hub_providers/`, merges their needs-attention items into one ranked list, stores the calendar/task snapshot. Used by `myhub_store.py` and the dashboard `/me` page |
+| `scripts/myhub_store.py` | Zero-dep CLI over `myhub.py` for the myhub subagent (summary / attention / snapshot set / snapshot status) |
+| `scripts/hub_providers/` | One module per hub area (habits, mood, body, schedule, weather, home, chores, system, insights). Drop in a module and its card and needs-attention items appear on the hub |
 | `scripts/dayrating.py` | Shared day-rating service (1-10 score + note per day, status, nudge check). The single code path used by `dayrating_store.py` and the dashboard |
 | `scripts/dayrating_store.py` | Zero-dep CLI over `dayrating.py` and `insights.py` for the dayrating subagent (rate/show/list/status/nudge, insights refresh/stats/save) |
 | `scripts/calendar_load.py` | Per-day calendar load rules and storage (events, hours booked, shift/travel/kid flags). Events come from the dayrating agent's Calendar connector via `dayrating_store.py calendar sync` |
@@ -415,6 +419,32 @@ python scripts/scheduler_store.py add --name "dayrating-nightly-nudge" \
 python scripts/scheduler_store.py add --name "dayrating-weekly-insights" \
   --prompt "Delegate to the dayrating subagent to run the weekly insights report (refresh sources, analyze, write and save the story, reply with a short summary and up to two suggestions for new data sources)." \
   --cron "30 19 * * 0" --target-chat-id "<your chat_id>"
+```
+
+## My Hub (the personal command page)
+
+One visual page (`/me`, JARVIS-style dark theme) for everything that matters to the person: a ranked **Needs attention**
+strip (urgent / to act on / to note, never hidden, "All clear" when empty) on top, then today's calendar, dinner and
+tasks, mood, COROS recovery/sleep/vitals/wellness check, habits, weather, household (chores, maintenance), the latest
+insight and system health (expired logins, failed scheduled tasks). The `myhub` subagent and the page run the **same code**
+(`scripts/myhub.py` and the providers in `scripts/hub_providers/`); `/api/me` is the JSON twin.
+
+- **Self-completing**: each area is a provider module; its needs-attention items flow into the strip with no other wiring,
+  and a test fails if a required area has no provider. A provider that errors shows up as a visible warning, never silently
+  missing.
+- **Calendar and tasks** come from a snapshot (`hub_items` table) because Google Calendar and Todoist are only reachable
+  through the agent connectors: the `myhub` agent copies them in via `myhub_store.py snapshot set` on a schedule. The page
+  says when they were last synced and flags them when older than 36 hours.
+- Not on the hub yet: finance items waiting on a decision (Monarch is live-only) and Hy-Vee cart state; see `docs/TODO.md`.
+
+Register once:
+```
+python scripts/scheduler_store.py add --name "myhub-refresh-morning" \
+  --prompt "Delegate to the myhub subagent to refresh the hub's calendar and task snapshot (silent unless something is urgent)." \
+  --cron "30 6 * * *" --target-chat-id "<your chat_id>"
+python scripts/scheduler_store.py add --name "myhub-refresh-evening" \
+  --prompt "Delegate to the myhub subagent to refresh the hub's calendar and task snapshot (silent unless something is urgent)." \
+  --cron "0 17 * * *" --target-chat-id "<your chat_id>"
 ```
 
 ## Chores agent (kid chore chart)
