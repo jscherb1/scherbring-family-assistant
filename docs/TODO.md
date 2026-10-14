@@ -107,8 +107,8 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
   set up a tablet/old phone on the tailnet and add `/kids` to its home screen.
 - **Scheduled tasks not registered yet** (need the user's chat id; commands in README "Chores agent"):
   `chores-weekly-payday` (Sun 5 PM) and optionally `chores-afternoon-check` (weekdays 4:30 PM). Neither has run
-  end to end; test the payday summary once real data exists. Reload agents (`/reload-plugins`) so the new `chores`
-  subagent is picked up.
+  end to end; test the payday summary once real data exists. Restart the agent worker if the new `chores`
+  subagent isn't picked up.
 - **Visual check pending:** the kids' page was verified by HTML/route tests and a live request, not eyeballed on a
   tablet. Check layout, tap targets, confetti/chime on the real device. (Read-aloud of chore names was removed 2026-10-12; add it back with the
   browser's `speechSynthesis` if the kids use the screen on their own and need to know the chore.)

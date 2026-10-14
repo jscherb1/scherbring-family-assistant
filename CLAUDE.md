@@ -56,7 +56,8 @@ Applies to all development work (features, fixes, docs), whether it comes from a
 3. **Check whether a service restart is needed.** Before calling work done, work out which running
    service picks up the change (dashboard, agent worker, orchestrator, scheduler; see
    `docs/OPERATIONS.md`) and restart it if needed, or tell the user it needs one. New or edited
-   `.claude/agents/*.md` files also need `/reload-plugins`. Say in the final message what was
+   `.claude/agents/*.md` files are picked up by a fresh agent session (restart the agent worker if it
+   doesn't see them); `/reload-plugins` is a terminal-session command and doesn't apply to the bridge. Say in the final message what was
    restarted, and whether the change was verified live or only by tests.
 
 ## Open to-dos and runbook
