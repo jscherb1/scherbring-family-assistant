@@ -138,8 +138,12 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       `system-ping-evening` 5:05pm); a Telegram alert fires once when a system goes down and once on recovery; an agent
       ping older than 30 h shows amber. Gmail/Home Assistant pings failed twice in the long-lived worker session because its cached `myhub` definition lacks the new tools; verify on the first scheduled (fresh-session) run, restarting the agent worker if still missing. Also unchecked: the `myhub` agent can call
       the Gmail `list_labels` / Home Assistant `GetDateTime` tools under its new tool list.
-- [ ] PR 3: move the COROS web reads (activities for `workout_sync`, HRV/load for day rating) to the health MCP; the web
-      login stays only for planned workouts and the library.
+- [x] PR 3 built 2026-10-14: `workout_sync` now reads activities from the health MCP (`querySportRecords`, matched the web
+      API's 16 activity days 9/11-10/12 exactly) and falls back to the web API if the MCP fails. MCP history only starts
+      ~2026-09-05, so deeper backfills need `--source web`. Day-rating metrics (`coros_wellness`) deliberately stay on
+      web: the MCP has no fatigue or daily training load, its resting HR is a different measure (53 vs 48 bpm), and its
+      load numbers differ, so switching would break the stored series. HRV matches, so it could move later. Verify the
+      6am `workouts-habit-sync` run reports `"source": "mcp"`.
 - [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
       `system_health` rows' `checked_at` after a few hours. Tune the 2 h interval as needed.
 - [ ] Hy-Vee's verdict is the daily credential check's, not a live probe (a headless browser every 2 h is too heavy).

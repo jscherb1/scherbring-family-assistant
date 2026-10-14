@@ -602,7 +602,7 @@ One-time setup: add `COROS_USERNAME`/`COROS_PASSWORD` to `~/.config/scherbring-a
 scripts when running them by hand on a machine with no display. Weekly trigger:
 `weekly-fitness-plan` scheduled task, Sundays 6pm — see **Scheduled tasks** above.
 
-**Workouts habit auto-log:** `scripts/fitness/workout_sync.py` reads recorded COROS activities (any type; several in a day = one workout; the plan/calendar is ignored) and logs one completion per day for the `Workouts` habit, idempotently. Registered as `workouts-habit-sync` (daily 6am, silent unless COROS login fails): `python scripts/scheduler_store.py add --name "workouts-habit-sync" --prompt "Run python scripts/fitness/workout_sync.py --days 3 ..." --cron "0 6 * * *" --target-chat-id "<chat_id>"`. Backfill: `python scripts/fitness/workout_sync.py --days 35`.
+**Workouts habit auto-log:** `scripts/fitness/workout_sync.py` reads recorded COROS activities (any type; several in a day = one workout; the plan/calendar is ignored) and logs one completion per day for the `Workouts` habit, idempotently. Registered as `workouts-habit-sync` (daily 6am, silent unless COROS login fails): `python scripts/scheduler_store.py add --name "workouts-habit-sync" --prompt "Run python scripts/fitness/workout_sync.py --days 3 ..." --cron "0 6 * * *" --target-chat-id "<chat_id>"`. Reads the COROS health MCP (history from ~9/5), falling back to the web API; `--source web` forces web for deeper backfills. Backfill: `python scripts/fitness/workout_sync.py --days 35`.
 
 See `docs/superpowers/specs/2026-08-20-fitness-agent-coros-login-design.md` and its
 two follow-on specs in the same directory for the full phased design and live
