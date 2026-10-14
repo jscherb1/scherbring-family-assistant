@@ -6,6 +6,8 @@ A thin wrapper over scripts/system_health.py (shared with the My Hub Systems til
 Usage:
     python scripts/system_health_store.py status
     python scripts/system_health_store.py check [--system KEY ...]     (script-side checks; default all)
+
+A system turning "down" (and later recovering) sends one Telegram message; staying down stays quiet.
     python scripts/system_health_store.py record KEY ok|warn|down|unknown [--detail TEXT]
         (for connector systems an agent just read from: todoist, calendar, gmail, home_assistant)
 
@@ -36,9 +38,9 @@ def main(argv=None) -> int:
         if a.cmd == "status":
             out = sh.get_status()
         elif a.cmd == "check":
-            out = sh.run_checks(a.system)
+            out = sh.run_checks(a.system, notify=sh.telegram_notify)
         else:
-            out = sh.record(a.key, a.status, a.detail)
+            out = sh.record(a.key, a.status, a.detail, notify=sh.telegram_notify)
     except sh.HealthError as e:
         print(json.dumps({"error": e.message}), file=sys.stderr)
         return e.code

@@ -16,7 +16,7 @@ def collect(conn, today):
         if s["status"] == "down":
             attention.append({"key": f"sys:{s['key']}", "href": "/health/system", "level": "warn",
                               "text": f"{s['label']} is down: {s['detail']}"})
-        elif s["status"] == "warn" and s["key"] in ("todoist", "calendar"):
+        elif s["status"] == "warn" and s["key"] in ("todoist", "calendar", "gmail", "home_assistant"):
             attention.append({"key": f"sys:{s['key']}", "href": "/health/system", "level": "info",
                               "text": f"{s['label']} data looks stale ({s['detail']})"})
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")

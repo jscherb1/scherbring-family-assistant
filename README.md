@@ -75,7 +75,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/myhub.py` | Shared My Hub service: runs every provider in `scripts/hub_providers/`, merges their needs-attention items into one ranked list, stores the calendar/task snapshot. Used by `myhub_store.py` and the dashboard `/me` page |
 | `scripts/myhub_store.py` | Zero-dep CLI over `myhub.py` for the myhub subagent (summary / attention / snapshot set / snapshot status) |
 | `scripts/system_health.py` | Shared integration-health service: one latest check result per system (COROS health + training hub, Open-Meteo, Drive, Monarch, Hy-Vee, plus Todoist, Calendar, Gmail, Home Assistant recorded by an agent). One failure is `warn`, two in a row `down`. Feeds the hub Systems tile and attention strip |
-| `scripts/system_health_store.py` | Zero-dep CLI over `system_health.py` (status / check / record) |
+| `scripts/system_health_store.py` | Zero-dep CLI over `system_health.py` (status / check / record); sends one Telegram alert when a system goes down and one on recovery |
 | `scripts/hub_providers/` | One module per hub area (habits, mood, body, schedule, weather, home, chores, system, insights). Drop in a module and its card and needs-attention items appear on the hub |
 | `scripts/dayrating.py` | Shared day-rating service (1-10 score + note per day, status, nudge check). The single code path used by `dayrating_store.py` and the dashboard |
 | `scripts/dayrating_store.py` | Zero-dep CLI over `dayrating.py` and `insights.py` for the dayrating subagent (rate/show/list/status/nudge, insights refresh/stats/save) |
@@ -422,6 +422,13 @@ python scripts/scheduler_store.py add --name "dayrating-nightly-nudge" \
 python scripts/scheduler_store.py add --name "dayrating-weekly-insights" \
   --prompt "Delegate to the dayrating subagent to run the weekly insights report (refresh sources, analyze, write and save the story, reply with a short summary and up to two suggestions for new data sources)." \
   --cron "30 19 * * 0" --target-chat-id "<your chat_id>"
+```
+
+Connector systems (Todoist, Calendar, Gmail, Home Assistant) are pinged by the `myhub` agent twice a day:
+```
+python scripts/scheduler_store.py add --name "system-ping-morning" \
+  --prompt "Delegate to the myhub subagent to ping the connector systems (Todoist, Google Calendar, Gmail, Home Assistant) and record each result. Silent unless a ping failed." \
+  --cron "35 6 * * *" --target-chat-id "<your chat_id>"   # and "5 17 * * *" for system-ping-evening
 ```
 
 ## My Hub (the personal command page)

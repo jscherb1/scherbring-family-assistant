@@ -134,9 +134,10 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## System health (PR 1 built 2026-10-14)
 
-- [ ] PR 2: agent pings for Todoist, Calendar, Gmail and Home Assistant (`system_health_store.py record`), and a
-      Telegram alert when a system goes down (state change only). Until then Todoist/Calendar are inferred from the hub
-      sync and Gmail/Home Assistant show "not checked yet".
+- [x] PR 2 built 2026-10-14: `myhub` agent pings Todoist, Calendar, Gmail, Home Assistant (`system-ping-morning` 6:35am,
+      `system-ping-evening` 5:05pm); a Telegram alert fires once when a system goes down and once on recovery; an agent
+      ping older than 30 h shows amber. Gmail/Home Assistant pings failed twice in the long-lived worker session because its cached `myhub` definition lacks the new tools; verify on the first scheduled (fresh-session) run, restarting the agent worker if still missing. Also unchecked: the `myhub` agent can call
+      the Gmail `list_labels` / Home Assistant `GetDateTime` tools under its new tool list.
 - [ ] PR 3: move the COROS web reads (activities for `workout_sync`, HRV/load for day rating) to the health MCP; the web
       login stays only for planned workouts and the library.
 - [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
