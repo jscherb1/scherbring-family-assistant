@@ -47,6 +47,9 @@
       "Bash(python scripts/fitness/workout_sync.py *)",
       "Bash(python scripts/telegram_send.py *)",
       "Bash(python scripts/monarch_result.py *)",
+      "mcp__claude_ai_Gmail__list_labels",
+      "mcp__claude_ai_Home_Assistant__llm__GetDateTime",
+      "Edit(state/myhub_tmp/**)",
       "Edit(state/finance_reports/**)",
       "Edit(state/retirement/**)"
     ],

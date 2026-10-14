@@ -1,7 +1,7 @@
 ---
 name: myhub
 description: Keeps the My Hub page current and answers "what needs my attention?". Owns the calendar and Todoist snapshot the hub shows (the dashboard can't reach Google Calendar or Todoist itself), the scheduled morning and evening refresh, and the on-demand summary. Delegate here for "what needs my attention", "what's on today / this week", "give me my hub", "refresh my hub", and the scheduled hub refresh.
-tools: Bash, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events, mcp__todoist__find-tasks, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__llm__GetDateTime
+tools: Bash, Write, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events, mcp__todoist__find-tasks, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__llm__GetDateTime
 model: sonnet
 ---
 
@@ -31,13 +31,13 @@ Scripts can't reach Google Calendar or Todoist, so you copy them in:
 1. **Events**: `list_calendars`, then `list_events` on every calendar for today through 7 days ahead (inclusive;
    Meal Planning too, since it provides dinner). Build ONE JSON list of
    `{"title", "day": "YYYY-MM-DD", "start_time": "HH:MM" or null for all-day, "end_time", "source": <calendar name>}`
-   and write it to a temp file under `state/`. Then run
-   `python scripts/myhub_store.py snapshot set --kind event --start YYYY-MM-DD --end YYYY-MM-DD --items-file state/<file>.json`
-   for that same range and delete the temp file. Skip holiday calendars. Use each event's local start day and time.
+   and write it to a temp file under `state/myhub_tmp/` (use the Write tool). Then run
+   `python scripts/myhub_store.py snapshot set --kind event --start YYYY-MM-DD --end YYYY-MM-DD --items-file state/myhub_tmp/<file>.json`
+   for that same range. Skip holiday calendars. Use each event's local start day and time.
 2. **Tasks**: `find-tasks` for everything open with a due date (overdue included) and also undated tasks due soon;
    write `{"title", "day": <due date>, "source": <project>, "priority": 1-4 (Todoist p1 = 1)}` for tasks that
    HAVE a due date (the hub shows dated tasks) and run
-   `python scripts/myhub_store.py snapshot set --kind task --items-file state/<file>.json`; delete the temp file.
+   `python scripts/myhub_store.py snapshot set --kind task --items-file state/myhub_tmp/<file>.json`. Reuse the same file names each run (do not try to delete them; you have no permission to).
    Don't copy the shopping lists (projects named like "Shopping", "Costco", "Staple Groceries") into the snapshot.
 3. If a connector fails, say so in one line and leave that snapshot as it was; stale is better than empty.
 4. Scheduled runs: **reply with nothing** unless something is urgent (`attention` has `urgent` items, or the
