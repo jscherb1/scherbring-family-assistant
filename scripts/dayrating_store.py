@@ -20,6 +20,9 @@ Usage:
     python scripts/dayrating_store.py insights save --narrative "..." [--days 90]
     python scripts/dayrating_store.py insights latest
 
+    python scripts/dayrating_store.py calendar sync --start YYYY-MM-DD --end YYYY-MM-DD --events-file PATH|-
+    python scripts/dayrating_store.py calendar status
+
 All commands print JSON to stdout. Errors are {"error": ...} on stderr with exit code 1
 (not found) or 2 (bad input).
 """
@@ -30,6 +33,7 @@ import argparse
 import json
 import sys
 
+import calendar_load
 import dayrating
 import insights
 
@@ -68,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--narrative", required=True)
     p.add_argument("--days", type=int, default=90)
     ins.add_parser("latest")
+    cal = sub.add_parser("calendar").add_subparsers(dest="ccmd", required=True)
+    p = cal.add_parser("sync")
+    p.add_argument("--start", required=True)
+    p.add_argument("--end", required=True)
+    p.add_argument("--events-file", required=True, help="JSON list of events, or - for stdin")
+    cal.add_parser("status")
     return ap
 
 
@@ -87,6 +97,18 @@ def run(args) -> int:
         _print(dayrating.status())
     elif args.cmd == "nudge":
         _print(dayrating.needs_nudge())
+    elif args.cmd == "calendar":
+        if args.ccmd == "status":
+            _print(calendar_load.status())
+        else:
+            try:
+                raw = sys.stdin.read() if args.events_file == "-" else open(args.events_file, encoding="utf-8").read()
+                events = json.loads(raw)
+            except (OSError, ValueError) as exc:
+                raise insights.InsightError(f"cannot read events: {exc}", 2)
+            if not isinstance(events, list):
+                raise insights.InsightError("events must be a JSON list", 2)
+            _print(calendar_load.sync(events, args.start, args.end))
     elif args.icmd == "refresh":
         _print(insights.refresh(days=args.days, only=args.source))
     elif args.icmd == "stats":
