@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "habits/_calendar.html" import month %}
+
+{% block page_header %}
+  <h1>Habit analysis</h1>
+  <p class="subtitle">All active habits together, last {{ data.weeks if not data.error else 12 }} weeks. More views will be added here over time.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <section class="card">
+    <h2>Habits done per day</h2>
+    <p class="muted">Each square is a day; darker means more habits logged. {{ data.active_days }} active days in this window.</p>
+    <div class="hcal-pair hcal-triple">{% for g in data.months %}{{ month(g, data.max_count) }}{% endfor %}</div>
+  </section>
+
+  <section class="card">
+    <h2>Per habit</h2>
+    {% if data.habits %}
+    <table class="habit-table">
+      <thead><tr><th>Habit</th><th>Days done</th><th>Last 30 days</th><th>Best day</th><th>Weekly (oldest → this week)</th></tr></thead>
+      <tbody>
+      {% for h in data.habits %}
+        <tr>
+          <td data-label="Habit"><a href="/habits">{{ h.name }}</a>{% if h.owner %} <span class="pill pill-muted">{{ h.owner }}</span>{% endif %}</td>
+          <td data-label="Days done">{{ h.days_done }}</td>
+          <td data-label="Last 30 days">{{ h.last_30_days }}</td>
+          <td data-label="Best day">{{ h.best_weekday or '–' }}</td>
+          <td data-label="Weekly">
+            <span class="spark">{% for n in h.weekly_days %}<i class="l{{ [n, 4]|min }}" title="{{ n }} day{{ '' if n == 1 else 's' }}"></i>{% endfor %}</span>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty-state">No active habits.</div>{% endif %}
+  </section>
+{% endif %}
+{% endblock %}

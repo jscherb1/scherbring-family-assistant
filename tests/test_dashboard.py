@@ -252,7 +252,7 @@ def client(state):
     "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
     "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
-    "/habits", "/habits?owner=Justin", "/api/habits",
+    "/habits", "/habits?owner=Justin", "/api/habits", "/habits/analysis", "/api/habits/analysis",
     "/chores", "/chores/manage", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
@@ -414,6 +414,21 @@ def test_habits_ui_and_service_share_data(client, state):
     assert any(h["id"] == hid for h in client.get("/api/habits").json()["habits"])
     client.post(f"/habits/{hid}/log", headers={"HX-Request": "true"})
     assert service.get_status(hid, db_path=state / "agent_results.db")["done_this_period"] == 1
+
+
+def test_habits_calendar_and_analysis_share_service_data(client, state):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import habits as service
+    db = state / "agent_results.db"
+    hid = service.create_habit("Stretch", "daily", 1, db_path=db)["id"]
+    service.log_completion(hid, db_path=db)
+    cal = client.get(f"/api/habits/{hid}/calendar").json()
+    assert cal == service.calendar(hid, db_path=db) and cal["days_done"] == 1
+    assert 'data-flip' in client.get("/habits").text and "hcal-day on" in client.get("/habits").text
+    ana = client.get("/api/habits/analysis").json()
+    assert ana["habits"][0]["days_done"] == 1 and ana["active_days"] == 1
+    assert "Habit analysis" in client.get("/habits/analysis").text
+    assert client.get("/api/habits/nope/calendar").status_code == 404
 
 
 def test_habits_write_errors_and_origin_guard(client):

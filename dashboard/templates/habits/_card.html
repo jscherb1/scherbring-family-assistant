@@ -1,9 +1,11 @@
 <article class="card habit-card{{ ' paused' if h.error is not defined and not h.active }}{{ ' at-risk' if h.at_risk }}"
          {% if h.id %}id="habit-{{ h.id }}"{% endif %}>
+{% from "habits/_calendar.html" import month %}
 {% if h.error %}
   <div class="error-state">{{ h.error }}</div>
 {% else %}
   {% set per = 'today' if h.frequency == 'daily' else 'this week' %}
+  <div class="habit-face habit-front">
   <header class="habit-head">
     <div>
       <h3 class="habit-name">{{ h.name }}</h3>
@@ -58,5 +60,17 @@
             hx-target="#habit-{{ h.id }}" hx-swap="outerHTML">Resume</button>
   </div>
   {% endif %}
+  <button class="link-button habit-flip" type="button" data-flip title="Show calendar">📅 Calendar</button>
+  </div>
+  <div class="habit-face habit-back" hidden>
+    <div class="habit-back-head">
+      <strong>{{ h.name }}</strong>
+      <span class="muted">{{ h.calendar.days_done if h.calendar else 0 }} days in view</span>
+    </div>
+    {% if h.calendar %}
+    <div class="hcal-pair">{% for g in h.calendar.months %}{{ month(g, 1) }}{% endfor %}</div>
+    {% endif %}
+    <button class="link-button habit-flip" type="button" data-flip>← Back</button>
+  </div>
 {% endif %}
 </article>

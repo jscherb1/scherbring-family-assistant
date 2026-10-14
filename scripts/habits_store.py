@@ -22,6 +22,8 @@ Usage:
         (removes the most recently entered log)
     python scripts/habits_store.py log list --habit <ref> [--limit 20]
 
+    python scripts/habits_store.py calendar [--habit <ref>] [--months 2]
+    python scripts/habits_store.py analysis [--weeks 12]
     python scripts/habits_store.py at-risk [--nudge]
         (habits whose streak breaks if not done soon; --nudge applies the nudge settings)
 
@@ -89,6 +91,17 @@ def cmd_habit_list(args) -> int:
 
 def cmd_habit_show(args) -> int:
     _print(habits.get_status(_habit_id(args)))
+    return 0
+
+
+def cmd_calendar(args) -> int:
+    ref = _habit_id(args) if args.habit else None
+    _print(habits.calendar(ref, months=args.months))
+    return 0
+
+
+def cmd_analysis(args) -> int:
+    _print(habits.analysis(weeks=args.weeks))
     return 0
 
 
@@ -182,6 +195,15 @@ def build_parser() -> argparse.ArgumentParser:
     ar = sub.add_parser("at-risk", help="Habits whose streak breaks if not done soon.")
     ar.add_argument("--nudge", action="store_true", help="Apply nudge settings (global switch + per-habit remind).")
     ar.set_defaults(func=cmd_at_risk)
+
+    cal = sub.add_parser("calendar", help="Month grids of days done (one habit, or all habits combined).")
+    cal.add_argument("--habit", default=None, help="Omit for habits-done-per-day across all active habits.")
+    cal.add_argument("--months", type=int, default=2)
+    cal.set_defaults(func=cmd_calendar)
+
+    an = sub.add_parser("analysis", help="Cross-habit rollup: totals, weekday pattern, weekly strip.")
+    an.add_argument("--weeks", type=int, default=12)
+    an.set_defaults(func=cmd_analysis)
 
     cfg = sub.add_parser("config", help="Nudge settings.")
     cs = cfg.add_subparsers(dest="subcommand", required=True)

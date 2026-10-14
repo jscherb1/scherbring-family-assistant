@@ -134,3 +134,5 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 ## Not started (ideas, from README "Backlog")
 
 See the Backlog section of `README.md`.
+
+- [ ] `workouts-habit-sync` (daily 6am, registered 2026-10-14): script live-tested and backfilled by hand, but the scheduled dispatch has not fired yet. Check the 10/15 run in `scheduler_store.py runs`. Note COROS allows one web session per account, so a fresh login signs Justin out of COROS elsewhere.
