@@ -197,7 +197,7 @@
     {% if sy %}
     <section class="hub-panel">
       <header><span class="hub-label">Systems</span></header>
-      <ul class="sys">{% for l in sy.logins %}<li class="{{ l.status }}"><i class="dot {{ 'ok' if l.status == 'ok' else 'warn' }}"></i>{{ l.label }}</li>{% endfor %}</ul>
+      <ul class="sys">{% for l in sy.logins %}<li class="{{ l.status }}" title="{{ l.detail }}"><i class="dot {{ 'ok' if l.status == 'ok' else ('off' if l.status == 'unknown' else ('urgent' if l.status == 'down' else 'warn')) }}"></i>{{ l.label }}{% if l.status == 'unknown' %} <span class="hub-dim">not checked yet</span>{% elif l.status != 'ok' %} <span class="hub-dim">{{ l.detail }}</span>{% endif %}</li>{% endfor %}</ul>
       <p class="hub-dim">{{ sy.failed_24h }} failed task{{ '' if sy.failed_24h == 1 else 's' }} in 24h</p>
     </section>
     {% endif %}

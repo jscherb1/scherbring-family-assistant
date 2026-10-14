@@ -595,3 +595,15 @@ CREATE TABLE IF NOT EXISTS hub_items (
     synced_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_hub_items_kind_day ON hub_items (kind, day);
+
+-- System health: one row per integration with the result of its latest check. Script-side checks are run by
+-- `system_health_store.py check`; connector systems (Todoist, Calendar, Gmail, Home Assistant) are recorded by an
+-- agent via `system_health_store.py record`. Read by the My Hub Systems tile.
+CREATE TABLE IF NOT EXISTS system_health (
+    key         TEXT PRIMARY KEY,        -- e.g. coros_mcp, todoist
+    status      TEXT NOT NULL,           -- ok | warn | down | unknown
+    detail      TEXT,
+    checked_at  TEXT NOT NULL,           -- local ISO
+    last_ok_at  TEXT,
+    fail_streak INTEGER NOT NULL DEFAULT 0
+);

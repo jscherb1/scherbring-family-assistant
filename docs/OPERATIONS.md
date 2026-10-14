@@ -16,6 +16,7 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 | `assistant-scheduler.timer` | every 2 min: run due scheduled tasks (`scripts/scheduler_dispatch.py`) |
 | `assistant-watchdog.timer` | every 2 min: Telegram-health and scheduler-health checks, log pruning |
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
+| `assistant-system-health.timer` | every 2 h: integration health checks, shown on the My Hub Systems tile (`python scripts/system_health_store.py status`) |
 | `assistant-credential-check.timer` | daily 09:30: warn before Hy-Vee, Drive, Monarch logins expire |
 | `assistant-backup.timer` | daily 03:15: back up the database, memory notes and secrets |
 | `assistant-dashboard.service` | optional web dashboard (`dashboard/README.md`): health, scheduled tasks, restart history, logins/backups, home & yard, family, finance, Hy-Vee, fitness, meals, habits, activity (view-only except the habits page, which logs/undoes/pauses habits through the shared `scripts/habits.py` service, and the Summary page's one-shot "ask" box, which queues a message for the agent and is answered in Telegram; the iOS Shortcut posts to `POST /api/ask` (`text` field, tagged `via="ios"`); `DASHBOARD_ASK_CHAT_ID` overrides the chat, default is the first `BRIDGE_ALLOWED_CHAT_IDS`). Binds `DASHBOARD_HOST` (127.0.0.1 unless a drop-in overrides it) |
