@@ -253,6 +253,7 @@ def client(state):
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
     "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
     "/habits", "/habits?owner=Justin", "/api/habits", "/habits/analysis", "/api/habits/analysis",
+    "/rating", "/rating/insights", "/api/rating", "/api/rating/insights",
     "/chores", "/chores/manage", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
@@ -374,7 +375,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     assert client.delete("/api/recipes/r1").status_code == 405
     allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore",
                "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
-               "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update",
+               "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
                "/chores/payout", "/chores/backfill", "/chores/undo",
                "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo"}
@@ -874,3 +875,19 @@ def test_recipes_ui_and_service_share_data(client, state):
     client.post(f"/meals/{rid}/delete")
     with pytest.raises(service.RecipeError):
         service.get_recipe(rid, db_path=db)
+
+
+# ---- day rating (shared services: scripts/dayrating.py, scripts/insights.py) ----
+
+def test_rating_ui_and_service_share_data(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import dayrating as service
+    r = client.post("/rating", data={"score": "8", "note": "good <b>day"}, headers={"Origin": "http://testserver"},
+                    follow_redirects=False)
+    assert r.status_code == 303
+    assert service.get_rating(db_path=state / "agent_results.db")["score"] == 8
+    assert client.get("/api/rating").json()["status"]["today"]["note"] == "good <b>day"
+    assert "<b>day" not in client.get("/rating").text
+    r = client.post("/rating", data={"score": "11"}, headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert "between" in r.headers["location"]

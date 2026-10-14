@@ -46,6 +46,7 @@ other family members.
 | Fitness | Overview | `/fitness` | This week's plan, COROS push status, library. Planned workouts only (no completion tracking) |
 | Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe; add, edit and delete recipes (same service as the meal-planner agent, `scripts/recipes.py`) |
 | | Menu & Insights | `/meals/plan` | Upcoming menu (from the meal-planner's logged plans), recently cooked, stale recipes, collection counts |
+| Day Rating | Today, Insights | `/rating`, `/rating/insights` | Rate a day 1-10 with a note (same `scripts/dayrating.py` service as the `dayrating` agent), recent ratings, then the stats on what moves the score (`scripts/insights.py`), the AI-written weekly story and the data-source list |
 | Habits | Analysis | `/habits/analysis` | Combined habits-done-per-day calendar (3 months) and a per-habit table (days done, last 30 days, best weekday, weekly strip); the place to grow cross-habit analysis. Same `scripts/habits.py` service (`analysis`) |
 | Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, a 📅 Calendar flip on each card (2 months of days done), add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
 | Chores | Today, Chores & kids, Money | `/chores`, `/chores/manage`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, balances and payouts, and fixing a missed or mistaken completion. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |
@@ -101,7 +102,7 @@ an entry to `SECTIONS` in `web.py` (that entry drives the navigation).
 
 - New features follow the **"New feature standard"** in the repo `CLAUDE.md`: the data module and write
   routes call one shared service in `scripts/` (as `routers/habits.py` does), never their own copy of the rules.
-- Read-only except `POST /ask`, the habits write routes (`POST /habits...`) and the chore-chart write routes
+- Read-only except `POST /ask`, the habits write routes (`POST /habits...`), the day-rating write route (`POST /rating`) and the chore-chart write routes
   (`POST /chores...`, `POST /kids/...`), all same-origin guarded and going through `scripts/habits.py` /
   `scripts/chores.py`: the app opens `state/agent_results.db` in SQLite read-only mode
   and only reads files under `state/`; the ask box is the sole write (one row in `state/inbox.db`).

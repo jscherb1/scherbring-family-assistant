@@ -121,6 +121,16 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - Later ideas: per-kid themes and reading level, family team quest, streak freeze, Home Assistant speaker nudge
   (`HassBroadcast`) when chores are still open.
 
+## Day rating + insights (built 2026-10-14)
+
+- [ ] Registered `dayrating-nightly-nudge` (8:30 PM) and `dayrating-weekly-insights` (Sun 7:30 PM); neither has fired yet.
+      Check the first runs in `scheduler_store.py runs`. The agent file needs `/reload-plugins` before delegation works.
+- [ ] The AI narrative path (agent writes and saves a story) is untested end to end until there are 10+ rated days.
+- [ ] Phase 2 sources not built: Google Calendar load (events, shifts, travel), Monarch spending (skip or discount the
+      latest day, charges post late), chores/kids activity, COROS sleep duration (not found in `/analyse/dayDetail`;
+      look for another endpoint), COROS wellness-check/stress if exposed.
+- [ ] Later: optional second score (energy/stress), quick manual questions in the nightly nudge, tags from notes.
+
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 
 - `habits-daily-nudge` is registered (daily 7 PM) and live-tested 2026-10-12: silent path verified (nothing at risk).

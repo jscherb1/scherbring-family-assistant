@@ -534,3 +534,34 @@ CREATE TABLE IF NOT EXISTS chore_config (
     value       TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+
+-- Day rating + insights. Shared services: scripts/dayrating.py (the 1-10 rating with a note) and
+-- scripts/insights.py (pluggable daily-metric sources, correlation stats, stored AI narratives).
+CREATE TABLE IF NOT EXISTS day_ratings (
+    id           TEXT PRIMARY KEY,       -- uuid4
+    rating_date  TEXT NOT NULL UNIQUE,   -- YYYY-MM-DD the rating is for (one per day, re-rating edits it)
+    score        INTEGER NOT NULL,       -- 1..10
+    note         TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+-- One value per (metric, day), written by the source modules in scripts/insight_sources/. A new
+-- source just writes rows here and the analysis picks its metrics up automatically.
+CREATE TABLE IF NOT EXISTS insight_daily (
+    metric      TEXT NOT NULL,           -- e.g. 'habit:Workouts', 'weather:precip_in', 'coros:sleep_hours'
+    day         TEXT NOT NULL,           -- YYYY-MM-DD
+    value       REAL NOT NULL,
+    source      TEXT NOT NULL,           -- source module name
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (metric, day)
+);
+CREATE INDEX IF NOT EXISTS idx_insight_daily_day ON insight_daily (day);
+
+CREATE TABLE IF NOT EXISTS insight_reports (
+    id          TEXT PRIMARY KEY,        -- uuid4
+    created_at  TEXT NOT NULL,
+    period_days INTEGER NOT NULL,
+    stats_json  TEXT NOT NULL,           -- the statistics the narrative was written from
+    narrative   TEXT NOT NULL            -- AI-written story (the insights subagent)
+);
