@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Day insights</h1>
+  <p class="subtitle">What moves your day rating, from habits, weather, the day of the week and COROS recovery data. Last {{ data.days if not data.error else 90 }} days.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% set st = data.stats %}
+  <section class="card">
+    <h2>The story</h2>
+    {% if data.report %}
+      <p class="muted">Written {{ data.report.created_at }} by the assistant from the numbers below.</p>
+      <div style="white-space: pre-wrap">{{ data.report.narrative }}</div>
+    {% else %}
+      <div class="empty-state">No written report yet. The weekly insights task writes one (or ask the assistant "why was my week good or bad?").</div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>What the numbers say</h2>
+    {% if not st.enough_data %}
+      <div class="empty-state">{{ st.ratings.count }} of {{ st.min_days_needed }} rated days so far. Findings appear once there's enough data; rate each day and they will build up.</div>
+    {% elif st.findings %}
+    <table class="habit-table">
+      <thead><tr><th>Factor</th><th>Link to rating</th><th>Days</th><th>Confidence</th></tr></thead>
+      <tbody>
+      {% for f in st.findings[:15] %}
+        <tr>
+          <td data-label="Factor">{{ f.metric }}</td>
+          <td data-label="Link">
+            {% if f.kind == 'yes_no' %}{{ f.avg_rating_with }} with vs {{ f.avg_rating_without }} without ({{ '%+.1f'|format(f.effect) }})
+            {% else %}{{ f.direction }} when higher (r {{ f.correlation }}){% endif %}
+          </td>
+          <td data-label="Days">{{ f.n }}</td>
+          <td data-label="Confidence"><span class="pill {{ 'pill-ok' if f.confidence in ('solid', 'emerging') else 'pill-muted' }}">{{ f.confidence }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">{{ st.caveats[0] }}</p>
+    {% else %}<div class="empty-state">No findings yet.</div>{% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Data sources</h2>
+    <table class="habit-table">
+      <thead><tr><th>Source</th><th>What</th><th>Metrics</th><th>Coverage</th></tr></thead>
+      <tbody>
+      {% for s in st.sources %}
+        <tr>
+          <td data-label="Source">{{ s.name }}</td><td data-label="What">{{ s.description }}</td>
+          <td data-label="Metrics">{{ s.metrics }}</td>
+          <td data-label="Coverage">{% if s.first_day %}{{ s.first_day }} to {{ s.last_day }}{% else %}not collected yet{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">New sources are picked up automatically once they're added.</p>
+  </section>
+{% endif %}
+{% endblock %}

@@ -97,6 +97,15 @@ SECTIONS = [
         ],
     },
     {
+        "key": "dayrating",
+        "label": "Day Rating",
+        "href": "/rating",
+        "pages": [
+            {"key": "today", "label": "Today", "href": "/rating"},
+            {"key": "insights", "label": "Insights", "href": "/rating/insights"},
+        ],
+    },
+    {
         "key": "chores",
         "label": "Chores",
         "href": "/chores",
