@@ -80,3 +80,26 @@ def test_cli_status_and_record(db, monkeypatch, capsys):
     assert system_health_store.main(["status"]) == 0
     assert {s["key"]: s for s in json.loads(capsys.readouterr().out)}["gmail"]["status"] == "ok"
     assert system_health_store.main(["record", "bogus", "ok"]) == 2
+
+
+def test_alert_only_on_change_into_down_and_on_recovery(db):
+    sent = []
+    for status in ("warn", "warn", "warn", "ok", "ok"):
+        sh.record("gmail", status, "x", db_path=db, notify=sent.append)
+    assert len(sent) == 2
+    assert "Gmail is down" in sent[0] and "working again" in sent[1]
+
+
+def test_no_alert_for_first_check_ok_or_single_warn(db):
+    sent = []
+    sh.record("gmail", "ok", db_path=db, notify=sent.append)
+    sh.record("gmail", "warn", db_path=db, notify=sent.append)
+    assert sent == []
+
+
+def test_stale_agent_ping_becomes_warn(db):
+    from datetime import datetime, timedelta
+    old = datetime.now().astimezone() - timedelta(hours=40)
+    sh.record("gmail", "ok", "read ok", db_path=db, now=old)
+    g = by_key(db)["gmail"]
+    assert g["status"] == "warn" and "ping stopped" in g["detail"]

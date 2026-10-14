@@ -42,6 +42,7 @@ SYSTEMS = {
 # Hub snapshot freshness stands in for a live ping on these until an agent records one.
 SNAPSHOT_FALLBACK = {"todoist": "task", "calendar": "event"}
 STALE_HOURS = 24
+PING_STALE_HOURS = 30  # an agent-recorded result older than this means the twice-daily ping stopped running
 DOWN_AFTER = 2  # consecutive failures before a check is called "down" (one blip is only "warn")
 
 
@@ -60,8 +61,22 @@ def _now() -> datetime:
     return datetime.now().astimezone()
 
 
-def record(key: str, status: str, detail: str = "", *, db_path=None, now: datetime | None = None) -> dict:
-    """Save one check result. A single failure is "warn"; DOWN_AFTER in a row is "down"."""
+def telegram_notify(message: str) -> None:
+    """Best-effort Telegram alert via the direct Bot API script; never raises (an alert failure must not hide a check)."""
+    import subprocess
+    try:
+        subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "telegram_send.py"), message],
+                       timeout=30, check=False, capture_output=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def record(key: str, status: str, detail: str = "", *, db_path=None, now: datetime | None = None,
+           notify=None) -> dict:
+    """Save one check result. A single failure is "warn"; DOWN_AFTER in a row is "down".
+
+    `notify(message)` is called only on a state change into "down" or back from "down" to "ok", so a system that
+    stays down alerts once, not every check."""
     if key not in SYSTEMS:
         raise HealthError(f"unknown system {key!r}; known: {', '.join(SYSTEMS)}")
     if status not in STATUSES:
@@ -70,6 +85,7 @@ def record(key: str, status: str, detail: str = "", *, db_path=None, now: dateti
     conn = connect(db_path)
     try:
         prev = conn.execute("SELECT * FROM system_health WHERE key=?", (key,)).fetchone()
+        prev_status = prev["status"] if prev else None
         streak = prev["fail_streak"] if prev else 0
         last_ok = prev["last_ok_at"] if prev else None
         if status == "ok":
@@ -85,9 +101,14 @@ def record(key: str, status: str, detail: str = "", *, db_path=None, now: dateti
                 "ON CONFLICT(key) DO UPDATE SET status=excluded.status, detail=excluded.detail, "
                 "checked_at=excluded.checked_at, last_ok_at=excluded.last_ok_at, fail_streak=excluded.fail_streak",
                 (key, status, detail, now_s, last_ok, streak))
-        return {"key": key, "status": status, "detail": detail, "checked_at": now_s, "fail_streak": streak}
     finally:
         conn.close()
+    label = SYSTEMS[key][0]
+    if notify and status == "down" and prev_status != "down":
+        notify(f"🔴 {label} is down: {detail}")
+    elif notify and status == "ok" and prev_status == "down":
+        notify(f"🟢 {label} is working again.")
+    return {"key": key, "status": status, "detail": detail, "checked_at": now_s, "fail_streak": streak}
 
 
 # ---- script-side checks: each returns (status, detail) ----
@@ -156,7 +177,7 @@ SCRIPT_CHECKS = {"coros_mcp": check_coros_mcp, "coros_web": check_coros_web, "op
                  "drive": check_drive, "monarch": check_monarch, "hyvee": check_hyvee}
 
 
-def run_checks(keys=None, *, db_path=None) -> list[dict]:
+def run_checks(keys=None, *, db_path=None, notify=None) -> list[dict]:
     out = []
     for key in keys or SCRIPT_CHECKS:
         if key not in SCRIPT_CHECKS:
@@ -165,13 +186,13 @@ def run_checks(keys=None, *, db_path=None) -> list[dict]:
             status, detail = SCRIPT_CHECKS[key]()
         except Exception as e:  # noqa: BLE001 - a crashing check is a finding, not a crash
             status, detail = "warn", f"check crashed: {e}"[:160]
-        out.append(record(key, status, detail, db_path=db_path))
+        out.append(record(key, status, detail, db_path=db_path, notify=notify))
     return out
 
 
 def get_status(*, db_path=None, now: datetime | None = None) -> list[dict]:
     """Every known system with its latest result. Never omits one: an unchecked system says so."""
-    now = now or _now()
+    now = (now or _now()).astimezone()
     conn = connect(db_path)
     try:
         rows = {r["key"]: dict(r) for r in conn.execute("SELECT * FROM system_health")}
@@ -187,9 +208,13 @@ def get_status(*, db_path=None, now: datetime | None = None) -> list[dict]:
         if r:
             item.update(status=r["status"], detail=r["detail"] or "", checked_at=r["checked_at"],
                         last_ok_at=r["last_ok_at"])
+            if where == "agent" and r["status"] == "ok":
+                age = (now - datetime.fromisoformat(r["checked_at"]).astimezone()).total_seconds() / 3600
+                if age > PING_STALE_HOURS:
+                    item.update(status="warn", detail=f"last ping {age:.0f}h ago (the agent ping stopped?)")
         elif key in SNAPSHOT_FALLBACK and snaps.get(SNAPSHOT_FALLBACK[key]):
             at = snaps[SNAPSHOT_FALLBACK[key]]
-            age = (now.replace(tzinfo=None) - datetime.fromisoformat(at)).total_seconds() / 3600
+            age = (now.replace(tzinfo=None) - datetime.fromisoformat(at).replace(tzinfo=None)).total_seconds() / 3600
             item.update(status="ok" if age <= STALE_HOURS else "warn", checked_at=at,
                         detail=f"inferred from the hub sync {age:.0f}h ago")
         out.append(item)
