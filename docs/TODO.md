@@ -124,15 +124,21 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 ## Day rating + insights (built 2026-10-14)
 
 - [ ] Registered `dayrating-nightly-nudge` (8:30 PM) and `dayrating-weekly-insights` (Sun 7:30 PM); neither has fired yet.
-      Check the first runs in `scheduler_store.py runs`. The agent file needs `/reload-plugins` before delegation works.
+      Check the first runs in `scheduler_store.py runs`. 
 - [ ] The AI narrative path (agent writes and saves a story) is untested end to end until there are 10+ rated days.
 - [x] Calendar load source built 2026-10-14 (`calendar_load` table, `dayrating_store.py calendar sync`; agent syncs
       before each refresh). The scheduled nightly/weekly runs haven't exercised the sync yet.
-- [x] COROS sleep duration probed 2026-10-14: not in Training Hub's web API (`/analyse/*`, `/dashboard/*`, `/profile/*`
-      only expose sleep HRV, resting HR, fatigue). Sleep and wake times live only in the Coros phone app unless
-      Coros's mobile API is reverse-engineered; alternative: Home Assistant presence/bed sensors.
+- [x] COROS sleep, steps and stress built 2026-10-14 as the `coros_health` source, via COROS's official MCP server
+      (`scripts/fitness/coros_mcp.py`; the Training Hub web API has no sleep). One-time browser sign-in done; the
+      refresh token renews itself (~30 day access tokens). If it ever fails, re-run `coros_mcp.py auth-url` /
+      `auth-finish`. The nightly/weekly `insights refresh` pulls it, so no separate sync task. Not yet used:
+      naps. Wellness-check readings (`coros:wellness_*`, one query per day, last 60 days; ~3 days of data so far)
+      and recovery (`coros:recovery_pct`; the server only gives a live snapshot, so it is stamped on each refresh day and
+      builds up over time) were added 2026-10-14. Sparse-data guard: a metric needs 10 paired rated days (14 for
+      wellness) before it is analysed; below that it is listed in `not_enough_data` with its day count. Regular
+      wellness checks would help. A full refresh now takes ~50s because of the per-day wellness calls.
 - [ ] Phase 2 sources not built: Monarch spending (skip or discount the
-      latest day, charges post late), chores/kids activity, COROS wellness-check/stress if exposed.
+      latest day, charges post late), chores/kids activity.
 - [ ] Later: optional second score (energy/stress), quick manual questions in the nightly nudge, tags from notes.
 
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)

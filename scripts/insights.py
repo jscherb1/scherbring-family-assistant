@@ -38,6 +38,7 @@ import dayrating  # noqa: E402
 
 MIN_DAYS = 10          # paired days needed before a metric is analysed
 SOLID_DAYS = 28        # paired days needed before a finding can be "solid"
+MIN_DAYS_BY_PREFIX = {"coros:wellness_": 14}  # sparse, irregularly-taken readings need more paired days
 MIN_GROUP = 3          # days in each side of a 0/1 comparison
 PERMUTATIONS = 2000
 
@@ -183,10 +184,14 @@ def _confidence(n: int, p: float) -> str:
     return "none"
 
 
-def analyze_pair(x: list[float], y: list[float], seed: int = 0) -> dict | None:
+def min_days_for(metric: str) -> int:
+    return max([MIN_DAYS] + [n for prefix, n in MIN_DAYS_BY_PREFIX.items() if metric.startswith(prefix)])
+
+
+def analyze_pair(x: list[float], y: list[float], seed: int = 0, min_days: int = MIN_DAYS) -> dict | None:
     """Relationship of metric x to rating y over paired days, or None when there isn't enough data."""
     n = len(x)
-    if n < MIN_DAYS or len(set(x)) < 2 or len(set(y)) < 2:
+    if n < min_days or len(set(x)) < 2 or len(set(y)) < 2:
         return None
     binary = set(x) <= {0.0, 1.0}
     out = {"n": n}
@@ -239,9 +244,11 @@ def analyze(*, days: int = 90, db_path=None, today: date | None = None) -> dict:
                 if src_day in series[metric]:
                     xs.append(series[metric][src_day])
                     ys.append(score)
-            res = analyze_pair(xs, ys, seed=zlib.crc32(f"{metric}|{lag}".encode()))
+            res = analyze_pair(xs, ys, seed=zlib.crc32(f"{metric}|{lag}".encode()),
+                               min_days=min_days_for(metric))
             if res is None:
-                skipped.append({"metric": label, "paired_days": len(xs)})
+                skipped.append({"metric": label, "paired_days": len(xs), "days_with_data": len(series[metric]),
+                                "min_days_needed": min_days_for(metric)})
             else:
                 findings.append({"metric": label, "lag_days": lag, **res})
     findings.sort(key=lambda f: (f["p_value"], -abs(f["correlation"])))

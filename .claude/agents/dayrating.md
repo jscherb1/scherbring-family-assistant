@@ -37,7 +37,8 @@ Registered as a scheduler task (see README). On firing:
 ## Insights (the "why")
 
 Data comes from pluggable sources that write one value per metric per day (habits, day of week, weather,
-COROS HRV / resting heart rate / fatigue / training load, calendar load (events, hours booked, Caroline's
+COROS HRV / resting heart rate / fatigue / training load, COROS sleep (hours, bed and wake time, score,
+deep/REM), steps and stress, calendar load (events, hours booked, Caroline's
 shift, travel, kid activities) and anything added later). New sources flow
 into the analysis on their own.
 
@@ -49,10 +50,15 @@ into the analysis on their own.
    --end YYYY-MM-DD --events-file state/<file>.json` for that same date range and delete the temp file.
    If the calendar tools fail, say so in one line and carry on; stale calendar data is fine.
 1. `python scripts/dayrating_store.py insights refresh` pulls the latest from every source (a failing
-   source is reported and skipped; mention it only if it matters).
+   source is reported and skipped; mention it only if it matters). If `coros_health` reports an error that
+   says COROS MCP is not signed in or the token couldn't be renewed, tell the user in one line that COROS
+   needs a re-sign-in (`python scripts/fitness/coros_mcp.py auth-url`, then `auth-finish "<callback url>"`).
 2. `python scripts/dayrating_store.py insights stats [--days 90]` returns the statistics: ranked
    `findings` (each with n, effect or correlation, p_value and `confidence`: solid / emerging / hint),
-   `not_enough_data`, `sources` and `caveats`.
+   `not_enough_data` (each with `days_with_data` and `min_days_needed`), `sources` and `caveats`. Sparse metrics
+   (`coros:wellness_*` wellness-check readings, new `coros:recovery_*`) stay in `not_enough_data` until they have
+   enough days. Never draw conclusions from them; you may mention that regular morning wellness checks would let
+   them be analysed.
 3. Write the story yourself from those numbers, in plain language:
    - Lead with the clearest, best-supported drivers and what the user could do with them.
    - Say how sure you are. "solid" and "emerging" can be stated plainly; "hint" is a maybe. Many metrics

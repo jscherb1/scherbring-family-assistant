@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "fitness"))
 
 import dayrating  # noqa: E402
 import dayrating_store  # noqa: E402
@@ -98,6 +99,8 @@ def test_failing_source_does_not_block_others(db, monkeypatch):
     def boom(*a):
         raise OSError("offline")
     monkeypatch.setattr(weather, "collect", boom)
+    from insight_sources import coros_health
+    monkeypatch.setattr(coros_health, "collect", boom)
     monkeypatch.setattr(coros_wellness, "collect", boom)  # never hit the network or the real COROS login in tests
     report = insights.refresh(days=3, db_path=db, today=TODAY)
     assert "error" in report["weather"] and report["habits"].get("error") is None
@@ -166,3 +169,68 @@ def test_calendar_load_sync_cli_and_source(db, tmp_path, monkeypatch):
     assert vals == {"2026-10-12": 0.0, "2026-10-13": 1.0, "2026-10-14": 0.0}
     assert dayrating_store.main(["calendar", "sync", "--start", "2026-10-14", "--end", "2026-10-12",
                                  "--events-file", str(f)]) == 2
+
+
+SLEEP = ("Sleep Overview\n====\n\n2026-10-08\nSleep Score: 67\nDaily Sleep: 5h 48min (incl. naps)\n"
+         "Main Sleep (asleep): 5h 48min\nDeep Sleep Ratio: 21%\nLight Sleep Ratio: 62%\nREM Ratio: 12%\n"
+         "Awake Time: 20 min\nAwake Count (>5 min): 0\nMain Sleep Window: 2026-10-07 23:07 - 2026-10-08 05:15\n"
+         "Naps Total: 0 min\n\n2026-10-09\nSleep Score: 84\nMain Sleep (asleep): 9h 0min\n"
+         "Main Sleep Window: 2026-10-09 00:30 - 2026-10-09 07:30\n")
+HEALTH = ("Daily Health Data - Last 2 days\n\n--- 20261013 ---\nSteps: 6,990 | Calories: 433 kcal | Exercise: 0 min\n"
+          "Stress: Avg 26\nSleep Summary:\n  Sleep HR: Avg 51 bpm | Min 43 bpm\n\n--- 20261014 ---\n"
+          "Steps: 493 | Calories: 61 kcal | Exercise: 0 min\nStress: Avg 20\n")
+STRESS = "Stress Level\n\n2026-10-13:\nAverage Stress: 27 (Low)\n"
+
+
+WELLNESS = ("Health Check Time Series\n\nDate: 2026-09-01\ntimestamp=1, source=dailyRhmList\n"
+            "Heart Rate List: [1=64 bpm, 2=66 bpm]\nHRV List: [1=33 ms]\nStress List: [1=46]\n"
+            "Respiration Rate List: [1=14/min]\nSpO2 List: [1=98%]\nStress Level: 2\n")
+RECOVERY = "Recovery Status\n====\n\nRecovery: 85%\nLevel: Heavy training allowed\nEstimated Full Recovery: 3h\n"
+
+
+def test_wellness_and_recovery_parsing():
+    import coros_mcp
+    row = coros_mcp.parse_wellness_check(WELLNESS)["2026-09-01"]
+    assert row == {"wellness_hr": 65.0, "wellness_hrv": 33.0, "wellness_stress": 46.0,
+                   "wellness_resp": 14.0, "wellness_spo2": 98.0}
+    assert coros_mcp.parse_wellness_check("No complete health check time series data found in 2026-10-13.") == {}
+    assert coros_mcp.parse_recovery(RECOVERY) == {"recovery_pct": 85.0, "recovery_hours_left": 3.0}
+
+
+def test_sparse_wellness_needs_more_days_than_other_metrics(db):
+    import insights
+    assert insights.min_days_for("coros:wellness_hrv") == 14 and insights.min_days_for("coros:recovery_pct") == 10
+    x = [float(i) for i in range(12)]
+    assert insights.analyze_pair(x, x[::-1], min_days=10) is not None
+    assert insights.analyze_pair(x, x[::-1], min_days=insights.min_days_for("coros:wellness_hrv")) is None
+
+
+def test_coros_health_parsing_and_metrics():
+    from insight_sources import coros_health
+    out = coros_health.to_metrics(SLEEP, HEALTH, STRESS)
+    assert out["coros:sleep_hours"]["2026-10-08"] == 5.8 and out["coros:sleep_score"]["2026-10-09"] == 84.0
+    assert out["coros:deep_pct"]["2026-10-08"] == 21.0 and out["coros:wakeups"]["2026-10-08"] == 0.0
+    assert out["coros:bedtime_after_noon"]["2026-10-08"] == pytest.approx(11 + 7 / 60)
+    assert out["coros:bedtime_after_noon"]["2026-10-09"] == 12.5  # a past-midnight bedtime sorts after 23:07
+    assert out["coros:wake_hour"]["2026-10-08"] == 5.25
+    assert out["coros:steps"]["2026-10-13"] == 6990.0 and out["coros:sleep_hr_avg"]["2026-10-13"] == 51.0
+    assert out["coros:stress_avg"]["2026-10-13"] == 27.0  # the dedicated stress report wins
+    full = coros_health.to_metrics(SLEEP, HEALTH, STRESS, WELLNESS, RECOVERY, TODAY)
+    assert full["coros:wellness_hrv"] == {"2026-09-01": 33.0} and full["coros:recovery_pct"] == {"2026-10-14": 85.0}
+
+
+def test_coros_health_collect_drops_partial_today(monkeypatch):
+    import coros_mcp
+    from insight_sources import coros_health
+    monkeypatch.setattr(coros_mcp, "call_tools", lambda calls: [SLEEP, HEALTH, STRESS] if len(calls) == 3
+                        else [WELLNESS] + ["No complete health check data."] * (len(calls) - 2) + [RECOVERY])
+    out = coros_health.collect(None, TODAY - timedelta(days=7), TODAY, TODAY)
+    assert "2026-10-14" not in out["coros:steps"] and "2026-10-13" in out["coros:steps"]
+
+
+def test_coros_mcp_needs_sign_in(tmp_path, monkeypatch):
+    import coros_mcp
+    monkeypatch.setattr(coros_mcp, "TOKEN_FILE", tmp_path / "none.json")
+    with pytest.raises(coros_mcp.CorosMcpError) as e:
+        coros_mcp.access_token()
+    assert e.value.code == 1
