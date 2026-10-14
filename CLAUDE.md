@@ -42,6 +42,23 @@ maintained twice. Reference implementation: habits (`scripts/habits.py`).
 Older features (home-maintenance, lawn-garden, etc.) still duplicate logic between their CLI and the dashboard
 reader; migrate them to this pattern opportunistically (tracked in `docs/TODO.md`).
 
+## Development process
+
+Applies to all development work (features, fixes, docs), whether it comes from a terminal session or Telegram.
+
+1. **Present a plan before building.** Confirm what will be done and how, with suggestions and any
+   clarifying questions, and wait for approval before changing code. Depth scales with the channel:
+   in a Claude Code session give a fuller plan (files touched, approach, tradeoffs, test plan); over
+   Telegram keep it a short phone-readable summary (what, how, open questions). Skip the plan only for
+   trivial edits the user has already described exactly.
+2. **Always work on a separate branch and merge through a PR.** Never commit directly to `main`. Branch,
+   commit, open a PR, and merge only when the user says to.
+3. **Check whether a service restart is needed.** Before calling work done, work out which running
+   service picks up the change (dashboard, agent worker, orchestrator, scheduler; see
+   `docs/OPERATIONS.md`) and restart it if needed, or tell the user it needs one. New or edited
+   `.claude/agents/*.md` files also need `/reload-plugins`. Say in the final message what was
+   restarted, and whether the change was verified live or only by tests.
+
 ## Open to-dos and runbook
 
 Outstanding work (untested scheduled tasks, manual user actions, deferred decisions) is tracked
