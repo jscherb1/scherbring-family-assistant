@@ -6,25 +6,33 @@ Needs the one-time sign-in (`python scripts/fitness/coros_mcp.py auth-url`); if 
 renewed this source reports an error and the rest of the refresh carries on.
 """
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "fitness"))
 
 SOURCE = {"name": "coros_health", "kind": "auto",
-          "description": "COROS sleep (hours, bed/wake time, score, deep/REM), steps, exercise minutes and stress per day"}
+          "description": "COROS sleep (hours, bed/wake time, score, deep/REM), steps, exercise minutes, stress, "
+                         "wellness-check readings (sparse) and recovery per day"}
+
+WELLNESS_LOOKBACK = 60  # the server returns one check per query, so each day is its own call
 
 
-def to_metrics(sleep_text: str, health_text: str, stress_text: str) -> dict:
+def to_metrics(sleep_text: str, health_text: str, stress_text: str, wellness_text: str = "",
+               recovery_text: str = "", today=None) -> dict:
     import coros_mcp
     merged: dict[str, dict[str, float]] = {}
     for parsed in (coros_mcp.parse_daily_health(health_text), coros_mcp.parse_stress_level(stress_text),
-                   coros_mcp.parse_sleep_overview(sleep_text)):  # later parsers win on overlap
+                   coros_mcp.parse_sleep_overview(sleep_text), coros_mcp.parse_wellness_check(wellness_text)):  # later parsers win on overlap
         for day, row in parsed.items():
             merged.setdefault(day, {}).update(row)
     out: dict[str, dict[str, float]] = {}
     for day, row in merged.items():
         for name, value in row.items():
             out.setdefault(f"coros:{name}", {})[day] = value
+    if today:  # recovery is only a live snapshot, so it is stamped on the day it was read and builds up daily
+        for name, value in coros_mcp.parse_recovery(recovery_text).items():
+            out.setdefault(f"coros:{name}", {})[today.isoformat()] = value
     return out
 
 
@@ -35,7 +43,10 @@ def collect(conn, start, end, today):
         ("querySleepOverview", {"startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d")}),
         ("queryDailyHealthData", {"days": days}),
         ("queryStressLevel", {"days": days})])
-    out = to_metrics(sleep, health, stress)
+    wellness_days = [today - timedelta(days=i) for i in range(min(days, WELLNESS_LOOKBACK))]
+    extra = coros_mcp.call_tools([("queryHealthCheckTimeSeries", {"startDate": d.strftime("%Y%m%d")})
+                                  for d in wellness_days] + [("queryRecoveryStatus", {})])
+    out = to_metrics(sleep, health, stress, "\n".join(extra[:-1]), extra[-1], today)
     for name in ("steps", "exercise_min", "stress_avg"):  # today is still in progress, so these are partial
         out.get(f"coros:{name}", {}).pop(today.isoformat(), None)
     return out

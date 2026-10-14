@@ -224,6 +224,36 @@ def parse_stress_level(text: str) -> dict[str, dict[str, float]]:
             for m in re.finditer(r"(\d{4}-\d{2}-\d{2}):\nAverage Stress: (\d+)", text)}
 
 
+def parse_wellness_check(text: str) -> dict[str, dict[str, float]]:
+    """One wellness check (the watch's on-demand reading) -> {day: {wellness_hr, wellness_hrv, ...}}.
+    Uses the mean of each reading list; days with no check come back as 'No complete ... data' and are skipped."""
+    out: dict[str, dict[str, float]] = {}
+    for block in re.split(r"\n(?=Date: \d{4}-\d{2}-\d{2}\n)", text):
+        head = re.match(r"Date: (\d{4}-\d{2}-\d{2})\n", block)
+        if not head:
+            continue
+        row: dict[str, float] = {}
+        for label, name in (("Heart Rate", "wellness_hr"), ("HRV", "wellness_hrv"), ("Stress", "wellness_stress"),
+                            ("Respiration Rate", "wellness_resp"), ("SpO2", "wellness_spo2")):
+            m = re.search(rf"^{label} List: \[(.*?)\]$", block, flags=re.M)
+            vals = [float(v) for v in re.findall(r"=(\d+(?:\.\d+)?)", m.group(1))] if m else []
+            if vals:
+                row[name] = round(sum(vals) / len(vals), 1)
+        if row:
+            out[head.group(1)] = row
+    return out
+
+
+def parse_recovery(text: str) -> dict[str, float]:
+    """Current recovery snapshot -> {recovery_pct, recovery_hours_left}. The server has no history for this."""
+    out: dict[str, float] = {}
+    if m := re.search(r"Recovery: (\d+)%", text):
+        out["recovery_pct"] = float(m.group(1))
+    if m := re.search(r"Estimated Full Recovery: (\d+)h", text):
+        out["recovery_hours_left"] = float(m.group(1))
+    return out
+
+
 def main(argv: list[str]) -> int:
     try:
         if argv[:1] == ["auth-url"]:

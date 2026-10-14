@@ -132,9 +132,13 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       (`scripts/fitness/coros_mcp.py`; the Training Hub web API has no sleep). One-time browser sign-in done; the
       refresh token renews itself (~30 day access tokens). If it ever fails, re-run `coros_mcp.py auth-url` /
       `auth-finish`. The nightly/weekly `insights refresh` pulls it, so no separate sync task. Not yet used:
-      wellness-check readings (only 9/1 had data), recovery status, naps.
+      naps. Wellness-check readings (`coros:wellness_*`, one query per day, last 60 days; ~3 days of data so far)
+      and recovery (`coros:recovery_pct`; the server only gives a live snapshot, so it is stamped on each refresh day and
+      builds up over time) were added 2026-10-14. Sparse-data guard: a metric needs 10 paired rated days (14 for
+      wellness) before it is analysed; below that it is listed in `not_enough_data` with its day count. Regular
+      wellness checks would help. A full refresh now takes ~50s because of the per-day wellness calls.
 - [ ] Phase 2 sources not built: Monarch spending (skip or discount the
-      latest day, charges post late), chores/kids activity, COROS wellness-check readings.
+      latest day, charges post late), chores/kids activity.
 - [ ] Later: optional second score (energy/stress), quick manual questions in the nightly nudge, tags from notes.
 
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)

@@ -182,6 +182,29 @@ HEALTH = ("Daily Health Data - Last 2 days\n\n--- 20261013 ---\nSteps: 6,990 | C
 STRESS = "Stress Level\n\n2026-10-13:\nAverage Stress: 27 (Low)\n"
 
 
+WELLNESS = ("Health Check Time Series\n\nDate: 2026-09-01\ntimestamp=1, source=dailyRhmList\n"
+            "Heart Rate List: [1=64 bpm, 2=66 bpm]\nHRV List: [1=33 ms]\nStress List: [1=46]\n"
+            "Respiration Rate List: [1=14/min]\nSpO2 List: [1=98%]\nStress Level: 2\n")
+RECOVERY = "Recovery Status\n====\n\nRecovery: 85%\nLevel: Heavy training allowed\nEstimated Full Recovery: 3h\n"
+
+
+def test_wellness_and_recovery_parsing():
+    import coros_mcp
+    row = coros_mcp.parse_wellness_check(WELLNESS)["2026-09-01"]
+    assert row == {"wellness_hr": 65.0, "wellness_hrv": 33.0, "wellness_stress": 46.0,
+                   "wellness_resp": 14.0, "wellness_spo2": 98.0}
+    assert coros_mcp.parse_wellness_check("No complete health check time series data found in 2026-10-13.") == {}
+    assert coros_mcp.parse_recovery(RECOVERY) == {"recovery_pct": 85.0, "recovery_hours_left": 3.0}
+
+
+def test_sparse_wellness_needs_more_days_than_other_metrics(db):
+    import insights
+    assert insights.min_days_for("coros:wellness_hrv") == 14 and insights.min_days_for("coros:recovery_pct") == 10
+    x = [float(i) for i in range(12)]
+    assert insights.analyze_pair(x, x[::-1], min_days=10) is not None
+    assert insights.analyze_pair(x, x[::-1], min_days=insights.min_days_for("coros:wellness_hrv")) is None
+
+
 def test_coros_health_parsing_and_metrics():
     from insight_sources import coros_health
     out = coros_health.to_metrics(SLEEP, HEALTH, STRESS)
@@ -192,12 +215,15 @@ def test_coros_health_parsing_and_metrics():
     assert out["coros:wake_hour"]["2026-10-08"] == 5.25
     assert out["coros:steps"]["2026-10-13"] == 6990.0 and out["coros:sleep_hr_avg"]["2026-10-13"] == 51.0
     assert out["coros:stress_avg"]["2026-10-13"] == 27.0  # the dedicated stress report wins
+    full = coros_health.to_metrics(SLEEP, HEALTH, STRESS, WELLNESS, RECOVERY, TODAY)
+    assert full["coros:wellness_hrv"] == {"2026-09-01": 33.0} and full["coros:recovery_pct"] == {"2026-10-14": 85.0}
 
 
 def test_coros_health_collect_drops_partial_today(monkeypatch):
     import coros_mcp
     from insight_sources import coros_health
-    monkeypatch.setattr(coros_mcp, "call_tools", lambda calls: [SLEEP, HEALTH, STRESS])
+    monkeypatch.setattr(coros_mcp, "call_tools", lambda calls: [SLEEP, HEALTH, STRESS] if len(calls) == 3
+                        else [WELLNESS] + ["No complete health check data."] * (len(calls) - 2) + [RECOVERY])
     out = coros_health.collect(None, TODAY - timedelta(days=7), TODAY, TODAY)
     assert "2026-10-14" not in out["coros:steps"] and "2026-10-13" in out["coros:steps"]
 
