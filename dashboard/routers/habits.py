@@ -26,8 +26,10 @@ def _done(request: Request, habit_id: str | None, error: str | None = None):
     """After a write: htmx swaps just that habit's card; a plain form post redirects to the page."""
     if request.headers.get("hx-request") and habit_id:
         # 200 even on error: htmx only swaps 2xx, and the card shows the message inline.
-        return render(request, "habits/_card.html", "habits", "habits", "Habits",
-                      h=data.get_one(habit_id), error=error)
+        h = data.get_one(habit_id)
+        if not h.get("error"):
+            h["calendar"] = data.get_calendar(habit_id)
+        return render(request, "habits/_card.html", "habits", "habits", "Habits", h=h, error=error)
     suffix = f"?error={error.replace(' ', '+')}" if error else ""
     return RedirectResponse(f"/habits{suffix}", status_code=303)
 
@@ -36,6 +38,12 @@ def _done(request: Request, habit_id: str | None, error: str | None = None):
 def habits_page(request: Request, owner: str = "", error: str = ""):
     return render(request, "habits/index.html", "habits", "habits", "Habits",
                   data=data.get_habits(owner), error=error)
+
+
+@router.get("/habits/analysis", include_in_schema=False)
+def analysis_page(request: Request):
+    return render(request, "habits/analysis.html", "habits", "analysis", "Habit analysis",
+                  data=data.get_analysis())
 
 
 @router.post("/habits", include_in_schema=False)
@@ -98,9 +106,24 @@ def api_habits(owner: str = "", include_paused: bool = True):
     return data.get_habits(owner, include_paused)
 
 
+@router.get("/api/habits/analysis")
+def api_analysis(weeks: int = 12):
+    return data.get_analysis(weeks)
+
+
+
+
 @router.get("/api/habits/{habit_id}")
 def api_habit(habit_id: str):
     status = data.get_one(habit_id)
     if status.get("error", "").startswith("no habit"):
         raise HTTPException(404, status["error"])
     return status
+
+
+@router.get("/api/habits/{habit_id}/calendar")
+def api_calendar(habit_id: str, months: int = 2):
+    cal = data.get_calendar(habit_id, months)
+    if cal.get("error", "").startswith("no habit"):
+        raise HTTPException(404, cal["error"])
+    return cal

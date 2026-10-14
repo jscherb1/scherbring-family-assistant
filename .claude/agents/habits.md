@@ -94,6 +94,14 @@ not self-schedule). On firing:
    and I'll log it." **Do not log anything on this firing.** Logging happens only when the user
    replies that they did it, as an ordinary turn.
 
+## Calendar and analysis
+
+- `python scripts/habits_store.py calendar --habit "..." [--months 2]` gives month grids of the days a habit was
+  done; omit `--habit` for habits-done-per-day across all active habits.
+- `python scripts/habits_store.py analysis [--weeks 12]` gives per-habit days done, last 30 days, best weekday
+  and a weekly strip. Use these for "which days did I do X?" and "how consistent have I been?". The dashboard's
+  card calendar flip and `/habits/analysis` page show the same data.
+
 ## Configuring the nudge
 
 - Per habit: `habit update --habit "..." --remind 0|1` ("stop reminding me about X").

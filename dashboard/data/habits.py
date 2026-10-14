@@ -16,6 +16,8 @@ OWNERS = ["Justin", "Caroline", "Kids", "Family"]
 @common.guarded
 def get_habits(owner=None, include_paused=True):
     items = service.list_status(owner=owner or None, include_inactive=include_paused, db_path=common.db_path())
+    for h in items:
+        h["calendar"] = service.calendar(h["id"], months=2, db_path=common.db_path())
     active = [h for h in items if h["active"]]
     goal = [h for h in active if h["has_goal"]]
     return {
@@ -37,3 +39,16 @@ def get_one(habit_id):
         return service.get_status(habit_id, db_path=common.db_path())
     except service.HabitError as exc:
         return {"error": exc.message}
+
+
+@common.guarded
+def get_calendar(habit_id=None, months=2):
+    try:
+        return service.calendar(habit_id, months=months, db_path=common.db_path())
+    except service.HabitError as exc:
+        return {"error": exc.message}
+
+
+@common.guarded
+def get_analysis(weeks=12):
+    return service.analysis(weeks=weeks, db_path=common.db_path())

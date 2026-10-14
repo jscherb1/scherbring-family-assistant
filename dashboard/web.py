@@ -91,7 +91,10 @@ SECTIONS = [
         "key": "habits",
         "label": "Habits",
         "href": "/habits",
-        "pages": [{"key": "habits", "label": "Streaks", "href": "/habits"}],
+        "pages": [
+            {"key": "habits", "label": "Streaks", "href": "/habits"},
+            {"key": "analysis", "label": "Analysis", "href": "/habits/analysis"},
+        ],
     },
     {
         "key": "chores",

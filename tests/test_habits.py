@@ -241,3 +241,53 @@ def test_cli_error_codes(tmp_path, monkeypatch, capsys):
     run(capsys, "habit", "add", "--name", "X", "--frequency", "daily")
     rc, _, err = run(capsys, "log", "add", "--habit", "X", "--date", "2999-01-01")
     assert rc == 2 and "future" in json.loads(err)["error"]
+
+
+# ---- calendar / analysis ----
+
+def test_calendar_marks_logged_days_for_one_habit(db):
+    a, b = daily(db, "A"), daily(db, "B")
+    log(db, a, MON)
+    log(db, a, MON - timedelta(days=70))
+    log(db, b, MON)
+    cal = habits.calendar(a, months=2, db_path=db, today=MON)
+    assert [m["label"] for m in cal["months"]] == ["September 2026", "October 2026"]
+    days = {c["date"]: c for m in cal["months"] for w in m["weeks"] for c in w if c}
+    assert days["2026-10-12"]["count"] == 1 and days["2026-10-13"]["count"] == 0
+    assert days["2026-10-12"]["today"] and days["2026-10-13"]["future"]
+    assert cal["days_done"] == 1  # the 70-days-ago log is outside the two months in view
+    assert all(len(w) == 7 for m in cal["months"] for w in m["weeks"])
+
+
+def test_calendar_all_habits_counts_distinct_habits_per_day(db):
+    a, b = daily(db, "A"), daily(db, "B")
+    log(db, a, MON); log(db, b, MON)
+    cal = habits.calendar(None, months=1, db_path=db, today=MON)
+    day = next(c for w in cal["months"][0]["weeks"] for c in w if c and c["date"] == "2026-10-12")
+    assert day["count"] == 2 and cal["max_count"] == 2
+
+
+def test_calendar_unknown_habit_raises(db):
+    with pytest.raises(habits.HabitError) as e:
+        habits.calendar("nope", db_path=db)
+    assert e.value.code == 1
+
+
+def test_analysis_rolls_up_per_habit(db):
+    a = daily(db, "A")
+    log(db, a, MON); log(db, a, MON - timedelta(days=1))
+    out = habits.analysis(weeks=4, db_path=db, today=MON)
+    row = out["habits"][0]
+    assert row["days_done"] == 2 and row["last_30_days"] == 2 and len(row["weekly_days"]) == 4
+    assert row["weekly_days"][-1] == 1 and row["weekly_days"][-2] == 1
+    assert row["best_weekday"] in ("Sun", "Mon") and out["active_days"] == 2
+
+
+def test_cli_calendar_and_analysis(db, capsys, monkeypatch):
+    monkeypatch.setattr(habits, "DB_PATH", db)
+    hid = daily(db, "A")
+    log(db, hid, date.today())
+    assert habits_store.main(["calendar", "--habit", "A"]) == 0
+    assert json.loads(capsys.readouterr().out)["days_done"] == 1
+    assert habits_store.main(["analysis"]) == 0
+    assert json.loads(capsys.readouterr().out)["habits"][0]["name"] == "A"

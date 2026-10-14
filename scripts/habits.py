@@ -390,6 +390,103 @@ def get_at_risk(*, for_nudge: bool = False, db_path=None, today: date | None = N
 
 
 # ---------------------------------------------------------------------------
+# calendars and analysis (read-only views over habit_logs)
+# ---------------------------------------------------------------------------
+
+
+def month_grid(counts: dict[str, int], year: int, month: int, today: date) -> dict:
+    """One Monday-first month as weeks of 7 cells (None = padding). counts maps ISO date -> count."""
+    first = date(year, month, 1)
+    nxt = date(year + (month == 12), month % 12 + 1, 1)
+    cells: list = [None] * first.weekday()
+    for n in range((nxt - first).days):
+        d = first + timedelta(days=n)
+        iso = d.isoformat()
+        cells.append({"date": iso, "day": d.day, "count": counts.get(iso, 0),
+                      "today": d == today, "future": d > today})
+    cells += [None] * (-len(cells) % 7)
+    return {"year": year, "month": month, "label": first.strftime("%B %Y"),
+            "weeks": [cells[i:i + 7] for i in range(0, len(cells), 7)]}
+
+
+def _months_back(today: date, months: int) -> list[tuple[int, int]]:
+    """(year, month) pairs, oldest first, ending with today's month."""
+    out = []
+    y, m = today.year, today.month
+    for _ in range(max(months, 1)):
+        out.append((y, m))
+        y, m = (y - 1, 12) if m == 1 else (y, m - 1)
+    return out[::-1]
+
+
+def _counts_by_day(conn: sqlite3.Connection, habit_id: str | None, since: date) -> dict[str, int]:
+    """ISO date -> logged count (one habit) or number of distinct active habits done (habit_id None)."""
+    if habit_id:
+        rows = conn.execute("SELECT log_date, SUM(count) AS n FROM habit_logs WHERE habit_id = ? AND log_date >= ? "
+                            "GROUP BY log_date", (habit_id, since.isoformat())).fetchall()
+    else:
+        rows = conn.execute("SELECT l.log_date, COUNT(DISTINCT l.habit_id) AS n FROM habit_logs l "
+                            "JOIN habits h ON h.id = l.habit_id WHERE h.active = 1 AND l.log_date >= ? "
+                            "GROUP BY l.log_date", (since.isoformat(),)).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def calendar(habit_id: str | None = None, *, months: int = 2, db_path=None, today: date | None = None) -> dict:
+    """Month grids showing which days a habit was done (habit_id None = habits done per day across all
+    active habits). months counts back from the current month."""
+    today_d = _today(today)
+    span = _months_back(today_d, months)
+    conn = connect(db_path)
+    try:
+        name = _habit(conn, habit_id)["name"] if habit_id else "All habits"
+        counts = _counts_by_day(conn, habit_id, date(span[0][0], span[0][1], 1))
+    finally:
+        conn.close()
+    grids = [month_grid(counts, y, m, today_d) for y, m in span]
+    return {"habit_id": habit_id, "name": name, "months": grids,
+            "days_done": sum(1 for g in grids for w in g["weeks"] for c in w if c and c["count"]),
+            "max_count": max(counts.values(), default=0)}
+
+
+def analysis(*, weeks: int = 12, db_path=None, today: date | None = None) -> dict:
+    """Cross-habit rollup for the analysis page: per-habit totals, weekday pattern and a weekly strip,
+    plus the combined per-day calendar."""
+    today_d = _today(today)
+    start = period_start("weekly", today_d) - timedelta(weeks=max(weeks, 1) - 1)
+    conn = connect(db_path)
+    try:
+        habits_ = [dict(r) for r in conn.execute(
+            "SELECT * FROM habits WHERE active = 1 ORDER BY name COLLATE NOCASE").fetchall()]
+        combined = _counts_by_day(conn, None, start)
+        rows = []
+        for h in habits_:
+            counts = _counts_by_day(conn, h["id"], start)
+            days = [date.fromisoformat(k) for k, v in counts.items() if v]
+            weekday = [0] * 7
+            for d in days:
+                weekday[d.weekday()] += 1
+            strip = []
+            for i in range(weeks):
+                ws = start + timedelta(weeks=i)
+                strip.append(sum(1 for d in days if ws <= d < ws + timedelta(days=7)))
+            last30 = sum(1 for d in days if d > today_d - timedelta(days=30))
+            rows.append({"id": h["id"], "name": h["name"], "owner": h["owner"], "target_count": h["target_count"],
+                         "frequency": h["frequency"], "days_done": len(days), "last_30_days": last30,
+                         "weekday_counts": weekday, "weekly_days": strip,
+                         "best_weekday": ("Mon Tue Wed Thu Fri Sat Sun".split()[weekday.index(max(weekday))]
+                                          if days else None)})
+    finally:
+        conn.close()
+    week_totals = [sum(v for k, v in combined.items()
+                       if start + timedelta(weeks=i) <= date.fromisoformat(k) < start + timedelta(weeks=i + 1))
+                   for i in range(weeks)]
+    grids = [month_grid(combined, y, m, today_d) for y, m in _months_back(today_d, 3)]
+    return {"weeks": weeks, "since": start.isoformat(), "habits": rows, "months": grids,
+            "week_totals": week_totals, "max_count": max(combined.values(), default=0),
+            "active_days": sum(1 for v in combined.values() if v)}
+
+
+# ---------------------------------------------------------------------------
 # config
 # ---------------------------------------------------------------------------
 

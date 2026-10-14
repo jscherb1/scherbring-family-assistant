@@ -33,7 +33,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `vendor/ha-mcp/` | Vendored [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) (PyPI package, `.venv`) — runs as a loopback-only local HTTP server (`systemd/assistant-ha-mcp.service`) that Claude connects to via the `ha` entry in `.mcp.json` |
 | `.claude/agents/fitness.md` | Fitness subagent (Phases 1-3) — plans weekly workouts by reusing the COROS Training Hub library, gated on approval, writes to Coros + the "Running" Google Calendar |
 | `scripts/fitness_store.py` | Zero-dep CLI for fitness data (workout-library cache sync/list, weekly-plan add/list/update sub-commands) |
-| `scripts/fitness/` | Playwright + API browser layer for COROS Training Hub — `login_test.py` (session), `library_sync.py` (Workout Library scrape), `schedule_ops.py` (list-week / add-existing-workout / remove-workout, via the real Coros API, not drag-and-drop), `coros_web.py` (selector/URL/endpoint constants), `coros_session.py` (shared helpers) |
+| `scripts/fitness/` | Playwright + API browser layer for COROS Training Hub — `login_test.py` (session), `library_sync.py` (Workout Library scrape), `workout_sync.py` (logs the Workouts habit from recorded COROS activities; daily `workouts-habit-sync` task), `schedule_ops.py` (list-week / add-existing-workout / remove-workout, via the real Coros API, not drag-and-drop), `coros_web.py` (selector/URL/endpoint constants), `coros_session.py` (shared helpers) |
 | `.claude/agents/finance.md` | Finance subagent (Phase 1) — Monarch transaction review + WHO tagging, rule proposals, historical sweeps |
 | `.claude/agents/finance-reporter.md` | Finance-reporter subagent (Phases 2 & 4) — weekly/monthly/annual spending-summary HTML reports to Drive + Telegram brief |
 | `.claude/agents/retirement.md` | Retirement subagent (Phase 3) — Monte Carlo projection + editable `.xlsx` modeling workbook to Drive; owns "can we afford X" what-ifs |
@@ -362,6 +362,9 @@ habit logged in Telegram shows on the page instantly and a tap on the page is vi
 - **Streaks**: consecutive periods that met the goal (weeks run Monday-Sunday). An unmet period
   still in progress doesn't break the streak; when a period ends unmet the streak resets and a new
   one starts. Current and longest streak are both shown.
+- **Calendars**: every card flips (📅 Calendar) to show two months of the days that habit was done;
+  `/habits/analysis` shows habits-done-per-day across all habits plus a per-habit rollup. Agent twin:
+  `habits_store.py calendar|analysis`.
 - **Logging** is one tap (dashboard "Done") or one sentence ("I stretched", "ran on Tuesday"); past
   dates are allowed, future dates are not, and Undo removes the last entry. Habits are paused, never deleted.
 - **Daily at-risk nudge** (scheduled, silent when nothing is at risk): one evening message listing
@@ -520,6 +523,8 @@ One-time setup: add `COROS_USERNAME`/`COROS_PASSWORD` to `~/.config/scherbring-a
 (`scripts/setup_wsl.sh` installs Playwright and Chromium). Always pass `--headless` to the COROS
 scripts when running them by hand on a machine with no display. Weekly trigger:
 `weekly-fitness-plan` scheduled task, Sundays 6pm — see **Scheduled tasks** above.
+
+**Workouts habit auto-log:** `scripts/fitness/workout_sync.py` reads recorded COROS activities (any type; several in a day = one workout; the plan/calendar is ignored) and logs one completion per day for the `Workouts` habit, idempotently. Registered as `workouts-habit-sync` (daily 6am, silent unless COROS login fails): `python scripts/scheduler_store.py add --name "workouts-habit-sync" --prompt "Run python scripts/fitness/workout_sync.py --days 3 ..." --cron "0 6 * * *" --target-chat-id "<chat_id>"`. Backfill: `python scripts/fitness/workout_sync.py --days 35`.
 
 See `docs/superpowers/specs/2026-08-20-fitness-agent-coros-login-design.md` and its
 two follow-on specs in the same directory for the full phased design and live
