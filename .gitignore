@@ -76,3 +76,6 @@ state/dashboard_dismissed.json
 # --- Runtime state: credential-expiry tracking and bridge token-usage logs ---
 state/credential_check.json
 state/usage*.jsonl
+
+# COROS MCP OAuth client/token state (secrets)
+state/coros_mcp_*.json
