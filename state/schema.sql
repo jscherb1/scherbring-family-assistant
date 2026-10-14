@@ -578,3 +578,20 @@ CREATE TABLE IF NOT EXISTS calendar_load (
     kid_activity  INTEGER NOT NULL,      -- 0/1: dance / practice / lesson-type keywords
     synced_at     TEXT NOT NULL
 );
+
+-- My Hub: snapshot of today's/upcoming calendar events and open tasks. Google Calendar and Todoist are only
+-- reachable through the agent connectors, so the `myhub` subagent reads them and stores them here via
+-- `myhub_store.py snapshot set`; the hub page reads this table. Replaced wholesale per (kind, date range).
+CREATE TABLE IF NOT EXISTS hub_items (
+    id         TEXT PRIMARY KEY,         -- uuid4
+    kind       TEXT NOT NULL,            -- 'event' | 'task'
+    day        TEXT NOT NULL,            -- YYYY-MM-DD (event start day, or task due date)
+    start_time TEXT,                     -- HH:MM or NULL (all-day / untimed)
+    end_time   TEXT,
+    title      TEXT NOT NULL,
+    source     TEXT,                     -- calendar name or Todoist project
+    detail     TEXT,
+    priority   INTEGER,                  -- tasks: 1 (urgent) .. 4
+    synced_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_hub_items_kind_day ON hub_items (kind, day);

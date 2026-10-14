@@ -891,3 +891,18 @@ def test_rating_ui_and_service_share_data(client, state):
     assert "<b>day" not in client.get("/rating").text
     r = client.post("/rating", data={"score": "11"}, headers={"Origin": "http://testserver"}, follow_redirects=False)
     assert "between" in r.headers["location"]
+
+
+# ---- My Hub (shared service: scripts/myhub.py) ----
+
+def test_hub_ui_and_service_share_data(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    service.set_snapshot("task", [{"title": "Renew <b>passport", "day": "2020-01-01", "priority": 1}],
+                         db_path=state / "agent_results.db")
+    api = client.get("/api/me").json()
+    assert any("Renew <b>passport" in a["text"] for a in api["attention"])
+    page = client.get("/me")
+    assert page.status_code == 200 and "My Hub" in page.text
+    assert "passport" in page.text and "<b>passport" not in page.text  # escaped

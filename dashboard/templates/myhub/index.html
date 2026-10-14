@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block head %}<link rel="stylesheet" href="/static/hub.css?v={{ asset_version() }}">{% endblock %}
+
+{% macro ring(pct, label, sub, tone='cyan') %}
+  {% set p = [[pct or 0, 0]|max, 100]|min %}
+  <div class="hub-ring tone-{{ tone }}" role="img" aria-label="{{ label }} {{ pct if pct is not none else 'no data' }}">
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="track" cx="60" cy="60" r="52"/>
+      <circle class="arc" cx="60" cy="60" r="52" pathLength="100" stroke-dasharray="{{ p }} 100" transform="rotate(-90 60 60)"/>
+    </svg>
+    <div class="ring-body"><b>{{ pct|round|int if pct is not none else '–' }}{% if pct is not none %}<small>%</small>{% endif %}</b><span>{{ sub }}</span></div>
+  </div>
+{% endmacro %}
+
+{% macro spark(values, w=96, h=26) %}
+  {% if values|length > 1 %}
+    {% set lo = values|min %}{% set hi = values|max %}{% set span = (hi - lo) or 1 %}
+    <svg class="spark" viewBox="0 0 {{ w }} {{ h }}" aria-hidden="true"><polyline fill="none" points="{% for v in values %}{{ (loop.index0 * w / (values|length - 1))|round(1) }},{{ (h - 2 - (v - lo) / span * (h - 4))|round(1) }} {% endfor %}"/></svg>
+  {% endif %}
+{% endmacro %}
+
+{% block page_header %}
+  <h1>My Hub</h1>
+  <p class="subtitle">Everything that matters, in one place.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+{% set c = data.cards %}
+<div class="hub">
+
+  {# ---- needs attention: ranked, never hidden ---- #}
+  <section class="hub-panel hub-attn {{ 'clear' if not data.attention }}">
+    <header><span class="hub-label">Needs attention</span>
+      <span class="hub-count">
+        {% if data.counts.urgent %}<i class="dot urgent"></i>{{ data.counts.urgent }} urgent{% endif %}
+        {% if data.counts.warn %}<i class="dot warn"></i>{{ data.counts.warn }} to act on{% endif %}
+        {% if data.counts.info %}<i class="dot info"></i>{{ data.counts.info }} to note{% endif %}
+      </span></header>
+    {% if data.attention %}
+      <ul>
+        {% for a in data.attention[:6] %}
+          <li class="lvl-{{ a.level }}"><a href="{{ a.href }}"><i class="dot {{ a.level }}"></i><span class="area">{{ a.area }}</span><span class="txt">{{ a.text }}</span></a></li>
+        {% endfor %}
+      </ul>
+      {% if data.attention|length > 6 %}
+        <details class="hub-more"><summary>Show all {{ data.attention|length }}</summary>
+          <ul>{% for a in data.attention[6:] %}<li class="lvl-{{ a.level }}"><a href="{{ a.href }}"><i class="dot {{ a.level }}"></i><span class="area">{{ a.area }}</span><span class="txt">{{ a.text }}</span></a></li>{% endfor %}</ul>
+        </details>
+      {% endif %}
+    {% else %}
+      <p class="hub-clear">All clear. Nothing needs you right now.</p>
+    {% endif %}
+  </section>
+
+  <div class="hub-grid">
+    {# ---- today ---- #}
+    {% set s = c.get('schedule') %}
+    {% if s %}
+    <section class="hub-panel span2">
+      <header><span class="hub-label">Today · {{ data.date }}</span></header>
+      <div class="hub-cols">
+        <div>
+          <h3>Calendar</h3>
+          {% if s.today %}<ul class="tl">{% for e in s.today %}<li><time>{{ e.start_time or 'All day' }}</time><span>{{ e.title }}</span></li>{% endfor %}</ul>
+          {% else %}<p class="hub-dim">Nothing on the calendar.</p>{% endif %}
+          <h3>Dinner</h3>
+          <p>{{ s.dinner.title if s.dinner else 'Nothing planned' }}</p>
+        </div>
+        <div>
+          <h3>Tasks</h3>
+          {% if s.tasks.overdue or s.tasks.today %}
+            <ul class="tl">
+              {% for t in s.tasks.overdue %}<li class="late"><time>{{ t.day[5:] }}</time><span>{{ t.title }}</span></li>{% endfor %}
+              {% for t in s.tasks.today %}<li><time>Today</time><span>{{ t.title }}</span></li>{% endfor %}
+            </ul>
+          {% else %}<p class="hub-dim">Nothing due today.</p>{% endif %}
+          <p class="hub-dim">{{ s.tasks.open }} open task{{ '' if s.tasks.open == 1 else 's' }}</p>
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    {# ---- mood ---- #}
+    {% set m = c.get('mood') %}
+    {% if m %}
+    <section class="hub-panel">
+      <header><span class="hub-label">Mood</span><a class="hub-link" href="/rating">Rate</a></header>
+      <div class="hub-big">{{ m.today.score if m.today else '–' }}<small>/10</small></div>
+      <p class="hub-dim">{{ 'today' if m.today else 'not rated yet' }} · 7-day avg {{ m.avg_7 if m.avg_7 is not none else '–' }}</p>
+      <svg class="trend" viewBox="0 0 150 36" aria-hidden="true">
+        {% for t in m.trend %}{% if t.score %}<rect x="{{ loop.index0 * 5 }}" y="{{ 36 - t.score * 3.4 }}" width="3.4" height="{{ t.score * 3.4 }}" rx="1"/>{% endif %}{% endfor %}
+      </svg>
+    </section>
+    {% endif %}
+
+    {# ---- body ---- #}
+    {% set b = c.get('body') %}
+    {% if b %}
+    <section class="hub-panel">
+      <header><span class="hub-label">Recovery</span></header>
+      {{ ring(b.recovery.value if b.recovery else none, 'Recovery', ('%dh to full'|format(b.recovery_hours_left.value) if b.recovery_hours_left else 'COROS'), 'green') }}
+    </section>
+    <section class="hub-panel span2 hub-sleep">
+      <header><span class="hub-label">Sleep</span>{% if b.sleep.hours %}<span class="hub-dim">{{ b.sleep.hours.day }}</span>{% endif %}</header>
+      {% if b.sleep.hours %}
+        <div class="sleep-top">
+          <div class="hub-big">{{ b.sleep.score.value|round|int if b.sleep.score else '–' }}<small> score</small></div>
+          <div><b>{{ '%d h %02d m'|format(b.sleep.hours.value|int, ((b.sleep.hours.value % 1) * 60)|round|int) }}</b>
+            <span class="hub-dim">{{ b.sleep.bed_label or '' }} → {{ b.sleep.wake_label or '' }}</span></div>
+        </div>
+        {% if b.sleep.deep and b.sleep.light and b.sleep.rem %}
+          <div class="stages" role="img" aria-label="Sleep stages">
+            <i class="deep" style="flex:{{ b.sleep.deep.value }}"></i><i class="light" style="flex:{{ b.sleep.light.value }}"></i><i class="rem" style="flex:{{ b.sleep.rem.value }}"></i>
+          </div>
+          <div class="legend"><span class="deep">Deep {{ b.sleep.deep.value|round|int }}%</span><span class="light">Light {{ b.sleep.light.value|round|int }}%</span><span class="rem">REM {{ b.sleep.rem.value|round|int }}%</span>
+            {% if b.sleep.wakeups %}<span>Wake-ups {{ b.sleep.wakeups.value|round|int }}</span>{% endif %}</div>
+        {% endif %}
+      {% else %}<p class="hub-dim">No recent sleep data.</p>{% endif %}
+    </section>
+    <section class="hub-panel span2">
+      <header><span class="hub-label">Vitals</span></header>
+      <div class="tiles">
+        {% for t in b.tiles %}
+          <div class="tile"><span class="hub-label">{{ t.label }}</span><b>{{ t.value|round|int }}<small>{{ t.unit }}</small></b>{{ spark(t.spark) }}</div>
+        {% endfor %}
+      </div>
+      {% set have = b.wellness|selectattr('reading')|list %}
+      <h3>Wellness check</h3>
+      {% if have %}
+        <div class="tiles">{% for w in have %}<div class="tile"><span class="hub-label">{{ w.label }}</span><b>{{ w.reading.value|round(1) }}<small>{{ w.unit }}</small></b><span class="hub-dim">{{ w.reading.day[5:] }}</span></div>{% endfor %}</div>
+      {% else %}<p class="hub-dim">No wellness check in the last week.</p>{% endif %}
+    </section>
+    {% endif %}
+
+    {# ---- habits ---- #}
+    {% set h = c.get('habits') %}
+    {% if h %}
+    <section class="hub-panel span2">
+      <header><span class="hub-label">Habits</span><a class="hub-link" href="/habits">Open</a></header>
+      <ul class="bars">
+        {% for g in h.goal %}
+          <li><span>{{ g.name }}</span><div class="bar"><i style="width:{{ [100 * g.done // (g.target or 1), 100]|min }}%"></i></div><em>{{ g.done }}/{{ g.target }}{{ ' · ' ~ g.streak ~ ' streak' if g.streak }}</em></li>
+        {% endfor %}
+      </ul>
+      {% if h.tracking %}<p class="hub-dim">Tracking: {% for t in h.tracking %}{{ t.name }} {{ t.week }} this week{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+      <div class="heat" role="img" aria-label="Habits done per day, last 28 days">{% for d in h.week_strip %}<i class="h{{ [d.n, 4]|min }}" title="{{ d.day }}: {{ d.n }}"></i>{% endfor %}</div>
+    </section>
+    {% endif %}
+
+    {# ---- weather ---- #}
+    {% set w = c.get('weather') %}
+    {% if w %}
+    <section class="hub-panel">
+      <header><span class="hub-label">Weather</span></header>
+      <div class="hub-big">{{ w.high_f|round|int if w.high_f is not none else '–' }}<small>° / {{ w.low_f|round|int if w.low_f is not none else '–' }}°</small></div>
+      <p class="hub-dim">{{ ('%.1f in rain'|format(w.precip_in)) if w.precip_in else 'Dry' }}{{ ' · wind %d mph'|format(w.wind_mph) if w.wind_mph }}</p>
+    </section>
+    {% endif %}
+
+    {# ---- household ---- #}
+    {% set ch = c.get('chores') %}
+    {% set ho = c.get('home') %}
+    <section class="hub-panel">
+      <header><span class="hub-label">Household</span></header>
+      {% if ch %}{% for k in ch.kids %}<p><b>{{ k.name }}</b> {{ k.done }}/{{ k.total }} chores · {{ k.owed }} owed</p>{% endfor %}{% endif %}
+      {% if ho %}<p class="hub-dim">{{ ho.overdue|length }} overdue · {{ ho.soon|length }} due soon{% if ho.soon %} (next: {{ ho.soon[0].name }}){% endif %}</p>{% endif %}
+    </section>
+
+    {# ---- week ahead ---- #}
+    {% if s %}
+    <section class="hub-panel span2">
+      <header><span class="hub-label">Week ahead</span></header>
+      {% if s.upcoming or s.tasks.soon or s.next_dinners %}
+        <ul class="tl">
+          {% for e in s.upcoming %}<li><time>{{ e.day[5:] }} {{ e.start_time or '' }}</time><span>{{ e.title }}</span></li>{% endfor %}
+          {% for t in s.tasks.soon %}<li class="task"><time>{{ t.day[5:] }}</time><span>{{ t.title }}</span></li>{% endfor %}
+          {% for d in s.next_dinners %}<li class="meal"><time>{{ d.day[5:] }}</time><span>Dinner: {{ d.title }}</span></li>{% endfor %}
+        </ul>
+      {% else %}<p class="hub-dim">Nothing scheduled in the next 7 days.</p>{% endif %}
+    </section>
+    {% endif %}
+
+    {# ---- insights ---- #}
+    {% set i = c.get('insights') %}
+    {% if i and i.report %}
+    <section class="hub-panel span2">
+      <header><span class="hub-label">Insight</span><a class="hub-link" href="/rating/insights">Details</a></header>
+      <p class="hub-story">{{ i.report.excerpt }}{{ '…' if i.report.excerpt|length >= 420 }}</p>
+    </section>
+    {% endif %}
+
+    {# ---- systems ---- #}
+    {% set sy = c.get('system') %}
+    {% if sy %}
+    <section class="hub-panel">
+      <header><span class="hub-label">Systems</span></header>
+      <ul class="sys">{% for l in sy.logins %}<li class="{{ l.status }}"><i class="dot {{ 'ok' if l.status == 'ok' else 'warn' }}"></i>{{ l.label }}</li>{% endfor %}</ul>
+      <p class="hub-dim">{{ sy.failed_24h }} failed task{{ '' if sy.failed_24h == 1 else 's' }} in 24h</p>
+    </section>
+    {% endif %}
+  </div>
+  <p class="hub-foot">Calendar and tasks as of {{ (c.schedule.synced.event or 'never')|fmt_dt if c.get('schedule') else 'never' }}</p>
+</div>
+{% endif %}
+{% endblock %}

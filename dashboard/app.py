@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routers import (activity, agent, ask, chores, dayrating, family, finance, habits, health, home, home_summary, kids, meals,
+from .routers import (activity, agent, ask, chores, dayrating, myhub, family, finance, habits, health, home, home_summary, kids, meals,
                       shopping_fitness)
 from .web import APP_NAME, HERE
 
@@ -43,6 +43,7 @@ app.include_router(family.router)
 app.include_router(home.router)
 app.include_router(habits.router)
 app.include_router(dayrating.router)
+app.include_router(myhub.router)
 app.include_router(chores.router)
 app.include_router(kids.router)
 app.include_router(meals.router)
