@@ -19,6 +19,12 @@ SECTIONS = [
         "pages": [{"key": "overview", "label": "Overview", "href": "/"}],
     },
     {
+        "key": "myhub",
+        "label": "My Hub",
+        "href": "/me",
+        "pages": [{"key": "hub", "label": "Hub", "href": "/me"}],
+    },
+    {
         "key": "health",
         "label": "Orchestrator Health",
         "href": "/health",
