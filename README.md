@@ -45,7 +45,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `calendar_load`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -73,6 +73,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/chores_store.py` | Zero-dep CLI over `chores.py` for the chores subagent (kid/chore/done/undo/status/payout/config sub-commands) |
 | `scripts/dayrating.py` | Shared day-rating service (1-10 score + note per day, status, nudge check). The single code path used by `dayrating_store.py` and the dashboard |
 | `scripts/dayrating_store.py` | Zero-dep CLI over `dayrating.py` and `insights.py` for the dayrating subagent (rate/show/list/status/nudge, insights refresh/stats/save) |
+| `scripts/calendar_load.py` | Per-day calendar load rules and storage (events, hours booked, shift/travel/kid flags). Events come from the dayrating agent's Calendar connector via `dayrating_store.py calendar sync` |
 | `scripts/insights.py` | Insights engine: auto-discovers sources in `scripts/insight_sources/`, stores daily metrics, ranks what moves the rating (Spearman, with/without comparisons, permutation p-values), stores AI narratives |
 | `scripts/insight_sources/` | One module per data source (`habits`, `calendar_day`, `weather` via free Open-Meteo, `coros_wellness` for HRV / resting HR / fatigue / load). Drop a new module here and it flows into the analysis |
 | `scripts/habits.py` | Shared habit-tracker service (streak rules, logging, at-risk). The single code path used by both `habits_store.py` and the dashboard |
@@ -394,7 +395,10 @@ A daily happiness score plus the "why". The `dayrating` subagent and the dashboa
   rating a day again edits it, past days can be backfilled. A nightly nudge (8:30 PM, silent if already rated) asks.
 - **Sources** (`scripts/insight_sources/`, one module each, auto-discovered): every habit done / not done, day of
   week, daily weather (free Open-Meteo archive, location from `weather_config`), and COROS recovery data (overnight
-  HRV, resting heart rate, fatigue, training load, from the same login as the workout sync). Values are stored per day
+  HRV, resting heart rate, fatigue, training load, from the same login as the workout sync), and calendar load
+  (events, hours booked, Caroline's shift, travel, kid activities). Google Calendar is only reachable through the
+  agent's connector, so the `dayrating` agent reads events and runs `dayrating_store.py calendar sync`; the rules live
+  in `scripts/calendar_load.py`, which excludes the Meal Planning, Running and holiday calendars. Values are stored per day
   in `insight_daily`, so adding a source needs no other wiring. Monarch spending is planned but charges post late, so
   it must skip or discount the most recent day.
 - **Analysis**: for each metric (same day and previous day) it reports the rating with vs without it or a rank

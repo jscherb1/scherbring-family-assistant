@@ -123,3 +123,46 @@ def test_save_and_latest_report_and_cli(db, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["score"] == 7
     assert dayrating_store.main(["rate", "--score", "12"]) == 2
     assert dayrating_store.main(["delete", "--date", "2020-01-01"]) == 1
+
+
+# --- calendar load source ---------------------------------------------------
+
+import calendar_load  # noqa: E402
+
+
+def _ev(title, start, end, cal="Family", all_day=False):
+    return {"title": title, "calendar": cal, "start": start, "end": end, "all_day": all_day}
+
+
+def test_calendar_load_metrics_and_filters():
+    events = [
+        _ev("Dentist", "2026-10-13T09:00:00", "2026-10-13T10:00:00"),
+        _ev("Overlap", "2026-10-13T09:30:00", "2026-10-13T11:00:00"),
+        _ev("Dance class", "2026-10-13T17:00:00", "2026-10-13T18:00:00"),
+        _ev("Caroline Work", "2026-10-13", "2026-10-14", all_day=True),
+        _ev("Tik Tok Bowls", "2026-10-13", "2026-10-14", cal="Meal Planning", all_day=True),
+        _ev("Columbus Day", "2026-10-13", "2026-10-14", cal="Holidays in United States", all_day=True),
+        _ev("Flight to Aspen", "2026-10-08T07:00:00", "2026-10-08T09:00:00"),
+    ]
+    out = calendar_load.compute(events, date(2026, 10, 8), date(2026, 10, 14))
+    d = out["2026-10-13"]
+    assert d["events"] == 4 and d["hours_booked"] == 3.0  # 9-11 merged + 1h dance
+    assert d["caroline_work"] == 1 and d["kid_activity"] == 1 and d["travel"] == 0
+    assert out["2026-10-14"]["events"] == 0  # all-day end is exclusive
+    assert out["2026-10-08"]["travel"] == 1
+    assert out["2026-10-09"] == {"events": 0, "caroline_work": 0, "travel": 0, "kid_activity": 0, "hours_booked": 0.0}
+
+
+def test_calendar_load_sync_cli_and_source(db, tmp_path, monkeypatch):
+    monkeypatch.setattr(dayrating, "DB_PATH", db)
+    f = tmp_path / "ev.json"
+    f.write_text(json.dumps([_ev("Dance", "2026-10-13T17:00:00", "2026-10-13T18:00:00")]))
+    assert dayrating_store.main(["calendar", "sync", "--start", "2026-10-12", "--end", "2026-10-14",
+                                 "--events-file", str(f)]) == 0
+    assert calendar_load.status(db_path=db)["days"] == 3
+    insights.refresh(only="calendar_load", days=5, db_path=db, today=TODAY)
+    conn = insights.connect(db)
+    vals = dict(conn.execute("SELECT day, value FROM insight_daily WHERE metric='calendar:events'").fetchall())
+    assert vals == {"2026-10-12": 0.0, "2026-10-13": 1.0, "2026-10-14": 0.0}
+    assert dayrating_store.main(["calendar", "sync", "--start", "2026-10-14", "--end", "2026-10-12",
+                                 "--events-file", str(f)]) == 2

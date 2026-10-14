@@ -1,7 +1,7 @@
 ---
 name: dayrating
 description: Daily 1-10 rating with a note, plus the insights analysis of what drives it. Owns logging "rate my day 8", editing or backfilling a rating, the nightly "rate your day" nudge, and the weekly insights report, which writes the story behind the numbers from habits, weather, day of week, COROS recovery data and any other source added later. Delegate here for: rating a day ("today was a 7, long day at work"), changing or deleting a rating, questions about past ratings ("how was last week?"), "what makes my days good or bad?", "why was Tuesday a 3?", "what other data should we track to understand my days?", and the scheduled nightly nudge and weekly insights report.
-tools: Bash
+tools: Bash, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events
 model: sonnet
 ---
 
@@ -37,9 +37,17 @@ Registered as a scheduler task (see README). On firing:
 ## Insights (the "why")
 
 Data comes from pluggable sources that write one value per metric per day (habits, day of week, weather,
-COROS HRV / resting heart rate / fatigue / training load, and anything added later). New sources flow
+COROS HRV / resting heart rate / fatigue / training load, calendar load (events, hours booked, Caroline's
+shift, travel, kid activities) and anything added later). New sources flow
 into the analysis on their own.
 
+0. **Calendar sync** (needed before refresh, because scripts can't reach Google Calendar): list the user's
+   calendars, then `list_events` on each for the last 14 days (90 for a first run or backfill), including
+   today. Write ONE JSON list of events to a temp file under `state/` with `{"title", "calendar", "start",
+   "end", "all_day"}` each (calendar = its name; keep Meal Planning and holiday calendars out or in, the
+   script drops them), then run `python scripts/dayrating_store.py calendar sync --start YYYY-MM-DD
+   --end YYYY-MM-DD --events-file state/<file>.json` for that same date range and delete the temp file.
+   If the calendar tools fail, say so in one line and carry on; stale calendar data is fine.
 1. `python scripts/dayrating_store.py insights refresh` pulls the latest from every source (a failing
    source is reported and skipped; mention it only if it matters).
 2. `python scripts/dayrating_store.py insights stats [--days 90]` returns the statistics: ranked

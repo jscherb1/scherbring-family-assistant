@@ -565,3 +565,16 @@ CREATE TABLE IF NOT EXISTS insight_reports (
     stats_json  TEXT NOT NULL,           -- the statistics the narrative was written from
     narrative   TEXT NOT NULL            -- AI-written story (the insights subagent)
 );
+
+-- Per-day calendar load, computed by scripts/calendar_load.py from events the dayrating agent reads
+-- through the Google Calendar connector (the Python scripts can't call it). Read by the
+-- calendar_load insight source.
+CREATE TABLE IF NOT EXISTS calendar_load (
+    day           TEXT PRIMARY KEY,      -- YYYY-MM-DD
+    events        INTEGER NOT NULL,      -- counted events (excluded calendars dropped)
+    hours_booked  REAL NOT NULL,         -- timed events, overlaps merged
+    caroline_work INTEGER NOT NULL,      -- 0/1: a "Caroline Work" block is on
+    travel        INTEGER NOT NULL,      -- 0/1: travel keywords in a title
+    kid_activity  INTEGER NOT NULL,      -- 0/1: dance / practice / lesson-type keywords
+    synced_at     TEXT NOT NULL
+);
