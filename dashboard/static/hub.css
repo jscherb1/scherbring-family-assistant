@@ -43,6 +43,7 @@
 .dot.urgent { background: var(--red); box-shadow: 0 0 8px var(--red); }
 .dot.warn { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .dot.info { background: var(--cy); }
+.dot.off { background: #4a5568; }
 .dot.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
 
 /* rings */

@@ -1,0 +1,11 @@
+[Unit]
+Description=Scherbring assistant integration health checks (COROS, Open-Meteo, Drive, Monarch, Hy-Vee)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/system_health_store.py check
+# Monarch's probe can take up to 90 s.
+TimeoutStartSec=180

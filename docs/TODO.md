@@ -132,6 +132,17 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - [ ] Older features (home maintenance, system health) have their rules re-read inside `hub_providers/` rather than shared;
       migrate with the rest of the old-feature duplication above.
 
+## System health (PR 1 built 2026-10-14)
+
+- [ ] PR 2: agent pings for Todoist, Calendar, Gmail and Home Assistant (`system_health_store.py record`), and a
+      Telegram alert when a system goes down (state change only). Until then Todoist/Calendar are inferred from the hub
+      sync and Gmail/Home Assistant show "not checked yet".
+- [ ] PR 3: move the COROS web reads (activities for `workout_sync`, HRV/load for day rating) to the health MCP; the web
+      login stays only for planned workouts and the library.
+- [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
+      `system_health` rows' `checked_at` after a few hours. Tune the 2 h interval as needed.
+- [ ] Hy-Vee's verdict is the daily credential check's, not a live probe (a headless browser every 2 h is too heavy).
+
 ## Day rating + insights (built 2026-10-14)
 
 - [ ] Registered `dayrating-nightly-nudge` (8:30 PM) and `dayrating-weekly-insights` (Sun 7:30 PM); neither has fired yet.

@@ -98,9 +98,10 @@ def test_weather_alert_and_expired_login_are_flagged(db, tmp_path):
     conn.execute("INSERT INTO weather_alerts (id, alert_type, target_date, created_at) VALUES ('a','rain_cushions','2026-10-15','x')")
     conn.commit()
     conn.close()
-    (tmp_path / "credential_check.json").write_text(json.dumps({"hyvee": {"status": "dead", "authed_at": "x"}}))
+    import system_health
+    system_health.record("hyvee", "down", "login expired", db_path=db)
     texts = [a["text"] for a in hub(db)["attention"]]
-    assert any("Rain coming" in t for t in texts) and any("Hy-Vee login" in t for t in texts)
+    assert any("Rain coming" in t for t in texts) and any("Hy-Vee is down" in t for t in texts)
 
 
 def test_cli_summary_and_snapshot(db, tmp_path, monkeypatch, capsys):

@@ -1,25 +1,24 @@
-"""System: logins that died and scheduled tasks that failed, so a silent break can't hide."""
-import json
+"""System: every integration's live health plus failed scheduled tasks, so a silent break can't hide."""
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import system_health
+
 PROVIDER = {"name": "system", "title": "System"}
-LABELS = {"hyvee": "Hy-Vee", "drive": "Google Drive", "monarch": "Monarch", "coros": "COROS"}
 
 
 def collect(conn, today):
     db = Path(conn.execute("PRAGMA database_list").fetchone()[2])
-    attention, creds = [], []
-    try:
-        data = json.loads((db.parent / "credential_check.json").read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        data = {}
-    for key, c in data.items():
-        label = LABELS.get(key, key)
-        creds.append({"key": key, "label": label, "status": c.get("status")})
-        if c.get("status") == "dead":
-            attention.append({"key": f"cred:{key}:{c.get('authed_at')}", "href": "/health/system",
-                              "level": "warn", "text": f"{label} login has expired"})
+    attention, systems = [], []
+    for s in system_health.get_status(db_path=db):
+        systems.append({"key": s["key"], "label": s["label"], "status": s["status"], "detail": s["detail"],
+                        "checked_at": s["checked_at"]})
+        if s["status"] == "down":
+            attention.append({"key": f"sys:{s['key']}", "href": "/health/system", "level": "warn",
+                              "text": f"{s['label']} is down: {s['detail']}"})
+        elif s["status"] == "warn" and s["key"] in ("todoist", "calendar"):
+            attention.append({"key": f"sys:{s['key']}", "href": "/health/system", "level": "info",
+                              "text": f"{s['label']} data looks stale ({s['detail']})"})
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
     fails = conn.execute(
         "SELECT t.name, r.run_at FROM scheduled_task_runs r JOIN scheduled_tasks t ON t.id=r.task_id "
@@ -27,4 +26,4 @@ def collect(conn, today):
     for f in fails:
         attention.append({"key": f"sched:{f['name']}:{f['run_at']}", "href": "/health/schedule", "level": "warn",
                           "text": f"Scheduled task {f['name']} failed"})
-    return {"card": {"logins": creds, "failed_24h": len(fails)}, "attention": attention}
+    return {"card": {"logins": systems, "failed_24h": len(fails)}, "attention": attention}
