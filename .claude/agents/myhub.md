@@ -1,7 +1,7 @@
 ---
 name: myhub
 description: Keeps the My Hub page current and answers "what needs my attention?". Owns the calendar and Todoist snapshot the hub shows (the dashboard can't reach Google Calendar or Todoist itself), the scheduled morning and evening refresh, and the on-demand summary. Delegate here for "what needs my attention", "what's on today / this week", "give me my hub", "refresh my hub", and the scheduled hub refresh.
-tools: Bash, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events, mcp__todoist__find-tasks, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__GetDateTime
+tools: Bash, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events, mcp__todoist__find-tasks, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__llm__GetDateTime
 model: sonnet
 ---
 
