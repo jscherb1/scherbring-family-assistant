@@ -48,7 +48,9 @@ def test_complete_expired_pending_is_dropped(secret, tmp_path):
         reauth.complete("drive", "http://localhost/callback?code=x&state=s", pending_path=pend)
 
 
-def test_complete_exchanges_code_saves_token_and_clears_pending(secret, tmp_path):
+def test_complete_exchanges_code_saves_token_and_clears_pending(secret, tmp_path, monkeypatch):
+    import credential_check as cc
+    monkeypatch.setattr(cc, "STATE_FILE", tmp_path / "cred.json")
     pend = tmp_path / "pending.json"
     reauth.start("drive", pending_path=pend)
     state = json.loads(pend.read_text())["drive"]["state"]
@@ -64,6 +66,7 @@ def test_complete_exchanges_code_saves_token_and_clears_pending(secret, tmp_path
     assert out["has_refresh_token"]
     assert json.loads((tmp_path / "token.json").read_text())["refresh_token"] == "rt"
     assert "drive" not in json.loads(pend.read_text())
+    assert "authed_at" in json.loads((tmp_path / "cred.json").read_text())["drive"]  # lifetime clock restarted
 
 
 def test_unknown_system_and_cli_exit_codes(secret, capsys):

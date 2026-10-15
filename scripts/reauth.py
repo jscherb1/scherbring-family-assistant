@@ -107,6 +107,8 @@ def complete(system: str, pasted: str, *, pending_path: Path = PENDING_FILE) -> 
     token_path = du._token_path()
     token_path.parent.mkdir(parents=True, exist_ok=True)
     token_path.write_text(flow.credentials.to_json(), encoding="utf-8")
+    from credential_check import record_login  # restart the lifetime clock, as drive_upload.py auth does
+    record_login(system)
     pending.pop(system, None)
     _save_pending(pending, pending_path)
     return {"system": system, "saved": str(token_path), "has_refresh_token": bool(flow.credentials.refresh_token)}
