@@ -51,6 +51,7 @@
       "mcp__claude_ai_Gmail__list_labels",
       "mcp__claude_ai_Home_Assistant__llm__GetDateTime",
       "Edit(state/myhub_tmp/**)",
+      "Edit(state/dayrating_tmp/**)",
       "Edit(state/finance_reports/**)",
       "Edit(state/retirement/**)"
     ],
