@@ -12,11 +12,11 @@ update it when you finish or add something. Dates are absolute.
 2. **Shred `~/migration/`.** It still holds the migrated credentials, sessions and old state. Everything
    in it is in place and in the first backup. The agent cannot do this itself because `~/migration` is
    on the project's deny list. Run: `find ~/migration -type f -exec shred -u {} + && rm -rf ~/migration`
-3. **Switch the Google OAuth app to production** (Google Cloud console, OAuth consent screen,
-   Publish app; no verification needed for single-user use). This ends the weekly Drive re-login.
-   Then run `python scripts/drive_upload.py auth` once and raise Drive's `lifetime_days` in
-   `state/credential_check.json` (7 by default) or let the live probe re-learn it. Steps are in
-   `docs/retirement-drive-setup.md`.
+3. **Google OAuth app stays in Testing (decided 2026-10-14).** Publishing to production needs a privacy
+   policy link on a domain you own and have verified in Search Console, so we did not publish. Drive's login
+   expires every 7 days; refresh it from any device with the dashboard **Reconnect** page or by telling the
+   agent "reconnect drive" (`scripts/reauth.py`). Note: `drive_upload.py` uses the full `drive` scope, not
+   `drive.file`.
 4. **Old Windows machine.** Before it pulls anything it must run `git fetch && git reset --hard
    origin/main` (or re-clone), because history was rewritten on 2026-10-05. Its four scheduled tasks
    (`PersonalAssistant{Orchestrator,Scheduler,Watchdog,HaMcp}`) must stay disabled, or two pollers will
@@ -179,3 +179,12 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 See the Backlog section of `README.md`.
 
 - [ ] `workouts-habit-sync` (daily 6am, registered 2026-10-14): script live-tested and backfilled by hand, but the scheduled dispatch has not fired yet. Check the 10/15 run in `scheduler_store.py runs`. Note COROS allows one web session per account, so a fresh login signs Justin out of COROS elsewhere.
+
+## Remote re-auth (Reconnect), added 2026-10-14
+
+- [ ] Live-test the Drive paste flow end to end from a phone (start, approve, paste, verify green on the hub).
+- [x] Hy-Vee remote browser: tried 2026-10-15, the CAPTCHA could not be cleared through it. Kept as a fallback.
+- [ ] Live-test the Hy-Vee cookie import (Reconnect page, "paste cookies"): export hy-vee.com cookies from a signed-in
+      browser, paste, and confirm it saves and the Hy-Vee health check goes green. Unknown: whether Hy-Vee/Cloudflare
+      accept the cookies from the server's IP and user agent. `login_test.py --headed` stays the last-resort fallback.
+- [ ] The Hy-Vee remote browser runs inside the dashboard process; restart the dashboard to pick up changes.

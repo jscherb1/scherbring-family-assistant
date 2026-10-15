@@ -14,7 +14,7 @@ def collect(conn, today):
         systems.append({"key": s["key"], "label": s["label"], "status": s["status"], "detail": s["detail"],
                         "checked_at": s["checked_at"]})
         if s["status"] == "down":
-            attention.append({"key": f"sys:{s['key']}", "href": "/health/system", "level": "warn",
+            attention.append({"key": f"sys:{s['key']}", "href": "/reconnect" if s["key"] in ("drive", "hyvee") else "/health/system", "level": "warn",
                               "text": f"{s['label']} is down: {s['detail']}"})
         elif s["status"] == "warn" and s["key"] in ("todoist", "calendar", "gmail", "home_assistant"):
             attention.append({"key": f"sys:{s['key']}", "href": "/health/system", "level": "info",

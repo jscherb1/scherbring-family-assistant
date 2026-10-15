@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Reconnect</h1>
+  <p class="subtitle">Refresh an expired login from any device. Nothing needs to run on the server machine.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<p class="ask-note err" role="alert" style="font-size:18px;font-weight:600">{{ error }}</p>{% endif %}
+  {% if ok %}<p class="ask-note ok" role="status" style="font-size:18px;font-weight:600">{{ ok }}</p>{% endif %}
+
+  <div class="grid stats">
+    {% for s in data.systems %}
+    <section class="card"><h2>{{ s.label }}</h2>
+      <div class="metric" style="font-size:22px">{{ s.status }}</div><div class="metric-sub">{{ s.detail }}</div></section>
+    {% endfor %}
+  </div>
+
+  <section class="card">
+    <h2>Google Drive</h2>
+    {% if drive %}
+      <ol>
+        <li><a href="{{ drive.url }}" target="_blank" rel="noopener">Open the Google sign-in link</a> and approve. If Google warns the app is unverified, tap Advanced, then Go to the app.</li>
+        <li>Your browser then goes to a <code>localhost/callback</code> page that fails to load. That is expected.</li>
+        <li>Copy the full address from the address bar and paste it here (it expires in {{ drive.expires_minutes }} minutes):</li>
+      </ol>
+      <form method="post" action="/reconnect/drive/complete" class="habit-form">
+        <label class="field"><span>Pasted address</span><input name="pasted" required autocomplete="off" placeholder="http://localhost/callback?code=..."></label>
+        <button class="btn" type="submit">Finish</button>
+      </form>
+    {% else %}
+      <form method="post" action="/reconnect/drive/start"><button class="btn" type="submit">Reconnect Google Drive</button></form>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Hy-Vee</h2>
+    <p>Opens a live view of a sign-in browser running on the server. Tap and type in it to sign in and clear the CAPTCHA. It works on a phone.</p>
+    <a class="btn" href="/reconnect/hyvee">Reconnect Hy-Vee</a>
+    <h3 style="margin-top:18px">Or paste cookies (works when the CAPTCHA won't clear on the server)</h3>
+    <ol>
+      <li>Sign in at hy-vee.com in your own browser.</li>
+      <li>Export all cookies for hy-vee.com with a cookie exporter (JSON or cookies.txt).</li>
+      <li>Paste them below. They are tested against Hy-Vee first and never shown again.</li>
+    </ol>
+    <form method="post" action="/reconnect/hyvee/cookies" class="habit-form">
+      <label class="field"><span>Exported cookies</span><textarea name="cookies" rows="6" required autocomplete="off" spellcheck="false"></textarea></label>
+      <label class="field"><input type="checkbox" name="force" value="1"> Save anyway even if the sign-in check fails</label>
+      <button class="btn" type="submit">Import and test</button>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}
