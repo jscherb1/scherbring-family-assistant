@@ -197,12 +197,24 @@ def _validate_hyvee_state(state: dict):
     sys.path.insert(0, str(REPO_ROOT / "scripts" / "hyvee"))
     from playwright.sync_api import sync_playwright
     import login_test as lt
+    import hyvee_web
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
         try:
             page = browser.new_context(storage_state=state).new_page()
-            ok = bool(lt.is_logged_in(page))
-            diag = {"url": page.url.split("?")[0], "title": (page.title() or "")[:80]}
+            page.goto(hyvee_web.HOME_URL, wait_until="domcontentloaded", timeout=45000)
+            page.wait_for_timeout(1500)
+            # Signed-in test = the account-only purchase-history API answers 200 with order data.
+            # (The page-icon check gave false negatives in the server's headless browser.)
+            resp = page.request.get(hyvee_web.PURCHASE_HISTORY_API.format(page=1))
+            ok = False
+            if resp.status == 200:
+                try:
+                    ok = "purchaseGroups" in (resp.json() or {})
+                except Exception:  # noqa: BLE001 - non-JSON body means not an account response
+                    ok = False
+            diag = {"url": page.url.split("?")[0], "title": (page.title() or "")[:80],
+                    "history_api_status": resp.status}
             try:
                 diag["login_link_visible"] = page.locator(lt.SEL_LOGIN_LINK).first.is_visible(timeout=1000)
                 diag["cart_icon_visible"] = page.locator(lt.SEL_CART_ICON).first.is_visible(timeout=1000)
@@ -228,6 +240,7 @@ def _describe_failure(cookies: list[dict], diag: dict) -> str:
     parts = [f"kept {len(cookies)} cookies on {', '.join(domains)}",
              f"names: {', '.join(names)}",
              f"final page: {diag.get('url') or '?'} (title: {diag.get('title') or '?'})",
+             f"order-history API status: {diag.get('history_api_status', '?')}",
              f"login link visible: {diag.get('login_link_visible', '?')}, cart icon visible: {diag.get('cart_icon_visible', '?')}"]
     return "; ".join(parts) + (". Likely: " + "; ".join(hints) if hints else "")
 
