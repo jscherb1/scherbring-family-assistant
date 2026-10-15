@@ -123,7 +123,7 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## My Hub (built 2026-10-14)
 
-- [ ] Registered `myhub-refresh-morning` (6:30 AM) and `myhub-refresh-evening` (5 PM); neither has fired yet. Until the
+- [ ] Registered `myhub-refresh` (every 2 h, 7am-9pm; replaced the morning/evening pair); it has not fired yet. Until the
       first run the page says calendar/tasks are "not synced yet". Check `scheduler_store.py runs`.
 - [ ] The look (JARVIS theme) and the phone layout have not been viewed in a browser; only tested by route tests.
 - [ ] Not on the hub yet (phase 2): finance items waiting on a decision (e.g. WHO tags; Monarch is live-only, so it
@@ -192,3 +192,5 @@ See the Backlog section of `README.md`.
       browser, paste, and confirm it saves and the Hy-Vee health check goes green. Unknown: whether Hy-Vee/Cloudflare
       accept the cookies from the server's IP and user agent. `login_test.py --headed` stays the last-resort fallback.
 - [ ] The Hy-Vee remote browser runs inside the dashboard process; restart the dashboard to pick up changes.
+- [ ] Faster refresh: confirm `assistant-insights-refresh.timer` keeps firing (`systemctl --user list-timers`) and that the first
+      `myhub-refresh` runs (7am onward) land; tune the intervals if the footer shows amber sources.

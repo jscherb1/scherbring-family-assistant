@@ -109,3 +109,6 @@
 .hub-x:hover { color: var(--cy); background: rgba(255, 255, 255, .05); }
 .hub-x.restore { font-size: 12px; color: var(--cy); }
 .hub-dismissed li .txt { flex: 1; color: var(--dim); font-size: 13px; padding: 6px 8px; }
+.hub-stale { color: #ffb347; }
+.hub-btn { margin-left: 10px; background: none; border: 1px solid var(--dim); color: var(--dim); border-radius: 4px; font-size: 11px; padding: 1px 8px; cursor: pointer; }
+.hub-btn:hover { color: #6fe7ff; border-color: #6fe7ff; }

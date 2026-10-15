@@ -234,3 +234,20 @@ def test_coros_mcp_needs_sign_in(tmp_path, monkeypatch):
     with pytest.raises(coros_mcp.CorosMcpError) as e:
         coros_mcp.access_token()
     assert e.value.code == 1
+
+
+def test_refresh_accepts_comma_list_and_freshness(db):
+    rep = insights.refresh(days=3, only="calendar_day,habits", db_path=db, today=TODAY)
+    assert set(rep) == {"calendar_day", "habits"}
+    with pytest.raises(insights.InsightError):
+        insights.refresh(days=3, only="habits,nope", db_path=db, today=TODAY)
+    assert "calendar_day" in insights.freshness(db_path=db)
+
+
+def test_hub_freshness_flags_stale_sources(db, monkeypatch):
+    import myhub
+    rows = {r["key"]: r for r in myhub.freshness(db_path=db)}
+    assert rows["weather"]["stale"] and rows["calendar"]["at"] is None  # never refreshed
+    from datetime import datetime
+    monkeypatch.setattr(insights, "freshness", lambda **kw: {"habits": datetime.now().isoformat(timespec="seconds")})
+    assert not {r["key"]: r for r in myhub.freshness(db_path=db)}["habits"]["stale"]

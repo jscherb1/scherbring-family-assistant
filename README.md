@@ -450,15 +450,16 @@ insight and system health (expired logins, failed scheduled tasks). The `myhub` 
   says when they were last synced and flags them when older than 36 hours.
 - Not on the hub yet: finance items waiting on a decision (Monarch is live-only) and Hy-Vee cart state; see `docs/TODO.md`.
 
-Register once:
+Register once (calendar and tasks need the agent, so every 2 hours 7am-9pm):
 ```
-python scripts/scheduler_store.py add --name "myhub-refresh-morning" \
+python scripts/scheduler_store.py add --name "myhub-refresh" \
   --prompt "Delegate to the myhub subagent to refresh the hub's calendar and task snapshot (silent unless something is urgent)." \
-  --cron "30 6 * * *" --target-chat-id "<your chat_id>"
-python scripts/scheduler_store.py add --name "myhub-refresh-evening" \
-  --prompt "Delegate to the myhub subagent to refresh the hub's calendar and task snapshot (silent unless something is urgent)." \
-  --cron "0 17 * * *" --target-chat-id "<your chat_id>"
+  --cron "0 7-21/2 * * *" --target-chat-id "<your chat_id>"
 ```
+Sleep, recovery, weather and habits are script-reachable, so `assistant-insights-refresh.timer` refreshes them every
+30 minutes (6am-10pm, no model tokens; `insights refresh --days 3 --source coros_health,weather,habits`). The hub footer
+shows each source's last refresh (amber when older than twice its interval) and a **Refresh now** button for the script tier.
+Install: `scripts/install_systemd.sh assistant-insights-refresh.timer`.
 
 ## Chores agent (kid chore chart)
 
