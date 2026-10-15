@@ -9,8 +9,8 @@
 {% if data.error %}
   <div class="card"><div class="error-state">{{ data.error }}</div></div>
 {% else %}
-  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
-  {% if ok %}<p class="ask-note" role="status">{{ ok }}</p>{% endif %}
+  {% if error %}<p class="ask-note err" role="alert" style="font-size:18px;font-weight:600">{{ error }}</p>{% endif %}
+  {% if ok %}<p class="ask-note ok" role="status" style="font-size:18px;font-weight:600">{{ ok }}</p>{% endif %}
 
   <div class="grid stats">
     {% for s in data.systems %}

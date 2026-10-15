@@ -110,8 +110,14 @@ def complete(system: str, pasted: str, *, pending_path: Path = PENDING_FILE) -> 
     return {"system": system, "saved": str(token_path), "has_refresh_token": bool(flow.credentials.refresh_token)}
 
 
-def verify(system: str) -> dict:
-    """Prove the saved login works (a real token load/refresh); returns {ok, detail}."""
+def verify(system: str, *, db_path=None) -> dict:
+    """Prove the saved login works (a real token load/refresh); returns {ok, detail}.
+
+    Also records the result in system_health so the Systems tile and Reconnect page flip to green right away."""
     import credential_check as cc
+    import system_health
     res = cc.probe_drive()
+    if res == "ok":
+        system_health.record(system, "ok", "reconnected; live read worked", db_path=db_path,
+                             notify=system_health.telegram_notify)
     return {"system": system, "ok": res == "ok", "detail": res}

@@ -44,7 +44,7 @@ def drive_complete(request: Request, pasted: str = Form("")):
         return b
     try:
         data.service.complete("drive", pasted)
-        res = data.service.verify("drive")
+        res = data.service.verify("drive", db_path=data.common.db_path())
         ok = "Google Drive is reconnected." if res["ok"] else "Saved, but Drive still looks unhealthy. Try again."
         err = None if res["ok"] else ok
         ok = ok if res["ok"] else None
