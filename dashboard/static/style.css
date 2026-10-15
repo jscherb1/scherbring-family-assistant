@@ -1761,3 +1761,25 @@ a.button {
     font-size: 16px;
   }
 }
+
+/* ---- Reconnect page ---- */
+.reauth-stack { display: flex; flex-direction: column; gap: 16px; }
+.reauth-stack ol { margin: 0 0 14px; padding-left: 20px; line-height: 1.5; }
+.reauth-stack p { margin: 0 0 12px; }
+.reauth-sub { margin: 22px 0 10px; font-size: 15px; }
+.reauth-banner { font-size: 16px; font-weight: 600; padding: 12px 14px; border-radius: 10px; margin: 0 0 16px;
+  background: var(--card-bg); border: 1px solid var(--border); }
+.reauth-banner.ok { border-color: var(--ok); }
+.reauth-banner.err { border-color: var(--warn); }
+.metric-sm { font-size: 22px; }
+.field textarea { width: 100%; font: inherit; font-size: 13px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; resize: vertical; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-muted); }
+.habit-form .check, .habit-form textarea { grid-column: 1 / -1; }
+.reauth-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+.reauth-row .button { margin-top: 0; }
+.reauth-type { margin-top: 10px; }
+.reauth-input { flex: 1; min-width: 160px; font: inherit; font-size: 14px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+a.button { display: inline-block; text-decoration: none; }
+.habit-form .field:has(textarea), .habit-form .field:has(input[name=pasted]) { grid-column: 1 / -1; }

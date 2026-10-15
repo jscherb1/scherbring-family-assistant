@@ -9,16 +9,17 @@
 {% if data.error %}
   <div class="card"><div class="error-state">{{ data.error }}</div></div>
 {% else %}
-  {% if error %}<p class="ask-note err" role="alert" style="font-size:18px;font-weight:600">{{ error }}</p>{% endif %}
-  {% if ok %}<p class="ask-note ok" role="status" style="font-size:18px;font-weight:600">{{ ok }}</p>{% endif %}
+  {% if error %}<p class="ask-note err reauth-banner" role="alert">{{ error }}</p>{% endif %}
+  {% if ok %}<p class="ask-note ok reauth-banner" role="status">{{ ok }}</p>{% endif %}
 
   <div class="grid stats">
     {% for s in data.systems %}
     <section class="card"><h2>{{ s.label }}</h2>
-      <div class="metric" style="font-size:22px">{{ s.status }}</div><div class="metric-sub">{{ s.detail }}</div></section>
+      <div class="metric metric-sm">{{ s.status }}</div><div class="metric-sub">{{ s.detail }}</div></section>
     {% endfor %}
   </div>
 
+  <div class="reauth-stack">
   <section class="card">
     <h2>Google Drive</h2>
     {% if drive %}
@@ -29,18 +30,18 @@
       </ol>
       <form method="post" action="/reconnect/drive/complete" class="habit-form">
         <label class="field"><span>Pasted address</span><input name="pasted" required autocomplete="off" placeholder="http://localhost/callback?code=..."></label>
-        <button class="btn" type="submit">Finish</button>
+        <button class="button" type="submit">Finish</button>
       </form>
     {% else %}
-      <form method="post" action="/reconnect/drive/start"><button class="btn" type="submit">Reconnect Google Drive</button></form>
+      <form method="post" action="/reconnect/drive/start"><button class="button" type="submit">Reconnect Google Drive</button></form>
     {% endif %}
   </section>
 
   <section class="card">
     <h2>Hy-Vee</h2>
     <p>Opens a live view of a sign-in browser running on the server. Tap and type in it to sign in and clear the CAPTCHA. It works on a phone.</p>
-    <a class="btn" href="/reconnect/hyvee">Reconnect Hy-Vee</a>
-    <h3 style="margin-top:18px">Or paste cookies (works when the CAPTCHA won't clear on the server)</h3>
+    <a class="button" href="/reconnect/hyvee">Reconnect Hy-Vee</a>
+    <h3 class="reauth-sub">Or paste cookies (works when the CAPTCHA won't clear on the server)</h3>
     <ol>
       <li>Sign in at hy-vee.com in your own browser.</li>
       <li>Export all cookies for hy-vee.com with a cookie exporter (JSON or cookies.txt).</li>
@@ -48,9 +49,10 @@
     </ol>
     <form method="post" action="/reconnect/hyvee/cookies" class="habit-form">
       <label class="field"><span>Exported cookies</span><textarea name="cookies" rows="6" required autocomplete="off" spellcheck="false"></textarea></label>
-      <label class="field"><input type="checkbox" name="force" value="1"> Save anyway even if the sign-in check fails</label>
-      <button class="btn" type="submit">Import and test</button>
+      <label class="check"><input type="checkbox" name="force" value="1"><span>Save anyway even if the sign-in check fails</span></label>
+      <button class="button" type="submit">Import and test</button>
     </form>
   </section>
+  </div>
 {% endif %}
 {% endblock %}

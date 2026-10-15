@@ -42,8 +42,8 @@ def test_attention_is_ranked_urgent_first(db):
     myhub.set_snapshot("task", [{"title": "Pay bill", "day": "2026-10-10", "priority": 1}], db_path=db)
     levels = [a["level"] for a in hub(db)["attention"]]
     assert levels == sorted(levels, key=lambda lv: myhub.LEVELS[lv])
-    assert hub(db)["attention"][0]["level"] == "urgent"
-    assert "Pay bill" in hub(db)["attention"][0]["text"]
+    # tasks are grouped under "Show all > Tasks", so the overdue one is in groups, ranked first there
+    assert "Pay bill" in hub(db)["groups"][0]["items"][0]["text"]
 
 
 def test_broken_provider_becomes_visible_attention(db, monkeypatch):
@@ -114,3 +114,12 @@ def test_cli_summary_and_snapshot(db, tmp_path, monkeypatch, capsys):
     assert "counts" in json.loads(capsys.readouterr().out)
     f.write_text("not json")
     assert myhub_store.main(["snapshot", "set", "--kind", "task", "--items-file", str(f)]) == 2
+
+
+def test_tasks_are_grouped_out_of_the_attention_strip(db):
+    myhub.set_snapshot("task", [{"title": "Call", "day": "2026-10-14"}, {"title": "Old", "day": "2026-10-12"}], db_path=db)
+    h = hub(db)
+    assert not any(a["key"].startswith("task") for a in h["attention"])
+    assert [g["label"] for g in h["groups"]] == ["Tasks"]
+    assert len(h["groups"][0]["items"]) == 2
+    assert h["counts"]["urgent"] == sum(1 for a in h["attention"] if a["level"] == "urgent")

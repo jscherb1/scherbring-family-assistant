@@ -99,3 +99,8 @@ def test_record_login_sets_authed_at_and_clears_alert(tmp_path, monkeypatch):
     import json
     e = json.loads((tmp_path / "state.json").read_text())["hyvee"]
     assert e["authed_at"].startswith("2026-10-20") and "last_alert_at" not in e
+
+
+def test_dead_probe_on_a_brand_new_login_does_not_shrink_estimate():
+    _, entry = cc.evaluate(HV, {}, "dead", NOW, login(0.2))
+    assert entry["lifetime_days"] == 11
