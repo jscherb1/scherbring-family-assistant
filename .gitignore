@@ -80,3 +80,4 @@ state/usage*.jsonl
 # COROS MCP OAuth client/token state (secrets)
 state/coros_mcp_*.json
 state/myhub_tmp/
+state/reauth_pending.json

@@ -41,6 +41,10 @@ SYSTEMS = {
 }
 # Hub snapshot freshness stands in for a live ping on these until an agent records one.
 SNAPSHOT_FALLBACK = {"todoist": "task", "calendar": "event"}
+RECONNECT_HINTS = {
+    "drive": " Fix it from your phone: reply \"reconnect drive\" here, or open Reconnect on the dashboard.",
+    "hyvee": " Fix it from your phone: open Reconnect on the dashboard and use the Hy-Vee browser.",
+}
 STALE_HOURS = 24
 PING_STALE_HOURS = 30  # an agent-recorded result older than this means the twice-daily ping stopped running
 DOWN_AFTER = 2  # consecutive failures before a check is called "down" (one blip is only "warn")
@@ -105,7 +109,8 @@ def record(key: str, status: str, detail: str = "", *, db_path=None, now: dateti
         conn.close()
     label = SYSTEMS[key][0]
     if notify and status == "down" and prev_status != "down":
-        notify(f"🔴 {label} is down: {detail}")
+        hint = RECONNECT_HINTS.get(key, "")
+        notify(f"🔴 {label} is down: {detail}{hint}")
     elif notify and status == "ok" and prev_status == "down":
         notify(f"🟢 {label} is working again.")
     return {"key": key, "status": status, "detail": detail, "checked_at": now_s, "fail_streak": streak}

@@ -24,6 +24,16 @@ project root). Output is JSON; errors are `{"error": ...}` on stderr (exit 1 = n
   sleep" etc. Answer from it; don't re-query other agents' data.
 - Anything under `errors` means an area couldn't be read: say so rather than implying all is well.
 
+## Reconnecting an expired login (Google Drive) from Telegram
+
+When the user says "reconnect drive" (or Drive shows down in the hub):
+1. `python scripts/reauth_store.py start drive`. Send the user the `url` and the three `steps` in plain words.
+2. When they reply with a `http://localhost/callback?code=...` address, run
+   `python scripts/reauth_store.py complete drive "<their text>"` (quote it), then
+   `python scripts/reauth_store.py verify drive`. Report whether Drive is healthy now.
+3. Never repeat the pasted address back, and treat the link as expiring in 15 minutes: if it fails, start again.
+Hy-Vee can't be reconnected from chat: point the user to **Reconnect** on the dashboard (it has a phone-friendly sign-in browser).
+
 ## Refreshing the calendar and task snapshot (scheduled morning and evening, or "refresh my hub")
 
 Scripts can't reach Google Calendar or Todoist, so you copy them in:
