@@ -607,3 +607,12 @@ CREATE TABLE IF NOT EXISTS system_health (
     last_ok_at  TEXT,
     fail_streak INTEGER NOT NULL DEFAULT 0
 );
+
+-- My Hub: needs-attention items the user dismissed after reviewing them. The key is tied to the specific event
+-- (see scripts/hub_providers), so a dismissed item stays hidden but a new occurrence shows up again. Entries whose
+-- condition is gone, or older than 60 days, are pruned on the next dismiss.
+CREATE TABLE IF NOT EXISTS hub_dismissed (
+    key          TEXT PRIMARY KEY,
+    text         TEXT,
+    dismissed_at TEXT NOT NULL           -- local ISO
+);

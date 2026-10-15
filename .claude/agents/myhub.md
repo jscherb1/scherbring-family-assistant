@@ -17,6 +17,9 @@ project root). Output is JSON; errors are `{"error": ...}` on stderr (exit 1 = n
 
 ## Answering questions
 
+- `python scripts/myhub_store.py dismiss KEY` / `restore [KEY]`: hide an item the user has reviewed (keys come from
+  `attention`; a new occurrence of the same kind of event still shows) or bring it back. Dismissed items are listed under
+  `dismissed` and are left out of the counts.
 - `python scripts/myhub_store.py attention`: the ranked list (`urgent` > `warn` > `info`) with counts. Use it for
   "what needs my attention?". Lead with urgent and warn items; mention info items briefly. If it is empty, say
   "All clear".

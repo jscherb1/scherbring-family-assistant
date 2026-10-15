@@ -9,6 +9,8 @@ Usage:
         (everything: needs-attention list, every card; what the /me page shows)
     python scripts/myhub_store.py attention
         (only the ranked needs-attention list plus counts)
+    python scripts/myhub_store.py dismiss KEY      (hide a reviewed item; keys are in `attention`)
+    python scripts/myhub_store.py restore [KEY]    (un-hide one, or all with no key)
     python scripts/myhub_store.py snapshot set --kind event --start YYYY-MM-DD --end YYYY-MM-DD --items-file PATH|-
     python scripts/myhub_store.py snapshot set --kind task --items-file PATH|-
         (items: JSON list of {"title","day","start_time","end_time","source","detail","priority"};
@@ -42,7 +44,11 @@ def run(args) -> int:
         return _out(myhub.get_hub())
     if args.cmd == "attention":
         h = myhub.get_hub()
-        return _out({"date": h["date"], "counts": h["counts"], "attention": h["attention"], "groups": h["groups"], "errors": h["errors"]})
+        return _out({"date": h["date"], "counts": h["counts"], "attention": h["attention"], "groups": h["groups"], "dismissed": h["dismissed"], "errors": h["errors"]})
+    if args.cmd == "dismiss":
+        return _out(myhub.dismiss(args.key))
+    if args.cmd == "restore":
+        return _out(myhub.restore(args.key))
     if args.snap == "status":
         return _out(myhub.snapshot_status())
     raw = sys.stdin.read() if args.items_file == "-" else open(args.items_file, encoding="utf-8-sig").read()
@@ -58,6 +64,8 @@ def main(argv=None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("summary")
     sub.add_parser("attention")
+    sub.add_parser("dismiss").add_argument("key")
+    sub.add_parser("restore").add_argument("key", nargs="?")
     sn = sub.add_parser("snapshot")
     ss = sn.add_subparsers(dest="snap", required=True)
     st = ss.add_parser("set")

@@ -14,3 +14,11 @@ import myhub as service  # noqa: E402
 @common.guarded
 def get_hub():
     return service.get_hub(db_path=common.db_path())
+
+
+def dismiss(key: str) -> None:
+    service.dismiss(key, db_path=common.db_path())
+
+
+def restore(key: str | None) -> None:
+    service.restore(key, db_path=common.db_path())
