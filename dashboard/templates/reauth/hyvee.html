@@ -8,21 +8,21 @@
 {% block content %}
 <section class="card">
   <p id="hv-msg" role="status">{{ status.message or 'Press Start to open the sign-in page.' }}</p>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <button class="btn" id="hv-start" type="button">Start</button>
-    <button class="btn" id="hv-fill" type="button">Fill saved login</button>
-    <button class="btn" id="hv-finish" type="button">I'm signed in</button>
-    <button class="btn" id="hv-stop" type="button">Stop</button>
+  <div class="reauth-row">
+    <button class="button" id="hv-start" type="button">Start</button>
+    <button class="button" id="hv-fill" type="button">Fill saved login</button>
+    <button class="button" id="hv-finish" type="button">I'm signed in</button>
+    <button class="button" id="hv-stop" type="button">Stop</button>
   </div>
   <div id="hv-wrap" style="position:relative;max-width:100%;touch-action:manipulation">
     <img id="hv-shot" alt="Hy-Vee sign-in browser" style="width:100%;height:auto;border:1px solid #444;display:block;cursor:pointer">
   </div>
-  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-    <input id="hv-text" type="text" autocomplete="off" autocapitalize="off" placeholder="Type here, then Send" style="flex:1;min-width:160px">
-    <button class="btn" id="hv-send" type="button">Send</button>
-    <button class="btn" id="hv-enter" type="button">Enter</button>
-    <button class="btn" id="hv-tab" type="button">Tab</button>
-    <button class="btn" id="hv-bksp" type="button">Backspace</button>
+  <div class="reauth-row reauth-type">
+    <input id="hv-text" type="text" autocomplete="off" autocapitalize="off" placeholder="Type here, then Send" class="reauth-input">
+    <button class="button" id="hv-send" type="button">Send</button>
+    <button class="button" id="hv-enter" type="button">Enter</button>
+    <button class="button" id="hv-tab" type="button">Tab</button>
+    <button class="button" id="hv-bksp" type="button">Backspace</button>
   </div>
 </section>
 <script>

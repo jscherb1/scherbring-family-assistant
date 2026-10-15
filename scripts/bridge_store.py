@@ -20,6 +20,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+# Claude's own account-level connectors that nothing here uses; their auth state is not our problem.
+IGNORED_MCP = {"claude.ai Monarch Money"}
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = REPO_ROOT / "state" / "inbox.db"
 
@@ -340,7 +343,7 @@ class BridgeStore:
             "worker_up": worker_age is not None and worker_age <= stale_s,
             "worker_heartbeat_age_s": worker_age,
             "paused": self.kv_get("paused") == "1",
-            "mcp_down": json.loads(self.kv_get("mcp_down") or "[]"),
+            "mcp_down": [n for n in json.loads(self.kv_get("mcp_down") or "[]") if n not in IGNORED_MCP],
             "current_turn": json.loads(turn) if turn else None,
             "last_canary": json.loads(self.kv_get("last_canary") or "null"),
             **self.stats(ts),

@@ -39,19 +39,23 @@
         {% if data.counts.warn %}<i class="dot warn"></i>{{ data.counts.warn }} to act on{% endif %}
         {% if data.counts.info %}<i class="dot info"></i>{{ data.counts.info }} to note{% endif %}
       </span></header>
+    {% macro row(a) %}<li class="lvl-{{ a.level }}"><a href="{{ a.href }}"><i class="dot {{ a.level }}"></i><span class="area">{{ a.area }}</span><span class="txt">{{ a.text }}</span></a></li>{% endmacro %}
     {% if data.attention %}
-      <ul>
-        {% for a in data.attention[:6] %}
-          <li class="lvl-{{ a.level }}"><a href="{{ a.href }}"><i class="dot {{ a.level }}"></i><span class="area">{{ a.area }}</span><span class="txt">{{ a.text }}</span></a></li>
-        {% endfor %}
-      </ul>
-      {% if data.attention|length > 6 %}
-        <details class="hub-more"><summary>Show all {{ data.attention|length }}</summary>
-          <ul>{% for a in data.attention[6:] %}<li class="lvl-{{ a.level }}"><a href="{{ a.href }}"><i class="dot {{ a.level }}"></i><span class="area">{{ a.area }}</span><span class="txt">{{ a.text }}</span></a></li>{% endfor %}</ul>
-        </details>
-      {% endif %}
+      <ul>{% for a in data.attention[:6] %}{{ row(a) }}{% endfor %}</ul>
     {% else %}
       <p class="hub-clear">All clear. Nothing needs you right now.</p>
+    {% endif %}
+    {% set extra = data.attention[6:] %}
+    {% set n_all = data.attention|length + (data.groups|map(attribute='items')|map('length')|sum) %}
+    {% if extra or data.groups %}
+      <details class="hub-more"><summary>Show all {{ n_all }}</summary>
+        {% if extra %}<ul>{% for a in extra %}{{ row(a) }}{% endfor %}</ul>{% endif %}
+        {% for g in data.groups %}
+          <details class="hub-group"><summary>{{ g.label }} ({{ g['items']|length }})</summary>
+            <ul>{% for a in g['items'] %}{{ row(a) }}{% endfor %}</ul>
+          </details>
+        {% endfor %}
+      </details>
     {% endif %}
   </section>
 

@@ -189,3 +189,10 @@ def test_record_context_note_helper(tmp_path, monkeypatch):
     row = s.claim_next("household")
     assert [n["text"] for n in row["notes"]] == ["weekly summary"]
     record_context_note("1", "x", "scheduler", db="/nonexistent-dir/x/i.db")  # never raises
+
+
+def test_snapshot_ignores_unused_claude_ai_connectors():
+    import json
+    s = make()
+    s.kv_set("mcp_down", json.dumps(["claude.ai Monarch Money", "todoist"]))
+    assert s.health_snapshot()["mcp_down"] == ["todoist"]

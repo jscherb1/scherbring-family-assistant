@@ -157,6 +157,12 @@ def get_hub(*, db_path=None, today: date | None = None) -> dict:
     finally:
         conn.close()
     attention.sort(key=lambda a: (LEVELS.get(a["level"], 1), a["area"], a["text"]))
-    return {"date": today.isoformat(), "generated_at": _now_iso(), "attention": attention,
+    # Items a provider tags with a "group" (Todoist tasks: always some open) never crowd the strip; they are
+    # listed under one collapsed row in "Show all" and don't count toward the strip's totals or "All clear".
+    grouped = [a for a in attention if a.get("group")]
+    attention = [a for a in attention if not a.get("group")]
+    groups = [{"label": label, "items": [a for a in grouped if a["group"] == label]}
+              for label in dict.fromkeys(a["group"] for a in grouped)]
+    return {"date": today.isoformat(), "generated_at": _now_iso(), "attention": attention, "groups": groups,
             "counts": {lvl: sum(1 for a in attention if a["level"] == lvl) for lvl in LEVELS},
             "cards": cards, "errors": errors, "snapshot": snapshot_status(db_path=db_path)}

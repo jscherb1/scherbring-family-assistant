@@ -42,7 +42,7 @@ def run(args) -> int:
         return _out(myhub.get_hub())
     if args.cmd == "attention":
         h = myhub.get_hub()
-        return _out({"date": h["date"], "counts": h["counts"], "attention": h["attention"], "errors": h["errors"]})
+        return _out({"date": h["date"], "counts": h["counts"], "attention": h["attention"], "groups": h["groups"], "errors": h["errors"]})
     if args.snap == "status":
         return _out(myhub.snapshot_status())
     raw = sys.stdin.read() if args.items_file == "-" else open(args.items_file, encoding="utf-8-sig").read()

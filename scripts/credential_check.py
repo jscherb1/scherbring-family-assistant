@@ -161,22 +161,15 @@ def probe_drive() -> str:
 
 
 def probe_hyvee() -> str:
-    sys.path.insert(0, str(REPO_ROOT / "scripts" / "hyvee"))
+    """Signed-in test = the account-only order-history API answers (the page-icon check gave false negatives)."""
     session = HYVEE_SESSION
     if not session.exists():
         return "dead"
     try:
-        from playwright.sync_api import sync_playwright
+        import reauth
 
-        from login_test import is_logged_in
-
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
-            try:
-                context = browser.new_context(storage_state=str(session), viewport={"width": 1366, "height": 900})
-                return "ok" if is_logged_in(context.new_page()) else "dead"
-            finally:
-                browser.close()  # session state is deliberately not saved back
+        ok, _diag = reauth._validate_hyvee_state(json.loads(session.read_text()))
+        return "ok" if ok else "dead"
     except Exception:  # noqa: BLE001
         return "unknown"
 
@@ -211,7 +204,7 @@ def evaluate(
     due_for_message = last_alert is None or now - last_alert >= ALERT_EVERY
 
     if probe_status == "dead":
-        if age_days is not None and age_days < lifetime:
+        if age_days is not None and 1 <= age_days < lifetime:  # a brand-new login dying is a bad probe, not a lifetime
             # It died sooner than we assumed: learn from it.
             lifetime = max(1.0, round(age_days, 1))
             entry["lifetime_days"] = lifetime

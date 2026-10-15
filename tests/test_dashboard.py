@@ -905,7 +905,7 @@ def test_hub_ui_and_service_share_data(client, state):
     service.set_snapshot("task", [{"title": "Renew <b>passport", "day": "2020-01-01", "priority": 1}],
                          db_path=state / "agent_results.db")
     api = client.get("/api/me").json()
-    assert any("Renew <b>passport" in a["text"] for a in api["attention"])
+    assert any("Renew <b>passport" in a["text"] for g in api["groups"] for a in g["items"])  # tasks live under Show all > Tasks
     page = client.get("/me")
     assert page.status_code == 200 and "My Hub" in page.text
     assert "passport" in page.text and "<b>passport" not in page.text  # escaped
