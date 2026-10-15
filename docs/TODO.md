@@ -183,7 +183,8 @@ See the Backlog section of `README.md`.
 ## Remote re-auth (Reconnect), added 2026-10-14
 
 - [ ] Live-test the Drive paste flow end to end from a phone (start, approve, paste, verify green on the hub).
-- [ ] Live-test the Hy-Vee remote browser from a phone: confirm the CAPTCHA can be solved through screenshots and
-      taps, and that the saved session passes the Hy-Vee health check. If Hy-Vee rejects the headless session
-      (CAPTCHA loops), fall back to a cookie import.
+- [x] Hy-Vee remote browser: tried 2026-10-15, the CAPTCHA could not be cleared through it. Kept as a fallback.
+- [ ] Live-test the Hy-Vee cookie import (Reconnect page, "paste cookies"): export hy-vee.com cookies from a signed-in
+      browser, paste, and confirm it saves and the Hy-Vee health check goes green. Unknown: whether Hy-Vee/Cloudflare
+      accept the cookies from the server's IP and user agent. `login_test.py --headed` stays the last-resort fallback.
 - [ ] The Hy-Vee remote browser runs inside the dashboard process; restart the dashboard to pick up changes.

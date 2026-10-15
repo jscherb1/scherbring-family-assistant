@@ -5,6 +5,7 @@ Usage:
     python scripts/reauth_store.py start drive
     python scripts/reauth_store.py complete drive "<pasted http://localhost/callback?code=... address>"
     python scripts/reauth_store.py verify drive
+    python scripts/reauth_store.py hyvee-cookies "<exported cookies, JSON or cookies.txt>"
 
 JSON on stdout. Errors are {"error": ...} on stderr; exit 1 = not possible right now, 2 = bad input.
 """
@@ -26,10 +27,13 @@ def main(argv=None) -> int:
     c = sub.add_parser("complete")
     c.add_argument("system")
     c.add_argument("pasted")
+    sub.add_parser("hyvee-cookies").add_argument("pasted")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "start":
             out = reauth.start(a.system)
+        elif a.cmd == "hyvee-cookies":
+            out = reauth.import_hyvee_cookies(a.pasted)
         elif a.cmd == "complete":
             out = reauth.complete(a.system, a.pasted)
         else:

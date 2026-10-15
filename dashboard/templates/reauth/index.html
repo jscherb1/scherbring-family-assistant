@@ -40,6 +40,16 @@
     <h2>Hy-Vee</h2>
     <p>Opens a live view of a sign-in browser running on the server. Tap and type in it to sign in and clear the CAPTCHA. It works on a phone.</p>
     <a class="btn" href="/reconnect/hyvee">Reconnect Hy-Vee</a>
+    <h3 style="margin-top:18px">Or paste cookies (works when the CAPTCHA won't clear on the server)</h3>
+    <ol>
+      <li>Sign in at hy-vee.com in your own browser.</li>
+      <li>Export all cookies for hy-vee.com with a cookie exporter (JSON or cookies.txt).</li>
+      <li>Paste them below. They are tested against Hy-Vee first and never shown again.</li>
+    </ol>
+    <form method="post" action="/reconnect/hyvee/cookies" class="habit-form">
+      <label class="field"><span>Exported cookies</span><textarea name="cookies" rows="6" required autocomplete="off" spellcheck="false"></textarea></label>
+      <button class="btn" type="submit">Import and test</button>
+    </form>
   </section>
 {% endif %}
 {% endblock %}

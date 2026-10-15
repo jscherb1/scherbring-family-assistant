@@ -144,3 +144,49 @@ def test_reconnect_pages_and_same_origin_guard(monkeypatch, tmp_path):
     assert r.status_code == 400 and "No sign-in session" in r.json()["error"]
     r = c.post("/reconnect/drive/complete", data={"pasted": "junk"})
     assert r.status_code == 200 and "doesn" in r.text
+
+
+# ---- Hy-Vee cookie import ----
+
+JSON_COOKIES = json.dumps([
+    {"name": "auth0", "value": "SECRETVAL", "domain": "identity.hy-vee.com", "path": "/", "httpOnly": True,
+     "secure": True, "sameSite": "no_restriction", "expirationDate": 2000000000},
+    {"name": "hyveeSessionId", "value": "abc", "domain": ".hy-vee.com", "session": True},
+    {"name": "other", "value": "x", "domain": ".example.com"},
+])
+
+
+def test_parse_cookies_filters_domains_and_normalizes():
+    cs = reauth.parse_cookies(JSON_COOKIES)
+    assert [c["name"] for c in cs] == ["auth0", "hyveeSessionId"]
+    assert cs[0]["sameSite"] == "None" and cs[0]["expires"] == 2000000000
+    assert cs[1]["expires"] == -1
+
+
+def test_parse_cookies_netscape_format():
+    txt = "# Netscape\n#HttpOnly_.hy-vee.com\tTRUE\t/\tTRUE\t2000000000\tdid\tVAL\n.other.com\tTRUE\t/\tTRUE\t0\tz\t1\n"
+    cs = reauth.parse_cookies(txt)
+    assert len(cs) == 1 and cs[0]["name"] == "did" and cs[0]["httpOnly"] is True
+
+
+@pytest.mark.parametrize("bad", ["", "[not json", json.dumps([{"name": "a", "value": "b", "domain": "x.com"}])])
+def test_parse_cookies_rejects_bad_input(bad):
+    with pytest.raises(reauth.ReauthError):
+        reauth.parse_cookies(bad)
+
+
+def test_import_saves_only_when_validated_and_keeps_backup(tmp_path):
+    f = tmp_path / "session.json"
+    f.write_text("old")
+    res = reauth.import_hyvee_cookies(JSON_COOKIES, session_file=f, validate=lambda st: True)
+    assert res["cookies"] == 2 and "SECRETVAL" not in json.dumps(res)
+    assert json.loads(f.read_text())["cookies"][0]["name"] == "auth0"
+    assert (tmp_path / "session.json.bak").read_text() == "old"
+
+
+def test_import_rejects_when_hyvee_says_signed_out(tmp_path):
+    f = tmp_path / "session.json"
+    f.write_text("old")
+    with pytest.raises(reauth.ReauthError, match="Nothing was saved"):
+        reauth.import_hyvee_cookies(JSON_COOKIES, session_file=f, validate=lambda st: False)
+    assert f.read_text() == "old"

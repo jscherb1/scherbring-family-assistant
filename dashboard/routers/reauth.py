@@ -54,6 +54,19 @@ def drive_complete(request: Request, pasted: str = Form("")):
                   drive=None, error=err, ok=ok)
 
 
+@router.post("/reconnect/hyvee/cookies", include_in_schema=False)
+def hyvee_cookies(request: Request, cookies: str = Form("")):
+    if (b := _blocked(request)):
+        return b
+    try:
+        res = data.service.import_hyvee_cookies(cookies)
+        ok, err = f"Hy-Vee is reconnected ({res['cookies']} cookies imported and verified).", None
+    except data.ReauthError as e:
+        ok, err = None, e.message
+    return render(request, "reauth/index.html", "health", "reconnect", "Reconnect", data=data.get_status(),
+                  drive=None, error=err, ok=ok)
+
+
 # ---- Hy-Vee remote browser ----
 
 @router.get("/reconnect/hyvee", include_in_schema=False)
