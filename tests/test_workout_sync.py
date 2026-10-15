@@ -56,3 +56,12 @@ def test_dry_run_writes_nothing(db):
 def test_missing_habit_raises(tmp_path):
     with pytest.raises(habits.HabitError):
         workout_sync.sync({"2026-10-12": ["Run"]}, db_path=tmp_path / "x.db", today=TODAY)
+
+
+def test_parse_sport_records_groups_by_day():
+    text = ("Sport Records — x\n====\n\n1. Strength — 2026-10-12\n   Location: 30 Min Upper Body - Peloton\n"
+            "   Duration: 24:45\n\n2. Cycling — 2026-10-09\n   Location: Aspen Road Bike\n\n"
+            "3. Cycling — 2026-10-09\n   Location: Pitkin\n\n4. Run — 2026-10-08\n   Duration: 1\n")
+    assert workout_sync.parse_sport_records(text) == {
+        "2026-10-12": ["30 Min Upper Body - Peloton"], "2026-10-09": ["Aspen Road Bike", "Pitkin"],
+        "2026-10-08": ["Run"]}

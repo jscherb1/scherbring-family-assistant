@@ -8,12 +8,15 @@ and to backfill.
 Usage:
     python scripts/fitness/workout_sync.py [--days 3] [--habit Workouts] [--dry-run] [--headed]
         Looks at the last N days (today included) and logs one completion per day that has a COROS
-        activity and no log yet. Prints JSON {"checked_days", "activity_days", "logged", "skipped",
+        activity and no log yet. Reads the COROS health MCP (querySportRecords, its history starts about
+        2026-09-05), falling back to the Training Hub web API if the MCP fails; --source web forces web.
+        Prints JSON {"source", "checked_days", "activity_days", "logged", "skipped",
         "dry_run"}. Exit 0 ok, 1 COROS login/API failure (message on stderr).
 """
 
 import argparse
 import json
+import re
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -24,6 +27,7 @@ from coros_web import TEAMAPI_BASE  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import habits  # noqa: E402
+import coros_mcp  # noqa: E402
 
 NOTE = "auto: COROS activity"
 
@@ -38,6 +42,20 @@ def activity_days(activities: list[dict]) -> dict[str, list[str]]:
         iso = f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
         days.setdefault(iso, []).append(a.get("name") or a.get("customName") or "activity")
     return days
+
+
+def parse_sport_records(text: str) -> dict[str, list[str]]:
+    """Group activity names by date from the MCP `querySportRecords` text report."""
+    days: dict[str, list[str]] = {}
+    for m in re.finditer(r"^\d+\. (.+?) — (\d{4}-\d\d-\d\d)\n(?:\s+Location: (.*))?", text, re.M):
+        days.setdefault(m.group(2), []).append((m.group(3) or m.group(1)).strip())
+    return days
+
+
+def fetch_days_mcp(start: date, end: date) -> dict[str, list[str]]:
+    text = coros_mcp.call_tools([("querySportRecords", {
+        "startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d")})])[0]
+    return parse_sport_records(text)
 
 
 def sync(days: dict[str, list[str]], habit_ref: str = "Workouts", *, db_path=None,
@@ -92,14 +110,24 @@ def main() -> int:
     ap.add_argument("--habit", default="Workouts")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--headed", action="store_true")
+    ap.add_argument("--source", choices=["mcp", "web"], default="mcp",
+                    help="mcp (default; falls back to web if the MCP fails) or web only")
     args = ap.parse_args()
     if args.days < 1:
         ap.error("--days must be 1 or more")
     today = date.today()
     start = today - timedelta(days=args.days - 1)
     try:
-        activities = fetch_activities(start, today, args.headed)
-        result = sync(activity_days(activities), args.habit, dry_run=args.dry_run)
+        days, used = None, "web"
+        if args.source == "mcp":
+            try:
+                days, used = fetch_days_mcp(start, today), "mcp"
+            except coros_mcp.CorosMcpError as exc:
+                print(f"WARN: COROS MCP failed ({exc}); falling back to the web API", file=sys.stderr)
+        if days is None:
+            days = activity_days(fetch_activities(start, today, args.headed))
+        result = sync(days, args.habit, dry_run=args.dry_run)
+        result["source"] = used
     except (RuntimeError, habits.HabitError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return getattr(exc, "code", 1) or 1
