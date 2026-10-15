@@ -373,7 +373,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     write route elsewhere must be a deliberate change to this allow-list."""
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
-    allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore",
+    allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore",
                "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
@@ -909,3 +909,29 @@ def test_hub_ui_and_service_share_data(client, state):
     page = client.get("/me")
     assert page.status_code == 200 and "My Hub" in page.text
     assert "passport" in page.text and "<b>passport" not in page.text  # escaped
+
+
+def test_hub_dismiss_restore_and_new_event_still_shows(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    db = state / "agent_results.db"
+    service.set_snapshot("task", [{"title": "Old task", "day": "2020-01-01", "priority": 1}], db_path=db)
+    api = client.get("/api/me").json()
+    task = api["groups"][0]["items"][0]
+    hdr = {"Origin": "http://testserver"}
+    r = client.post("/me/attention/dismiss", data={"key": task["key"]}, headers=hdr, follow_redirects=False)
+    assert r.status_code == 303
+    api = client.get("/api/me").json()
+    assert not api["groups"] and [a["key"] for a in api["dismissed"]] == [task["key"]]
+    assert "Dismissed (1)" in client.get("/me").text
+    assert service.get_hub(db_path=db)["dismissed"][0]["key"] == task["key"]  # service agrees
+    client.post("/me/attention/restore", data={"key": task["key"]}, headers=hdr)
+    assert client.get("/api/me").json()["groups"]
+    assert client.post("/me/attention/dismiss", data={"key": "x"},
+                       headers={"Origin": "https://evil.example"}).status_code == 403
+    assert service.restore(db_path=db) == {"restored": 0}
+    try:
+        service.dismiss("nope", db_path=db)
+    except service.HubError as exc:
+        assert exc.code == 1

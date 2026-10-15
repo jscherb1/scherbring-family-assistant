@@ -136,6 +136,9 @@ def snapshot_status(*, db_path=None) -> dict:
 
 # ---- the hub ----
 
+DISMISS_MAX_DAYS = 60
+
+
 def get_hub(*, db_path=None, today: date | None = None) -> dict:
     today = _today(today)
     conn = connect(db_path)
@@ -157,6 +160,9 @@ def get_hub(*, db_path=None, today: date | None = None) -> dict:
     finally:
         conn.close()
     attention.sort(key=lambda a: (LEVELS.get(a["level"], 1), a["area"], a["text"]))
+    dismissed_keys = _dismissed_keys(db_path)
+    dismissed = [a for a in attention if a["key"] in dismissed_keys]
+    attention = [a for a in attention if a["key"] not in dismissed_keys]
     # Items a provider tags with a "group" (Todoist tasks: always some open) never crowd the strip; they are
     # listed under one collapsed row in "Show all" and don't count toward the strip's totals or "All clear".
     grouped = [a for a in attention if a.get("group")]
@@ -164,5 +170,55 @@ def get_hub(*, db_path=None, today: date | None = None) -> dict:
     groups = [{"label": label, "items": [a for a in grouped if a["group"] == label]}
               for label in dict.fromkeys(a["group"] for a in grouped)]
     return {"date": today.isoformat(), "generated_at": _now_iso(), "attention": attention, "groups": groups,
+            "dismissed": dismissed,
             "counts": {lvl: sum(1 for a in attention if a["level"] == lvl) for lvl in LEVELS},
             "cards": cards, "errors": errors, "snapshot": snapshot_status(db_path=db_path)}
+
+
+# ---- dismissing reviewed items ----
+
+def _dismissed_keys(db_path=None) -> set[str]:
+    conn = connect(db_path)
+    try:
+        return {r["key"] for r in conn.execute("SELECT key FROM hub_dismissed")}
+    finally:
+        conn.close()
+
+
+def _all_items(db_path=None, today: date | None = None) -> list[dict]:
+    h = get_hub(db_path=db_path, today=today)
+    return (h["attention"] + [a for g in h["groups"] for a in g["items"]] + h["dismissed"])
+
+
+def dismiss(key: str, *, db_path=None, today: date | None = None) -> dict:
+    """Hide one needs-attention item (it must be on the hub right now). Also forgets dismissals whose
+    condition is gone or that are older than DISMISS_MAX_DAYS."""
+    items = {a["key"]: a for a in _all_items(db_path, today)}
+    if key not in items:
+        raise HubError(f"no needs-attention item with key {key!r}", 1)
+    cutoff = (datetime.now() - timedelta(days=DISMISS_MAX_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    conn = connect(db_path)
+    try:
+        for r in conn.execute("SELECT key, dismissed_at FROM hub_dismissed").fetchall():
+            if r["key"] not in items or r["dismissed_at"] < cutoff:
+                conn.execute("DELETE FROM hub_dismissed WHERE key=?", (r["key"],))
+        conn.execute("INSERT OR REPLACE INTO hub_dismissed (key, text, dismissed_at) VALUES (?,?,?)",
+                     (key, items[key]["text"], _now_iso()))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"dismissed": key}
+
+
+def restore(key: str | None = None, *, db_path=None) -> dict:
+    """Un-dismiss one item, or all of them when key is None."""
+    conn = connect(db_path)
+    try:
+        if key is None:
+            n = conn.execute("DELETE FROM hub_dismissed").rowcount
+        else:
+            n = conn.execute("DELETE FROM hub_dismissed WHERE key=?", (key,)).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    return {"restored": n}
