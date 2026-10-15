@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh live personal data (COROS sleep/recovery, weather, habits) for My Hub and day rating
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/dayrating_store.py insights refresh --days 3 --source coros_health,weather,habits
+TimeoutStartSec=120

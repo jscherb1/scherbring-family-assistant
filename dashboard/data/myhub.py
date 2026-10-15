@@ -22,3 +22,7 @@ def dismiss(key: str) -> None:
 
 def restore(key: str | None) -> None:
     service.restore(key, db_path=common.db_path())
+
+
+def refresh_live() -> dict:
+    return service.refresh_live(db_path=common.db_path())

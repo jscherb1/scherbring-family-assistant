@@ -172,7 +172,35 @@ def get_hub(*, db_path=None, today: date | None = None) -> dict:
     return {"date": today.isoformat(), "generated_at": _now_iso(), "attention": attention, "groups": groups,
             "dismissed": dismissed,
             "counts": {lvl: sum(1 for a in attention if a["level"] == lvl) for lvl in LEVELS},
-            "cards": cards, "errors": errors, "snapshot": snapshot_status(db_path=db_path)}
+            "cards": cards, "errors": errors, "snapshot": snapshot_status(db_path=db_path),
+            "freshness": freshness(db_path=db_path)}
+
+
+# Expected refresh interval per data source, in minutes. A source older than twice this shows amber.
+FRESH_MINUTES = {"coros_health": 30, "weather": 30, "habits": 30, "calendar": 120, "tasks": 120}
+
+
+def freshness(*, db_path=None) -> list[dict]:
+    """When each live data source last refreshed, and whether that is overdue (older than 2x its interval)."""
+    import insights
+    snap = snapshot_status(db_path=db_path)
+    rows = [("Calendar", "calendar", (snap.get("event") or {}).get("synced_at")),
+            ("Tasks", "tasks", (snap.get("task") or {}).get("synced_at"))]
+    ins = insights.freshness(db_path=db_path)
+    for label, key in (("Sleep & recovery", "coros_health"), ("Weather", "weather"), ("Habits", "habits")):
+        rows.append((label, key, ins.get(key)))
+    now = datetime.now()
+    out = []
+    for label, key, at in rows:
+        stale = at is None or now - datetime.fromisoformat(at) > timedelta(minutes=2 * FRESH_MINUTES[key])
+        out.append({"label": label, "key": key, "at": at, "stale": stale})
+    return out
+
+
+def refresh_live(*, db_path=None) -> dict:
+    """Refresh the script-reachable sources now (calendar and tasks need the myhub agent)."""
+    import insights
+    return insights.refresh_live(db_path=db_path)
 
 
 # ---- dismissing reviewed items ----

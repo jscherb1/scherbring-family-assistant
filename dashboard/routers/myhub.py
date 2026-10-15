@@ -40,3 +40,11 @@ def restore(request: Request, key: str = Form("")):
         raise HTTPException(403, "cross-origin request blocked")
     data.restore(key or None)
     return RedirectResponse("/me#attention", status_code=303)
+
+
+@router.post("/me/refresh", include_in_schema=False)
+def refresh(request: Request):
+    if not _same_origin(request):
+        raise HTTPException(403, "cross-origin request blocked")
+    data.refresh_live()
+    return RedirectResponse("/me", status_code=303)

@@ -373,7 +373,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     write route elsewhere must be a deliberate change to this allow-list."""
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
-    allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore",
+    allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore", "/me/refresh",
                "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",

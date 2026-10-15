@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh live personal data every 30 minutes, 6am to 10pm
+
+[Timer]
+OnCalendar=*-*-* 06..22:00,30:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -92,9 +92,30 @@ def list_sources(*, db_path=None) -> list[dict]:
         conn.close()
 
 
+# Sources the 30-minute timer keeps current. Excluded: calendar_day (static), calendar_load (agent-fed) and
+# coros_wellness (Training Hub web login; a frequent re-login would sign COROS out elsewhere).
+LIVE_SOURCES = "coros_health,weather,habits"
+LIVE_DAYS = 3  # a short window keeps COROS to a few calls instead of the 60-day wellness backfill
+
+
+def refresh_live(*, db_path=None) -> dict:
+    return refresh(days=LIVE_DAYS, only=LIVE_SOURCES, db_path=db_path)
+
+
+def freshness(*, db_path=None) -> dict:
+    """Latest write time per source, for the hub footer."""
+    conn = connect(db_path)
+    try:
+        return {r["source"]: r["at"] for r in conn.execute(
+            "SELECT source, MAX(updated_at) at FROM insight_daily GROUP BY source")}
+    finally:
+        conn.close()
+
+
 def refresh(*, days: int = 90, only: str | None = None, db_path=None, today: date | None = None) -> dict:
-    """Run every source (or one) for the last `days` days and store the values. A failing source is
-    reported and skipped; the others still run."""
+    """Run every source (or the named ones, comma-separated) for the last `days` days and store the
+    values. A failing source is reported and skipped; the others still run."""
+    wanted = {n.strip() for n in only.split(",") if n.strip()} if only else None
     today = today or datetime.now().date()
     start = today - timedelta(days=days - 1)
     conn = connect(db_path)
@@ -102,7 +123,7 @@ def refresh(*, days: int = 90, only: str | None = None, db_path=None, today: dat
     try:
         for mod in discover_sources():
             name = mod.SOURCE["name"]
-            if only and only != name:
+            if wanted and name not in wanted:
                 continue
             try:
                 data = mod.collect(conn, start, today, today)
@@ -122,8 +143,8 @@ def refresh(*, days: int = 90, only: str | None = None, db_path=None, today: dat
                     count += 1
             conn.commit()
             report[name] = {"metrics": len(data), "values": count}
-        if only and only not in report:
-            raise InsightError(f"no source named {only!r}", 1)
+        if wanted and wanted - set(report):
+            raise InsightError(f"no source named {sorted(wanted - set(report))[0]!r}", 1)
         return report
     finally:
         conn.close()
