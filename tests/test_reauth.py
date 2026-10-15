@@ -193,3 +193,19 @@ def test_import_rejects_when_hyvee_says_signed_out(tmp_path):
     with pytest.raises(reauth.ReauthError, match="Nothing was saved"):
         reauth.import_hyvee_cookies(JSON_COOKIES, session_file=f, validate=lambda st: False)
     assert f.read_text() == "old"
+
+
+def test_failure_message_is_diagnostic_and_secret_free(tmp_path):
+    f = tmp_path / "session.json"
+    diag = {"url": "https://www.hy-vee.com/", "title": "Just a moment...", "login_link_visible": False}
+    with pytest.raises(reauth.ReauthError) as e:
+        reauth.import_hyvee_cookies(JSON_COOKIES, session_file=f, validate=lambda st: (False, diag))
+    msg = e.value.message
+    assert "Just a moment" in msg and "Cloudflare" in msg and "auth0" in msg and "SECRETVAL" not in msg
+    assert not f.exists()
+
+
+def test_force_saves_when_check_fails(tmp_path):
+    f = tmp_path / "session.json"
+    res = reauth.import_hyvee_cookies(JSON_COOKIES, session_file=f, validate=lambda st: (False, {}), force=True)
+    assert res["saved"] and res["saved_unverified"] and f.exists()

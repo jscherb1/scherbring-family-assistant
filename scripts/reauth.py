@@ -190,8 +190,10 @@ def parse_cookies(text: str) -> list[dict]:
     return out
 
 
-def _validate_hyvee_state(state: dict) -> bool:
-    """Open a headless browser with these cookies and check it's signed in (read-only)."""
+def _validate_hyvee_state(state: dict):
+    """Open a headless browser with these cookies and check it's signed in (read-only).
+
+    Returns (ok, diag). diag holds only non-secret facts about what Hy-Vee showed."""
     sys.path.insert(0, str(REPO_ROOT / "scripts" / "hyvee"))
     from playwright.sync_api import sync_playwright
     import login_test as lt
@@ -199,25 +201,56 @@ def _validate_hyvee_state(state: dict) -> bool:
         browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
         try:
             page = browser.new_context(storage_state=state).new_page()
-            return bool(lt.is_logged_in(page))
+            ok = bool(lt.is_logged_in(page))
+            diag = {"url": page.url.split("?")[0], "title": (page.title() or "")[:80]}
+            try:
+                diag["login_link_visible"] = page.locator(lt.SEL_LOGIN_LINK).first.is_visible(timeout=1000)
+                diag["cart_icon_visible"] = page.locator(lt.SEL_CART_ICON).first.is_visible(timeout=1000)
+            except Exception:  # noqa: BLE001 - diagnostics are best-effort
+                pass
+            return ok, diag
         finally:
             browser.close()
 
 
-def import_hyvee_cookies(pasted: str, *, session_file: Path = HYVEE_SESSION_FILE, validate=None) -> dict:
+def _describe_failure(cookies: list[dict], diag: dict) -> str:
+    """Human-readable, secret-free explanation of why the sign-in check failed."""
+    names = sorted({c["name"] for c in cookies})
+    domains = sorted({c["domain"].lstrip(".") for c in cookies})
+    title = (diag.get("title") or "").lower()
+    hints = []
+    if any(w in title for w in ("just a moment", "attention required", "verify", "challenge")) or "cloudflare" in title:
+        hints.append("Cloudflare is showing a bot check (cf_clearance is usually tied to your browser and IP)")
+    if "identity.hy-vee.com" in (diag.get("url") or "") or "login" in (diag.get("url") or ""):
+        hints.append("Hy-Vee redirected to the sign-in page (session not accepted)")
+    if not any(c["domain"].lstrip(".").startswith("identity.") for c in cookies):
+        hints.append("no identity.hy-vee.com cookies (auth0/did) were in the paste")
+    parts = [f"kept {len(cookies)} cookies on {', '.join(domains)}",
+             f"names: {', '.join(names)}",
+             f"final page: {diag.get('url') or '?'} (title: {diag.get('title') or '?'})",
+             f"login link visible: {diag.get('login_link_visible', '?')}, cart icon visible: {diag.get('cart_icon_visible', '?')}"]
+    return "; ".join(parts) + (". Likely: " + "; ".join(hints) if hints else "")
+
+
+def import_hyvee_cookies(pasted: str, *, session_file: Path = HYVEE_SESSION_FILE, validate=None,
+                         force: bool = False) -> dict:
     """Validate pasted cookies against Hy-Vee and, only if signed in, save them as the session.
 
-    The previous session file is kept as <file>.bak. `validate` is injectable for tests."""
+    With force=True the cookies are saved even when the check says signed out (the check can be
+    wrong); the result then carries saved_unverified=True. The previous session file is kept as
+    <file>.bak. `validate` is injectable for tests and may return a bool or (bool, diag)."""
     cookies = parse_cookies(pasted)
     state = {"cookies": cookies, "origins": []}
     sys.path.insert(0, str(REPO_ROOT / "scripts" / "hyvee"))
     try:
-        ok = (validate or _validate_hyvee_state)(state)
+        res = (validate or _validate_hyvee_state)(state)
     except Exception as exc:  # noqa: BLE001 - browser tooling failures should read as a message
         raise ReauthError(f"Couldn't test the cookies ({type(exc).__name__}). Nothing was saved.", 1)
-    if not ok:
-        raise ReauthError("Hy-Vee did not treat those cookies as signed in (expired, or tied to your browser). "
-                          "Nothing was saved. Try again right after signing in, or use the on-server browser.", 1)
+    ok, diag = res if isinstance(res, tuple) else (bool(res), {})
+    if not ok and not force:
+        raise ReauthError("Hy-Vee did not treat those cookies as signed in. Nothing was saved. "
+                          + _describe_failure(cookies, diag)
+                          + ". Tick 'save anyway' to keep them regardless, or use the on-server browser.", 1)
     session_file.parent.mkdir(parents=True, exist_ok=True)
     if session_file.exists():
         session_file.replace(session_file.with_suffix(session_file.suffix + ".bak"))
@@ -227,13 +260,15 @@ def import_hyvee_cookies(pasted: str, *, session_file: Path = HYVEE_SESSION_FILE
     except OSError:
         pass
     if validate is not None:  # tests inject a validator; don't touch real login bookkeeping
-        return {"system": "hyvee", "saved": True, "cookies": len(cookies), "names": sorted({c["name"] for c in cookies})}
+        return {"system": "hyvee", "saved": True, "saved_unverified": not ok, "cookies": len(cookies),
+                "names": sorted({c["name"] for c in cookies})}
     try:
         from credential_check import record_login
         record_login("hyvee")
         import system_health
-        system_health.record("hyvee", "ok", "reconnected via cookie import", notify=system_health.telegram_notify)
+        if ok:
+            system_health.record("hyvee", "ok", "reconnected via cookie import", notify=system_health.telegram_notify)
     except Exception:  # noqa: BLE001 - bookkeeping must not undo a good login
         pass
-    return {"system": "hyvee", "saved": True, "cookies": len(cookies),
+    return {"system": "hyvee", "saved": True, "saved_unverified": not ok, "cookies": len(cookies),
             "names": sorted({c["name"] for c in cookies})}

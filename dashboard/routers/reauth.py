@@ -55,12 +55,14 @@ def drive_complete(request: Request, pasted: str = Form("")):
 
 
 @router.post("/reconnect/hyvee/cookies", include_in_schema=False)
-def hyvee_cookies(request: Request, cookies: str = Form("")):
+def hyvee_cookies(request: Request, cookies: str = Form(""), force: str = Form("")):
     if (b := _blocked(request)):
         return b
     try:
-        res = data.service.import_hyvee_cookies(cookies)
-        ok, err = f"Hy-Vee is reconnected ({res['cookies']} cookies imported and verified).", None
+        res = data.service.import_hyvee_cookies(cookies, force=bool(force))
+        ok, err = ((f"Hy-Vee cookies saved WITHOUT a successful sign-in check ({res['cookies']} cookies). "
+                    "Try a cart build to see if they work.") if res.get("saved_unverified") else
+                   f"Hy-Vee is reconnected ({res['cookies']} cookies imported and verified)."), None
     except data.ReauthError as e:
         ok, err = None, e.message
     return render(request, "reauth/index.html", "health", "reconnect", "Reconnect", data=data.get_status(),

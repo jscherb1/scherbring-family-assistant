@@ -27,13 +27,15 @@ def main(argv=None) -> int:
     c = sub.add_parser("complete")
     c.add_argument("system")
     c.add_argument("pasted")
-    sub.add_parser("hyvee-cookies").add_argument("pasted")
+    hc = sub.add_parser("hyvee-cookies")
+    hc.add_argument("pasted")
+    hc.add_argument("--force", action="store_true", help="save even if the sign-in check fails")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "start":
             out = reauth.start(a.system)
         elif a.cmd == "hyvee-cookies":
-            out = reauth.import_hyvee_cookies(a.pasted)
+            out = reauth.import_hyvee_cookies(a.pasted, force=a.force)
         elif a.cmd == "complete":
             out = reauth.complete(a.system, a.pasted)
         else:
