@@ -75,6 +75,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/myhub.py` | Shared My Hub service: runs every provider in `scripts/hub_providers/`, merges their needs-attention items into one ranked list, stores the calendar/task snapshot. Used by `myhub_store.py` and the dashboard `/me` page |
 | `scripts/myhub_store.py` | Zero-dep CLI over `myhub.py` for the myhub subagent (summary / attention / snapshot set / snapshot status) |
 | `scripts/system_health.py` | Shared integration-health service: one latest check result per system (COROS health + training hub, Open-Meteo, Drive, Monarch, Hy-Vee, plus Todoist, Calendar, Gmail, Home Assistant recorded by an agent). One failure is `warn`, two in a row `down`. Feeds the hub Systems tile and attention strip |
+| `scripts/reauth.py` | Remote re-auth service: Google Drive two-step paste sign-in (consent link, then paste the `localhost/callback` address), plus a Hy-Vee cookie import (exported cookies are validated against Hy-Vee, then saved as the session), so an expired login can be refreshed from any device. Shared by `reauth_store.py` (Telegram, via the `myhub` agent) and the dashboard Reconnect page |
+| `scripts/reauth_store.py` | Thin CLI over `reauth.py` (start / complete / verify / hyvee-cookies) |
+| `scripts/hyvee/remote_login.py` | Server-side headless Hy-Vee sign-in you drive from the dashboard (screenshots, tap, type) to clear the CAPTCHA from a phone; saves `hyvee_session.json` like `login_test.py` |
 | `scripts/system_health_store.py` | Zero-dep CLI over `system_health.py` (status / check / record); sends one Telegram alert when a system goes down and one on recovery |
 | `scripts/hub_providers/` | One module per hub area (habits, mood, body, schedule, weather, home, chores, system, insights). Drop in a module and its card and needs-attention items appear on the hub |
 | `scripts/dayrating.py` | Shared day-rating service (1-10 score + note per day, status, nudge check). The single code path used by `dayrating_store.py` and the dashboard |
@@ -602,7 +605,7 @@ One-time setup: add `COROS_USERNAME`/`COROS_PASSWORD` to `~/.config/scherbring-a
 scripts when running them by hand on a machine with no display. Weekly trigger:
 `weekly-fitness-plan` scheduled task, Sundays 6pm — see **Scheduled tasks** above.
 
-**Workouts habit auto-log:** `scripts/fitness/workout_sync.py` reads recorded COROS activities (any type; several in a day = one workout; the plan/calendar is ignored) and logs one completion per day for the `Workouts` habit, idempotently. Registered as `workouts-habit-sync` (daily 6am, silent unless COROS login fails): `python scripts/scheduler_store.py add --name "workouts-habit-sync" --prompt "Run python scripts/fitness/workout_sync.py --days 3 ..." --cron "0 6 * * *" --target-chat-id "<chat_id>"`. Backfill: `python scripts/fitness/workout_sync.py --days 35`.
+**Workouts habit auto-log:** `scripts/fitness/workout_sync.py` reads recorded COROS activities (any type; several in a day = one workout; the plan/calendar is ignored) and logs one completion per day for the `Workouts` habit, idempotently. Registered as `workouts-habit-sync` (daily 6am, silent unless COROS login fails): `python scripts/scheduler_store.py add --name "workouts-habit-sync" --prompt "Run python scripts/fitness/workout_sync.py --days 3 ..." --cron "0 6 * * *" --target-chat-id "<chat_id>"`. Reads the COROS health MCP (history from ~9/5), falling back to the web API; `--source web` forces web for deeper backfills. Backfill: `python scripts/fitness/workout_sync.py --days 35`.
 
 See `docs/superpowers/specs/2026-08-20-fitness-agent-coros-login-design.md` and its
 two follow-on specs in the same directory for the full phased design and live

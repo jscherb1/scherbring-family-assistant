@@ -33,6 +33,7 @@ SECTIONS = [
             {"key": "schedule", "label": "Scheduled Tasks", "href": "/health/schedule"},
             {"key": "restarts", "label": "Restart History", "href": "/health/restarts"},
             {"key": "system", "label": "Logins & Backups", "href": "/health/system"},
+            {"key": "reconnect", "label": "Reconnect", "href": "/reconnect"},
         ],
     },
     {

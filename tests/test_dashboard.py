@@ -378,7 +378,10 @@ def test_read_only_except_allowlisted_write_routes(client):
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
                "/chores/payout", "/chores/backfill", "/chores/undo",
-               "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo"}
+               "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo",
+               "/reconnect/drive/start", "/reconnect/drive/complete", "/reconnect/hyvee/start",
+               "/reconnect/hyvee/click", "/reconnect/hyvee/type", "/reconnect/hyvee/key",
+               "/reconnect/hyvee/fill", "/reconnect/hyvee/finish", "/reconnect/hyvee/stop", "/reconnect/hyvee/cookies"}
     writes = {r.path for r in app.routes
               if getattr(r, "methods", None) and r.methods & {"POST", "PUT", "PATCH", "DELETE"}}
     assert writes <= allowed, f"unexpected write routes: {writes - allowed}"
