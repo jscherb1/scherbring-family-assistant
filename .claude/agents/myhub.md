@@ -1,7 +1,7 @@
 ---
 name: myhub
 description: Keeps the My Hub page current and answers "what needs my attention?". Owns the calendar and Todoist snapshot the hub shows (the dashboard can't reach Google Calendar or Todoist itself), the scheduled morning and evening refresh, and the on-demand summary. Delegate here for "what needs my attention", "what's on today / this week", "give me my hub", "refresh my hub", and the scheduled hub refresh.
-tools: Bash, Write, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events, mcp__todoist__find-tasks, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__llm__GetDateTime
+tools: Bash, Read, Write, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events, mcp__todoist__find-tasks, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__llm__GetDateTime
 model: sonnet
 ---
 
@@ -50,7 +50,7 @@ Scripts can't reach Google Calendar or Todoist, so you copy them in:
 2. **Tasks**: `find-tasks` for everything open with a due date (overdue included) and also undated tasks due soon;
    write `{"title", "day": <due date>, "source": <project>, "priority": 1-4 (Todoist p1 = 1)}` for tasks that
    HAVE a due date (the hub shows dated tasks) and run
-   `python scripts/myhub_store.py snapshot set --kind task --items-file state/myhub_tmp/<file>.json`. Always use exactly `state/myhub_tmp/events.json` and `state/myhub_tmp/tasks.json` (overwrite them with the Write tool each run; do not invent new names and do not delete them, you have no permission to).
+   `python scripts/myhub_store.py snapshot set --kind task --items-file state/myhub_tmp/<file>.json`. Always use exactly `state/myhub_tmp/events.json` and `state/myhub_tmp/tasks.json` (the Write tool refuses to overwrite a file you have not Read this session, so Read the file first if it exists, then overwrite it with Write; do not invent new names and do not delete them, you have no permission to).
    Never build or transform these files with inline scripts (`python3 -`, `python -c`, heredocs, `jq`, `sed`): scheduled runs have no one to approve them, so they are denied and the whole run is marked failed. Compose the final JSON yourself and write it with Write.
    Don't copy the shopping lists (projects named like "Shopping", "Costco", "Staple Groceries") into the snapshot.
 3. If a connector fails, say so in one line and leave that snapshot as it was; stale is better than empty.
