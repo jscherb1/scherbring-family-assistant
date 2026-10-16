@@ -147,7 +147,7 @@ def add_test_item_to_cart(page, item: str) -> bool:
     return after > before
 
 
-def run(args) -> int:
+def _run_browser(args, post_check: list) -> int:
     env = load_env(ENV_FILE)
     username = env.get("HYVEE_USERNAME")
     password = env.get("HYVEE_PASSWORD")
@@ -174,11 +174,7 @@ def run(args) -> int:
         try:
             if is_logged_in(page):
                 print("[login] Reusing saved session — already signed in.")
-                import system_health
-
-                verdict = system_health.run_checks(
-                    ["hyvee"], notify=system_health.telegram_notify)[0]
-                print(f"[login] Connection check: {verdict['status']} - {verdict['detail']}")
+                post_check.append("reuse")
             else:
                 print("[login] Not signed in — logging in fresh.")
                 do_login(page, username, password, manual_wait=0 if args.headless else args.manual_wait)
@@ -189,10 +185,7 @@ def run(args) -> int:
                     )
                 context.storage_state(path=str(SESSION_FILE))
                 print(f"[login] Session saved to {SESSION_FILE}")
-                import hyvee_connection
-
-                verdict = hyvee_connection.on_login_saved("login_test")
-                print(f"[login] Connection check: {verdict['status']} - {verdict['detail']}")
+                post_check.append("fresh")
 
             if args.login_only:
                 print("\nPASS: signed in; session saved (login-only, cart not touched)")
@@ -220,6 +213,28 @@ def run(args) -> int:
             return 1
         finally:
             browser.close()
+
+
+def run(args) -> int:
+    # The shared connection check starts its own Playwright, which can't nest inside ours,
+    # so it runs only after the login browser has closed.
+    post_check: list = []
+    rc = _run_browser(args, post_check)
+    if post_check:
+        try:
+            if post_check[0] == "fresh":
+                import hyvee_connection
+
+                verdict = hyvee_connection.on_login_saved("login_test")
+            else:
+                import system_health
+
+                verdict = system_health.run_checks(
+                    ["hyvee"], notify=system_health.telegram_notify)[0]
+            print(f"[login] Connection check: {verdict['status']} - {verdict['detail']}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[login] Connection check could not run: {exc}", file=sys.stderr)
+    return rc
 
 
 def main() -> int:
