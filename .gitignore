@@ -85,3 +85,5 @@ state/reauth_pending.json
 
 # Session/credential backups written next to live state files
 state/*.bak
+state/hyvee_checks.jsonl
+state/hyvee_connection.json

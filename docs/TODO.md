@@ -146,7 +146,6 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       6am `workouts-habit-sync` run reports `"source": "mcp"`.
 - [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
       `system_health` rows' `checked_at` after a few hours. Tune the 2 h interval as needed.
-- [ ] Hy-Vee's verdict is the daily credential check's, not a live probe (a headless browser every 2 h is too heavy).
 
 ## Day rating + insights (built 2026-10-14)
 
@@ -187,10 +186,10 @@ See the Backlog section of `README.md`.
 ## Remote re-auth (Reconnect), added 2026-10-14
 
 - [ ] Live-test the Drive paste flow end to end from a phone (start, approve, paste, verify green on the hub).
-- [x] Hy-Vee remote browser: tried 2026-10-15, the CAPTCHA could not be cleared through it. Kept as a fallback.
-- [ ] Live-test the Hy-Vee cookie import (Reconnect page, "paste cookies"): export hy-vee.com cookies from a signed-in
-      browser, paste, and confirm it saves and the Hy-Vee health check goes green. Unknown: whether Hy-Vee/Cloudflare
-      accept the cookies from the server's IP and user agent. `login_test.py --headed` stays the last-resort fallback.
-- [ ] The Hy-Vee remote browser runs inside the dashboard process; restart the dashboard to pick up changes.
+- [x] Hy-Vee remote browser and cookie import: removed 2026-10-16 (neither ever worked); the desktop shortcut is the only
+      sign-in, `scripts/hyvee/hyvee_connection.py` the only check.
+- [ ] Hy-Vee: after a few days, read `state/hyvee_checks.jsonl` to see how long a session really lasts and whether the
+      keep-alive (each passing check re-saves the session) extends it. If sessions still die in about a day, add a
+      scheduled prompt asking Justin to run the shortcut.
 - [ ] Faster refresh: confirm `assistant-insights-refresh.timer` keeps firing (`systemctl --user list-timers`) and that the first
       `myhub-refresh` runs (7am onward) land; tune the intervals if the footer shows amber sources.

@@ -139,13 +139,22 @@ delayed, note when you sent and when it answered, then check `state/orchestrator
 
 ## Logins that expire
 
-Three systems need a manual login now and then. `assistant-credential-check.timer` probes each
+Two systems need a manual login now and then. `assistant-credential-check.timer` probes each
 daily and sends a Telegram message two days before the expected expiry, with the exact command.
 COROS is not on the list: it logs in again by itself.
 
+**Hy-Vee is separate and has exactly one path.** The only way to sign in is the **Hy-Vee Login** desktop shortcut
+(`scripts/hyvee/Hy-Vee Login.bat`, a copy lives on the Windows desktop): remote in, double-click, solve the CAPTCHA.
+It runs `login_test.py --login-only --manual-wait 300`, saves the session and re-checks the connection. The only check is
+`scripts/hyvee/hyvee_connection.py` (order-history API: `ok` / `expired` on a clear 401-403 confirmed by a re-test /
+`unknown` for Cloudflare, 429, 5xx, timeouts), run every 2 hours by `assistant-system-health.timer` through
+`system_health`. `unknown` never changes the status or sends a message; `expired` sends one Telegram message that says why
+and how to fix it, and one when it recovers. A passing check re-saves the session file, which keeps rotated cookies alive.
+Every check is logged to `state/hyvee_checks.jsonl` (status, HTTP status, reason, login age) so the real session lifetime
+is visible. `python scripts/hyvee/hyvee_connection.py status|check` shows or runs it by hand. No advance-expiry warning.
+
 | System | Lasts about | Re-login |
 |---|---|---|
-| Hy-Vee | 11-12 days | `.venv/bin/python scripts/hyvee/login_test.py --login-only --manual-wait 180` (a browser window opens; solve the CAPTCHA) |
 | Google Drive | 7 days while the OAuth app is in *Testing* | `.venv/bin/python scripts/drive_upload.py auth` (open the printed URL, approve). See `docs/retirement-drive-setup.md` for publishing the app so this stops being weekly. |
 | Monarch | about 2 weeks | `cd vendor/monarch-mcp-server && .venv/bin/python login_setup.py`, choose option 1, paste the cookie header from app.monarch.com |
 

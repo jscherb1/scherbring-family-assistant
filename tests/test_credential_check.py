@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import credential_check as cc  # noqa: E402
 
 NOW = datetime(2026, 10, 20, 9, 30).astimezone()
-HV = cc.SYSTEMS["hyvee"]  # lifetime 11 days
+HV = cc.System("test", "Test", 11, "run login_test.py --login-only")  # generic 11-day login
 
 
 def login(days_ago):

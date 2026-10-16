@@ -21,6 +21,7 @@
       "Bash(python scripts/recipes_store.py *)",
       "Bash(python scripts/scheduler_store.py *)",
       "Bash(python scripts/hyvee/cart_ops.py *)",
+      "Bash(python scripts/hyvee/hyvee_connection.py *)",
       "Bash(python scripts/hyvee_store.py *)",
       "Bash(python scripts/finance_store.py *)",
       "Bash(python scripts/finance_report.py *)",

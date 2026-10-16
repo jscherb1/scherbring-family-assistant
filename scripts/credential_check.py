@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Warn on Telegram before a manually refreshed login expires.
 
-Some integrations cannot re-authenticate themselves: Hy-Vee (CAPTCHA), Google
-Drive (consent), Monarch (cookie paste). This runs once a day from
+Some integrations cannot re-authenticate themselves: Google Drive (consent),
+Monarch (cookie paste). Hy-Vee is not here: scripts/hyvee/hyvee_connection.py owns it. This runs once a day from
 systemd/assistant-credential-check.timer, costs no model tokens, and sends
 direct Telegram messages so it still works if Claude itself is the broken piece.
 
@@ -38,7 +38,6 @@ from typing import Callable
 from paths import REPO_ROOT, secrets_dir
 
 STATE_FILE = REPO_ROOT / "state" / "credential_check.json"
-HYVEE_SESSION = REPO_ROOT / "state" / "hyvee_session.json"
 REMIND_DAYS_BEFORE = 2
 ALERT_EVERY = timedelta(hours=20)  # at most one message per system per day
 
@@ -52,11 +51,6 @@ class System:
 
 
 SYSTEMS: dict[str, System] = {
-    "hyvee": System(
-        "hyvee", "Hy-Vee", 11,
-        f"cd {REPO_ROOT} && .venv/bin/python scripts/hyvee/login_test.py --login-only --manual-wait 180\n"
-        "(a browser window opens; solve the CAPTCHA if one shows)",
-    ),
     "drive": System(
         "drive", "Google Drive", 7,
         f"cd {REPO_ROOT} && .venv/bin/python scripts/drive_upload.py auth\n"
@@ -124,7 +118,6 @@ def authed_at(key: str, entry: dict) -> datetime | None:
         return _parse(entry["authed_at"])
     # First run, or a login we never saw: fall back to the credential file's time.
     fallback = {
-        "hyvee": HYVEE_SESSION,
         "drive": secrets_dir() / "google" / "drive_token.json",
     }.get(key)
     return _file_time(fallback) if fallback else None
@@ -160,21 +153,7 @@ def probe_drive() -> str:
         return "unknown"
 
 
-def probe_hyvee() -> str:
-    """Signed-in test = the account-only order-history API answers (the page-icon check gave false negatives)."""
-    session = HYVEE_SESSION
-    if not session.exists():
-        return "dead"
-    try:
-        import reauth
-
-        ok, _diag = reauth._validate_hyvee_state(json.loads(session.read_text()))
-        return "ok" if ok else "dead"
-    except Exception:  # noqa: BLE001
-        return "unknown"
-
-
-PROBES: dict[str, Callable[[], str]] = {"hyvee": probe_hyvee, "drive": probe_drive, "monarch": probe_monarch}
+PROBES: dict[str, Callable[[], str]] = {"drive": probe_drive, "monarch": probe_monarch}
 
 
 # ------------------------------------------------------------------------- decision

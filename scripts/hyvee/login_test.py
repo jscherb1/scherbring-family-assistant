@@ -174,6 +174,11 @@ def run(args) -> int:
         try:
             if is_logged_in(page):
                 print("[login] Reusing saved session — already signed in.")
+                import system_health
+
+                verdict = system_health.run_checks(
+                    ["hyvee"], notify=system_health.telegram_notify)[0]
+                print(f"[login] Connection check: {verdict['status']} - {verdict['detail']}")
             else:
                 print("[login] Not signed in — logging in fresh.")
                 do_login(page, username, password, manual_wait=0 if args.headless else args.manual_wait)
@@ -184,12 +189,10 @@ def run(args) -> int:
                     )
                 context.storage_state(path=str(SESSION_FILE))
                 print(f"[login] Session saved to {SESSION_FILE}")
-                try:  # lets scripts/credential_check.py time its expiry reminders
-                    from credential_check import record_login
+                import hyvee_connection
 
-                    record_login("hyvee")
-                except ImportError:
-                    pass
+                verdict = hyvee_connection.on_login_saved("login_test")
+                print(f"[login] Connection check: {verdict['status']} - {verdict['detail']}")
 
             if args.login_only:
                 print("\nPASS: signed in; session saved (login-only, cart not touched)")
