@@ -174,6 +174,11 @@ def run(args) -> int:
         try:
             if is_logged_in(page):
                 print("[login] Reusing saved session — already signed in.")
+                import system_health
+
+                verdict = system_health.run_checks(
+                    ["hyvee"], notify=system_health.telegram_notify)[0]
+                print(f"[login] Connection check: {verdict['status']} - {verdict['detail']}")
             else:
                 print("[login] Not signed in — logging in fresh.")
                 do_login(page, username, password, manual_wait=0 if args.headless else args.manual_wait)
