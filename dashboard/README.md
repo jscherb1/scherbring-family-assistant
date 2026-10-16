@@ -32,7 +32,7 @@ other family members.
 | Orchestrator Health | Overview | `/health` | Uptime, task success rate, watchdog health, Telegram fallback, recent failures (auto-refreshes every 30 s) |
 | | Scheduled Tasks | `/health/schedule` | Every scheduled task: what it does, schedule in plain English, next run, last run, 7-day ok/failed, recent runs |
 | | Restart History | `/health/restarts` | Every orchestrator launch with the inferred cause, previous exit code, downtime, and the raw log records behind it |
-| | Reconnect | `/reconnect`, `/reconnect/hyvee` | Refresh an expired Drive login (paste flow) or Hy-Vee login (paste exported cookies, tested before saving; or a live server-side browser you tap and type into). Write routes use the same-origin guard; same `scripts/reauth.py` / `remote_login.py` services as the agent |
+| | Reconnect | `/reconnect`, `/reconnect/hyvee` | Refresh an expired Drive login (paste flow); shows Hy-Vee status and points at the desktop "Hy-Vee Login" shortcut (the only Hy-Vee sign-in). Write routes use the same-origin guard; same `scripts/reauth.py` service as the agent |
 | | Logins & Backups | `/health/system` | Days until the Hy-Vee/Drive/Monarch logins expire, newest backup age and files, scheduler heartbeat |
 | Agent | Live Status | `/agent` | Telegram bridge and agent worker liveness (heartbeats, Telegram polling, MCP servers, health-check result), queue depth, current turn, live event stream (refreshes every 5 s). Message text, tool inputs and results are **hidden** unless `DASHBOARD_SHOW_AGENT_CONTENT=1`; use `scripts/agent_ctl.py tail` for the full stream |
 | | Usage | `/agent/usage` | Per-day turns, tokens (fresh/cache) and API-rate cost from the worker's turn log, plus current context size |

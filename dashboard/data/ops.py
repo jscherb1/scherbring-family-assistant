@@ -26,6 +26,8 @@ def get_credentials():
     now = datetime.now().astimezone()
     systems = []
     for key, entry in raw.items():
+        if key == "hyvee":  # legacy entry; Hy-Vee's state comes from the connection check below
+            continue
         authed = _local_aware(entry.get("authed_at")) if isinstance(entry, dict) else None
         lifetime = (entry or {}).get("lifetime_days") if isinstance(entry, dict) else None
         if not authed or not lifetime:
@@ -41,7 +43,25 @@ def get_credentials():
             "age_days": round((now - authed).total_seconds() / 86400, 1),
             "probe_status": entry.get("status"),
         })
+    systems.append(_hyvee_login(now))
     return {"systems": systems}
+
+
+def _hyvee_login(now):
+    """Hy-Vee has no guessed lifetime: it is expired exactly when the one connection check says so."""
+    import sys
+    sys.path.insert(0, str(common.SCRIPTS_DIR))
+    sys.path.insert(0, str(common.SCRIPTS_DIR / "hyvee"))
+    import hyvee_connection
+    import system_health
+    row = next((s for s in system_health.get_status(db_path=common.db_path()) if s["key"] == "hyvee"), {})
+    st = row.get("status")
+    out = {"key": "hyvee", "label": "Hy-Vee", "state": {"ok": "ok", "down": "expired", "warn": "warn"}.get(st, "unknown"),
+           "probe_status": st, "detail": row.get("detail")}
+    t = hyvee_connection.login_time()
+    if t:
+        out.update(authed_at=t.isoformat(), age_days=round((now - t).total_seconds() / 86400, 1))
+    return out
 
 
 def _backup_dir() -> Path:

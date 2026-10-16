@@ -43,7 +43,6 @@ SYSTEMS = {
 SNAPSHOT_FALLBACK = {"todoist": "task", "calendar": "event"}
 RECONNECT_HINTS = {
     "drive": " Fix it from your phone: reply \"reconnect drive\" here, or open Reconnect on the dashboard.",
-    "hyvee": " Fix it from your phone: open Reconnect on the dashboard and use the Hy-Vee browser.",
 }
 STALE_HOURS = 24
 PING_STALE_HOURS = 30  # an agent-recorded result older than this means the twice-daily ping stopped running
@@ -165,17 +164,10 @@ def check_monarch():
 
 
 def check_hyvee():
-    # A live check needs a headless browser; the daily credential_check already runs one, so reuse its verdict.
-    try:
-        entry = json.loads((REPO_ROOT / "state" / "credential_check.json").read_text(encoding="utf-8-sig")).get("hyvee", {})
-    except (OSError, ValueError):
-        entry = {}
-    s = entry.get("status")
-    if s == "ok":
-        return "ok", "last daily probe worked"
-    if s == "dead":
-        return "down", "login expired (CAPTCHA refresh needed)"
-    return "unknown", "no daily probe result yet"
+    # The one Hy-Vee check lives in scripts/hyvee/hyvee_connection.py (also keeps the saved session fresh).
+    sys.path.insert(0, str(REPO_ROOT / "scripts" / "hyvee"))
+    import hyvee_connection as hc
+    return hc.health_detail(hc.check())
 
 
 SCRIPT_CHECKS = {"coros_mcp": check_coros_mcp, "coros_web": check_coros_web, "open_meteo": check_open_meteo,

@@ -1,10 +1,9 @@
-"""Reconnect: re-authenticate an expired login (Google Drive, Hy-Vee) from any device, phone included.
-
-Drive uses the paste-the-callback flow; Hy-Vee shows a server-side browser you tap and type into to clear the
-CAPTCHA. All logic is in the shared services (see ..data.reauth). Writes use the same-origin guard from ask.py.
+"""Reconnect: re-authenticate an expired Google Drive login from any device, phone included (paste-the-callback
+flow). Hy-Vee is shown read-only here: it signs in only through the desktop "Hy-Vee Login" shortcut.
+All logic is in the shared services (see ..data.reauth). Writes use the same-origin guard from ask.py.
 """
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse
 
 from ..data import reauth as data
 from ..web import render
@@ -52,92 +51,3 @@ def drive_complete(request: Request, pasted: str = Form("")):
         ok, err = None, e.message
     return render(request, "reauth/index.html", "health", "reconnect", "Reconnect", data=data.get_status(),
                   drive=None, error=err, ok=ok)
-
-
-@router.post("/reconnect/hyvee/cookies", include_in_schema=False)
-def hyvee_cookies(request: Request, cookies: str = Form(""), force: str = Form("")):
-    if (b := _blocked(request)):
-        return b
-    try:
-        res = data.service.import_hyvee_cookies(cookies, force=bool(force))
-        ok, err = ((f"Hy-Vee cookies saved WITHOUT a successful sign-in check ({res['cookies']} cookies). "
-                    "Try a cart build to see if they work.") if res.get("saved_unverified") else
-                   f"Hy-Vee is reconnected ({res['cookies']} cookies imported and verified)."), None
-    except data.ReauthError as e:
-        ok, err = None, e.message
-    return render(request, "reauth/index.html", "health", "reconnect", "Reconnect", data=data.get_status(),
-                  drive=None, error=err, ok=ok)
-
-
-# ---- Hy-Vee remote browser ----
-
-@router.get("/reconnect/hyvee", include_in_schema=False)
-def hyvee_page(request: Request):
-    return render(request, "reauth/hyvee.html", "health", "reconnect", "Reconnect Hy-Vee",
-                  status=data.hyvee_session().status())
-
-
-@router.get("/reconnect/hyvee/state", include_in_schema=False)
-def hyvee_state():
-    return data.hyvee_session().status()
-
-
-@router.get("/reconnect/hyvee/shot.jpg", include_in_schema=False)
-def hyvee_shot():
-    try:
-        img = data.hyvee_session().screenshot()
-    except data.RemoteLoginError:
-        img = None
-    if not img:
-        return Response(status_code=204)
-    return Response(img, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
-
-
-def _act(request: Request, fn):
-    if (b := _blocked(request)):
-        return b
-    try:
-        fn()
-    except data.RemoteLoginError as e:
-        return JSONResponse({"error": str(e)}, status_code=400)
-    return data.hyvee_session().status()
-
-
-@router.post("/reconnect/hyvee/start", include_in_schema=False)
-def hyvee_start(request: Request):
-    if (b := _blocked(request)):
-        return b
-    return data.hyvee_session().start()
-
-
-@router.post("/reconnect/hyvee/click", include_in_schema=False)
-def hyvee_click(request: Request, x: float = Form(...), y: float = Form(...)):
-    return _act(request, lambda: data.hyvee_session().click(x, y))
-
-
-@router.post("/reconnect/hyvee/type", include_in_schema=False)
-def hyvee_type(request: Request, text: str = Form("")):
-    return _act(request, lambda: data.hyvee_session().type_text(text))
-
-
-@router.post("/reconnect/hyvee/key", include_in_schema=False)
-def hyvee_key(request: Request, key: str = Form(...)):
-    return _act(request, lambda: data.hyvee_session().press(key))
-
-
-@router.post("/reconnect/hyvee/fill", include_in_schema=False)
-def hyvee_fill(request: Request):
-    return _act(request, lambda: data.hyvee_session().fill_saved_credentials())
-
-
-@router.post("/reconnect/hyvee/finish", include_in_schema=False)
-def hyvee_finish(request: Request):
-    return _act(request, lambda: data.hyvee_session().finish())
-
-
-@router.post("/reconnect/hyvee/stop", include_in_schema=False)
-def hyvee_stop(request: Request):
-    if (b := _blocked(request)):
-        return b
-    data.hyvee_session().stop()
-    return RedirectResponse("/reconnect", status_code=303)

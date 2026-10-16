@@ -7,5 +7,5 @@ WorkingDirectory=@REPO_ROOT@
 EnvironmentFile=-%h/.config/scherbring-assistant/.env
 Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/system_health_store.py check
-# Monarch's probe can take up to 90 s.
-TimeoutStartSec=180
+# Monarch probe up to 90 s, plus the Hy-Vee headless check (re-tested once if it says expired).
+TimeoutStartSec=300

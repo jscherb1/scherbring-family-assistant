@@ -2,7 +2,7 @@
 
 {% block page_header %}
   <h1>Reconnect</h1>
-  <p class="subtitle">Refresh an expired login from any device. Nothing needs to run on the server machine.</p>
+  <p class="subtitle">Refresh an expired login. Drive works from any device; Hy-Vee uses the desktop shortcut.</p>
 {% endblock %}
 
 {% block content %}
@@ -39,19 +39,11 @@
 
   <section class="card">
     <h2>Hy-Vee</h2>
-    <p>Opens a live view of a sign-in browser running on the server. Tap and type in it to sign in and clear the CAPTCHA. It works on a phone.</p>
-    <a class="button" href="/reconnect/hyvee">Reconnect Hy-Vee</a>
-    <h3 class="reauth-sub">Or paste cookies (works when the CAPTCHA won't clear on the server)</h3>
-    <ol>
-      <li>Sign in at hy-vee.com in your own browser.</li>
-      <li>Export all cookies for hy-vee.com with a cookie exporter (JSON or cookies.txt).</li>
-      <li>Paste them below. They are tested against Hy-Vee first and never shown again.</li>
-    </ol>
-    <form method="post" action="/reconnect/hyvee/cookies" class="habit-form">
-      <label class="field"><span>Exported cookies</span><textarea name="cookies" rows="6" required autocomplete="off" spellcheck="false"></textarea></label>
-      <label class="check"><input type="checkbox" name="force" value="1"><span>Save anyway even if the sign-in check fails</span></label>
-      <button class="button" type="submit">Import and test</button>
-    </form>
+    <p>Hy-Vee signs in one way: the <strong>Hy-Vee Login</strong> shortcut on the Windows desktop. Remote in, double-click it,
+    solve the CAPTCHA in the window that opens (you have 5 minutes), and it saves the session and re-checks the connection by itself.
+    The status above updates when it finishes.</p>
+    <p class="metric-sub">Checked every 2 hours by one test (order history readable with the saved session). Each passing check also keeps the saved session fresh.
+    {% if data.hyvee_login_age_days is not none %}Last sign-in: {{ data.hyvee_login_age_days }} days ago.{% endif %}</p>
   </section>
   </div>
 {% endif %}

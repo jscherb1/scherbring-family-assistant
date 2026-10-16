@@ -63,7 +63,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/watchdog_telegram_health.py` | Detects a stuck Telegram MCP connection and kills `claude` so the loop restarts it |
 | `scripts/watchdog_scheduler_health.py` | Detects a stalled scheduler dispatcher (via the heartbeat file), restarts the timer, and sends a direct Telegram alert |
 | `scripts/scheduler_run_now.py` | Runs one scheduled task immediately through the real dispatch path, for testing |
-| `scripts/credential_check.py` | Daily check that warns on Telegram before Hy-Vee, Google Drive and Monarch logins expire |
+| `scripts/credential_check.py` | Daily check that warns on Telegram before Google Drive and Monarch logins expire (Hy-Vee is owned by `hyvee_connection.py`) |
 | `scripts/backup.py` | Daily backup: SQLite snapshot, Claude memory notes, age-encrypted secrets; keeps 14 daily + 8 weekly |
 | `scripts/monarch_result.py` | Read-only queries over large saved Monarch results, so headless runs need no `python -c` or `jq` |
 | `scripts/kid_memories_store.py` | Zero-dep CLI for kid memories (add/update/get/list/mark-drive-synced/mark-drive-failed/add-trigger/triggers) |
@@ -75,9 +75,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/myhub.py` | Shared My Hub service: runs every provider in `scripts/hub_providers/`, merges their needs-attention items into one ranked list, stores the calendar/task snapshot. Used by `myhub_store.py` and the dashboard `/me` page |
 | `scripts/myhub_store.py` | Zero-dep CLI over `myhub.py` for the myhub subagent (summary / attention / dismiss / restore / snapshot set / snapshot status) |
 | `scripts/system_health.py` | Shared integration-health service: one latest check result per system (COROS health + training hub, Open-Meteo, Drive, Monarch, Hy-Vee, plus Todoist, Calendar, Gmail, Home Assistant recorded by an agent). One failure is `warn`, two in a row `down`. Feeds the hub Systems tile and attention strip |
-| `scripts/reauth.py` | Remote re-auth service: Google Drive two-step paste sign-in (consent link, then paste the `localhost/callback` address), plus a Hy-Vee cookie import (exported cookies are validated against Hy-Vee, then saved as the session), so an expired login can be refreshed from any device. Shared by `reauth_store.py` (Telegram, via the `myhub` agent) and the dashboard Reconnect page |
-| `scripts/reauth_store.py` | Thin CLI over `reauth.py` (start / complete / verify / hyvee-cookies) |
-| `scripts/hyvee/remote_login.py` | Server-side headless Hy-Vee sign-in you drive from the dashboard (screenshots, tap, type) to clear the CAPTCHA from a phone; saves `hyvee_session.json` like `login_test.py` |
+| `scripts/reauth.py` | Remote re-auth service: Google Drive two-step paste sign-in (consent link, then paste the `localhost/callback` address), so an expired Drive login can be refreshed from any device. Shared by `reauth_store.py` (Telegram, via the `myhub` agent) and the dashboard Reconnect page |
+| `scripts/reauth_store.py` | Thin CLI over `reauth.py` (start / complete / verify) |
+| `scripts/hyvee/hyvee_connection.py` | The one Hy-Vee connection: a single three-outcome check (ok / expired / unknown, always with a reason), the post-login hook every sign-in calls, and a keep-alive that re-saves the session on each pass. Run every 2 h via `system_health`; CLI `check` / `status` |
 | `scripts/system_health_store.py` | Zero-dep CLI over `system_health.py` (status / check / record); sends one Telegram alert when a system goes down and one on recovery |
 | `scripts/hub_providers/` | One module per hub area (habits, mood, body, schedule, weather, home, chores, system, insights). Drop in a module and its card and needs-attention items appear on the hub |
 | `scripts/dayrating.py` | Shared day-rating service (1-10 score + note per day, status, nudge check). The single code path used by `dayrating_store.py` and the dashboard |
@@ -188,7 +188,7 @@ Everything runs as **systemd user units**, templated in `systemd/` and installed
 | `assistant-watchdog.timer` / `.service` | Telegram-health and scheduler-health checks, every 2 minutes, plus log pruning. |
 | `assistant-ha-mcp.service` | Local Home Assistant MCP server on 127.0.0.1:8086. |
 | `assistant-system-health.timer` / `.service` | Every 2 h: script-side integration health checks (`system_health_store.py check`); no model tokens. Enable with `scripts/install_systemd.sh assistant-system-health.timer` |
-| `assistant-credential-check.timer` / `.service` | Daily 09:30 warning before Hy-Vee, Drive or Monarch logins expire. |
+| `assistant-credential-check.timer` / `.service` | Daily 09:30 warning before Drive or Monarch logins expire. |
 | `assistant-backup.timer` / `.service` | Daily 03:15 backup of the database, memory notes and encrypted secrets. |
 | `assistant-dashboard.service` | Optional Scherbring Family Assistant web dashboard (FastAPI; orchestrator health, scheduled tasks, restart history, recipes). Binds 127.0.0.1 unless a drop-in sets another address. |
 
@@ -765,10 +765,10 @@ python scripts/hyvee_store.py history ingest --json <json_path from sync-history
 python scripts/hyvee_store.py seed --items "milk,eggs,bread,bananas,..."
 ```
 Hy-Vee shows a CAPTCHA on login, so the headless login cannot refresh an expired session by
-itself. A session lasts about 11-12 days. `scripts/credential_check.py` warns on Telegram two
-days before, with the exact command:
-`python scripts/hyvee/login_test.py --login-only --manual-wait 180` (a browser window opens;
-solve the CAPTCHA). Build-only, always: `cart_ops.py` has no checkout command by design.
+itself. There is one way to sign in: the **Hy-Vee Login** shortcut on the Windows desktop (a copy is in
+`scripts/hyvee/`), which runs `login_test.py --login-only --manual-wait 300`. There is one check,
+`scripts/hyvee/hyvee_connection.py`, run every 2 hours; it alerts once (with the reason) when the login is really
+expired and once when it recovers. Build-only, always: `cart_ops.py` has no checkout command by design.
 
 ## State store CLI (reference)
 

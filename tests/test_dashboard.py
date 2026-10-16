@@ -379,9 +379,7 @@ def test_read_only_except_allowlisted_write_routes(client):
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
                "/chores/payout", "/chores/backfill", "/chores/undo",
                "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo",
-               "/reconnect/drive/start", "/reconnect/drive/complete", "/reconnect/hyvee/start",
-               "/reconnect/hyvee/click", "/reconnect/hyvee/type", "/reconnect/hyvee/key",
-               "/reconnect/hyvee/fill", "/reconnect/hyvee/finish", "/reconnect/hyvee/stop", "/reconnect/hyvee/cookies"}
+               "/reconnect/drive/start", "/reconnect/drive/complete"}
     writes = {r.path for r in app.routes
               if getattr(r, "methods", None) and r.methods & {"POST", "PUT", "PATCH", "DELETE"}}
     assert writes <= allowed, f"unexpected write routes: {writes - allowed}"
@@ -505,12 +503,12 @@ def test_home_output_escaped(client):
 def test_credentials_states(state):
     now = datetime.now().astimezone()
     (state / "credential_check.json").write_text(json.dumps({
-        "hyvee": {"authed_at": (now - timedelta(days=10)).isoformat(), "lifetime_days": 11, "status": "ok"},
         "drive": {"authed_at": (now - timedelta(days=1)).isoformat(), "lifetime_days": 7, "status": "ok"},
         "monarch": {"authed_at": (now - timedelta(days=20)).isoformat(), "lifetime_days": 14, "status": "ok"},
     }))
     by = {s["key"]: s for s in ops.get_credentials()["systems"]}
-    assert by["hyvee"]["state"] == "warn" and by["drive"]["state"] == "ok" and by["monarch"]["state"] == "expired"
+    assert by["hyvee"]["state"] == "unknown"  # no connection check recorded in this test state
+    assert by["drive"]["state"] == "ok" and by["monarch"]["state"] == "expired"
 
 
 def test_backups_list_only(tmp_path, monkeypatch, state):

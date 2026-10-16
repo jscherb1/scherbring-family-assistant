@@ -83,6 +83,7 @@ from hyvee_web import (
     SEARCH_URL_TMPL,
     SELECTORS,
 )
+import hyvee_connection
 from hyvee_session import (
     ENV_FILE,
     SESSION_FILE,
@@ -173,21 +174,12 @@ def _cart_quantity(page) -> int:
 
 
 def _is_logged_in(page) -> bool:
-    try:
-        page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
-    except PlaywrightTimeoutError:
-        return False
-    page.wait_for_timeout(2000)
+    """Signed in per the shared connection check (order-history API), not page icons."""
+    res = hyvee_connection.probe_page(page)
     dismiss_cookie_banner(page)
-    try:
-        if page.locator(SELECTORS["login_link"]).first.is_visible(timeout=2000):
-            return False
-    except PlaywrightTimeoutError:
-        pass
-    try:
-        return page.locator(SELECTORS["cart_icon"]).first.is_visible(timeout=3000)
-    except PlaywrightTimeoutError:
-        return False
+    if res["status"] != "ok":
+        print(f"[login] connection check: {res['status']} - {res['reason']}", file=sys.stderr)
+    return res["status"] == "ok"
 
 
 def _do_login(page, username: str, password: str) -> None:
@@ -227,6 +219,7 @@ def _ensure_logged_in(page) -> None:
         raise RuntimeError("Login did not appear to succeed.")
     SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
     page.context.storage_state(path=str(SESSION_FILE))
+    hyvee_connection.on_login_saved("cart_ops auto-login")
 
 
 def _screenshot_on_error(page) -> None:
