@@ -29,7 +29,9 @@ def api_summary():
 def dismiss(request: Request, key: str = Form(...)):
     if not _same_origin(request):
         raise HTTPException(403, "cross-origin request blocked")
-    dismissals.dismiss(key, set(summary.get_summary()["active_keys"]))
+    items = summary.get_summary()
+    text = next((a["text"] for a in items["attention"] + items["dismissed"] if a["key"] == key), "")
+    dismissals.dismiss(key, text)
     return RedirectResponse("/", status_code=303)
 
 
