@@ -219,8 +219,8 @@ def _all_items(db_path=None, today: date | None = None) -> list[dict]:
 
 
 def dismiss(key: str, *, db_path=None, today: date | None = None) -> dict:
-    """Hide one needs-attention item (it must be on the hub right now). Also forgets dismissals whose
-    condition is gone or that are older than DISMISS_MAX_DAYS."""
+    """Hide one needs-attention item (it must be on the hub right now). Also forgets dismissals older
+    than DISMISS_MAX_DAYS."""
     items = {a["key"]: a for a in _all_items(db_path, today)}
     if key not in items:
         raise HubError(f"no needs-attention item with key {key!r}", 1)
@@ -228,7 +228,7 @@ def dismiss(key: str, *, db_path=None, today: date | None = None) -> dict:
     conn = connect(db_path)
     try:
         for r in conn.execute("SELECT key, dismissed_at FROM hub_dismissed").fetchall():
-            if r["key"] not in items or r["dismissed_at"] < cutoff:
+            if r["dismissed_at"] < cutoff:  # age only: the Summary page's keys aren't hub items
                 conn.execute("DELETE FROM hub_dismissed WHERE key=?", (r["key"],))
         conn.execute("INSERT OR REPLACE INTO hub_dismissed (key, text, dismissed_at) VALUES (?,?,?)",
                      (key, items[key]["text"], _now_iso()))
@@ -236,6 +236,32 @@ def dismiss(key: str, *, db_path=None, today: date | None = None) -> dict:
     finally:
         conn.close()
     return {"dismissed": key}
+
+
+def dismiss_key(key: str, text: str = "", *, db_path=None) -> dict:
+    """Dismiss by key without requiring the item to be on the hub (the Summary page has its own items). Both
+    pages and the notifier read the same table, so a dismissal anywhere hides the item everywhere it appears."""
+    if not key:
+        raise HubError("a key is required")
+    cutoff = (datetime.now() - timedelta(days=DISMISS_MAX_DAYS)).strftime("%Y-%m-%dT%H:%M:%S")
+    conn = connect(db_path)
+    try:
+        conn.execute("DELETE FROM hub_dismissed WHERE dismissed_at < ?", (cutoff,))
+        conn.execute("INSERT OR REPLACE INTO hub_dismissed (key, text, dismissed_at) VALUES (?,?,?)",
+                     (key, text, _now_iso()))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"dismissed": key}
+
+
+def dismissed_rows(*, db_path=None) -> dict[str, str]:
+    """{key: dismissed_at} for every dismissal."""
+    conn = connect(db_path)
+    try:
+        return {r["key"]: r["dismissed_at"] for r in conn.execute("SELECT key, dismissed_at FROM hub_dismissed")}
+    finally:
+        conn.close()
 
 
 def restore(key: str | None = None, *, db_path=None) -> dict:
@@ -250,3 +276,96 @@ def restore(key: str | None = None, *, db_path=None) -> dict:
     finally:
         conn.close()
     return {"restored": n}
+
+
+# ---- notifications: tell the user about each thing once, not on every refresh ----
+
+AWAKE_FROM, AWAKE_UNTIL = 7, 20          # outside these hours only a NEW urgent item gets through
+URGENT_REPEAT_HOURS = 6
+NOTIFY_LEVELS = ("urgent", "warn")       # info items live on the page and never message
+
+
+def _meta(conn, name):
+    r = conn.execute("SELECT value FROM hub_notify_meta WHERE name=?", (name,)).fetchone()
+    return r["value"] if r else None
+
+
+def _line(a: dict) -> str:
+    return f"- {a['text']}"
+
+
+def notify_check(*, db_path=None, now: datetime | None = None, record: bool = True) -> dict:
+    """Decide what (if anything) the scheduled refresh should message the user, and remember it.
+
+    Rules
+      - dismissed items (from the hub or the Summary page, one shared table) never notify;
+      - each item is announced once when it is new, and again only if it escalates (info -> warn -> urgent);
+      - urgent items repeat every URGENT_REPEAT_HOURS while awake; warn items are only repeated by the digest;
+      - info items never message;
+      - outside AWAKE_FROM..AWAKE_UNTIL only a new or escalated urgent item is sent; the rest waits;
+      - the first refresh at/after AWAKE_FROM each day sends one digest of everything still open
+        (this replaces that run's other messages);
+      - an item that resolves or is dismissed is forgotten, so if it comes back it counts as new.
+    Returns {"send": bool, "mode": "digest"|"update"|None, "new", "escalated", "reminders", "message"}.
+    """
+    now = now or datetime.now()
+    hub = get_hub(db_path=db_path, today=now.date())
+    items = [a for a in hub["attention"] + [x for g in hub["groups"] for x in g["items"]]
+             if a["level"] in NOTIFY_LEVELS]
+    items.sort(key=lambda a: (LEVELS[a["level"]], a["area"], a["text"]))
+    awake = AWAKE_FROM <= now.hour < AWAKE_UNTIL
+    stamp = now.strftime("%Y-%m-%dT%H:%M:%S")
+    conn = connect(db_path)
+    try:
+        rows = {r["key"]: dict(r) for r in conn.execute("SELECT * FROM hub_notified")}
+        live = {a["key"] for a in items}
+        for k in set(rows) - live:  # resolved, dismissed or downgraded to info: forget it
+            conn.execute("DELETE FROM hub_notified WHERE key=?", (k,))
+            rows.pop(k)
+        today = now.date().isoformat()
+        digest_due = awake and now.hour >= AWAKE_FROM and _meta(conn, "digest_date") != today
+        new, escalated, reminders = [], [], []
+        for a in items:
+            row = rows.get(a["key"])
+            if row is None:
+                new.append(a)
+            elif LEVELS[a["level"]] < LEVELS[row["level"]]:
+                escalated.append(a)
+            elif a["level"] == "urgent":
+                last = datetime.fromisoformat(row["last_notified_at"])
+                if now - last >= timedelta(hours=URGENT_REPEAT_HOURS):
+                    reminders.append(a)
+        if digest_due:
+            mode, told = "digest", items
+        else:
+            gate = (lambda a: a["level"] == "urgent") if not awake else (lambda a: True)
+            new = [a for a in new if gate(a)]
+            escalated = [a for a in escalated if gate(a)]
+            reminders = reminders if awake else []
+            told = new + escalated + reminders
+            mode = "update" if told else None
+        if record and (told or digest_due):
+            for a in told:
+                conn.execute(
+                    "INSERT INTO hub_notified (key, level, first_notified_at, last_notified_at) VALUES (?,?,?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET level=excluded.level, last_notified_at=excluded.last_notified_at",
+                    (a["key"], a["level"], stamp, stamp))
+            if digest_due:
+                conn.execute("INSERT OR REPLACE INTO hub_notify_meta (name, value) VALUES ('digest_date', ?)", (today,))
+        if record:
+            conn.commit()
+    finally:
+        conn.close()
+    message = None
+    if mode == "digest":
+        message = ("Good morning. Still open on your hub:\n" + "\n".join(_line(a) for a in items)) if items else None
+    elif mode == "update":
+        parts = []
+        if new or escalated:
+            parts.append("New on your hub:\n" + "\n".join(_line(a) for a in new + escalated))
+        if reminders:
+            parts.append("Still urgent:\n" + "\n".join(_line(a) for a in reminders))
+        message = "\n\n".join(parts)
+    return {"send": bool(message), "mode": mode if message else None, "message": message,
+            "new": [a["key"] for a in new], "escalated": [a["key"] for a in escalated],
+            "reminders": [a["key"] for a in reminders]}

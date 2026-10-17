@@ -17,7 +17,7 @@ project root). Output is JSON; errors are `{"error": ...}` on stderr (exit 1 = n
 
 ## Answering questions
 
-- `python scripts/myhub_store.py dismiss KEY` / `restore [KEY]`: hide an item the user has reviewed (keys come from
+- `python scripts/myhub_store.py dismiss KEY` / `restore [KEY]`: hide (one shared dismissal list, also used by the Summary page; a dismissed item never notifies) an item the user has reviewed (keys come from
   `attention`; a new occurrence of the same kind of event still shows) or bring it back. Dismissed items are listed under
   `dismissed` and are left out of the counts.
 - `python scripts/myhub_store.py attention`: the ranked list (`urgent` > `warn` > `info`) with counts. Use it for
@@ -54,8 +54,12 @@ Scripts can't reach Google Calendar or Todoist, so you copy them in:
    Never build or transform these files with inline scripts (`python3 -`, `python -c`, heredocs, `jq`, `sed`): scheduled runs have no one to approve them, so they are denied and the whole run is marked failed. Compose the final JSON yourself and write it with Write.
    Don't copy the shopping lists (projects named like "Shopping", "Costco", "Staple Groceries") into the snapshot.
 3. If a connector fails, say so in one line and leave that snapshot as it was; stale is better than empty.
-4. Scheduled runs: **reply with nothing** unless something is urgent (`attention` has `urgent` items, or the
-   refresh failed). For a user-requested refresh, confirm in one line with the counts.
+4. Scheduled runs: after the snapshots are written, run `python scripts/myhub_store.py notify-check`. It decides
+   what to tell the user (new or escalated items, a 6-hourly reminder for urgent ones, one morning digest, and a
+   quiet window after 8pm) and records it as told. If `send` is true, reply with its `message` exactly as given,
+   nothing added; if false, **reply with nothing**, even when warn or urgent items exist (they were already
+   announced). Only add a line yourself if the refresh itself failed. For a user-requested refresh, confirm in one
+   line with the counts (do not run notify-check).
 
 You never change data in Calendar or Todoist; this agent is read-only against both.
 

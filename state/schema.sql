@@ -616,3 +616,15 @@ CREATE TABLE IF NOT EXISTS hub_dismissed (
     text         TEXT,
     dismissed_at TEXT NOT NULL           -- local ISO
 );
+
+-- What the hub refresh has already told the user about (so it doesn't repeat itself).
+CREATE TABLE IF NOT EXISTS hub_notified (
+    key              TEXT PRIMARY KEY,   -- attention item key
+    level            TEXT NOT NULL,      -- level when last told
+    first_notified_at TEXT NOT NULL,     -- local ISO
+    last_notified_at  TEXT NOT NULL      -- local ISO
+);
+CREATE TABLE IF NOT EXISTS hub_notify_meta (
+    name  TEXT PRIMARY KEY,              -- e.g. 'digest_date'
+    value TEXT NOT NULL
+);

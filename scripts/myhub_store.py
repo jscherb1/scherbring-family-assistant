@@ -11,6 +11,8 @@ Usage:
         (only the ranked needs-attention list plus counts)
     python scripts/myhub_store.py dismiss KEY      (hide a reviewed item; keys are in `attention`)
     python scripts/myhub_store.py restore [KEY]    (un-hide one, or all with no key)
+    python scripts/myhub_store.py notify-check [--dry-run]
+        (what the scheduled refresh should message, if anything: {"send", "message", ...}; records it as told)
     python scripts/myhub_store.py snapshot set --kind event --start YYYY-MM-DD --end YYYY-MM-DD --items-file PATH|-
     python scripts/myhub_store.py snapshot set --kind task --items-file PATH|-
         (items: JSON list of {"title","day","start_time","end_time","source","detail","priority"};
@@ -47,6 +49,8 @@ def run(args) -> int:
         return _out({"date": h["date"], "counts": h["counts"], "attention": h["attention"], "groups": h["groups"], "dismissed": h["dismissed"], "errors": h["errors"]})
     if args.cmd == "dismiss":
         return _out(myhub.dismiss(args.key))
+    if args.cmd == "notify-check":
+        return _out(myhub.notify_check(record=not args.dry_run))
     if args.cmd == "restore":
         return _out(myhub.restore(args.key))
     if args.snap == "status":
@@ -65,6 +69,7 @@ def main(argv=None) -> int:
     sub.add_parser("summary")
     sub.add_parser("attention")
     sub.add_parser("dismiss").add_argument("key")
+    sub.add_parser("notify-check").add_argument("--dry-run", action="store_true")
     sub.add_parser("restore").add_argument("key", nargs="?")
     sn = sub.add_parser("snapshot")
     ss = sn.add_subparsers(dest="snap", required=True)

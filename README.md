@@ -73,7 +73,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/chores.py` | Shared chore-chart service (completion rules, money ledger, badges; streaks via `habits.habit_status`). The single code path used by `chores_store.py`, the `/chores` dashboard section and the `/kids` page |
 | `scripts/chores_store.py` | Zero-dep CLI over `chores.py` for the chores subagent (kid/chore/done/undo/status/payout/config sub-commands) |
 | `scripts/myhub.py` | Shared My Hub service: runs every provider in `scripts/hub_providers/`, merges their needs-attention items into one ranked list, stores the calendar/task snapshot. Used by `myhub_store.py` and the dashboard `/me` page |
-| `scripts/myhub_store.py` | Zero-dep CLI over `myhub.py` for the myhub subagent (summary / attention / dismiss / restore / snapshot set / snapshot status) |
+| `scripts/myhub_store.py` | Zero-dep CLI over `myhub.py` for the myhub subagent (summary / attention / dismiss / restore / notify-check / snapshot set / snapshot status) |
 | `scripts/system_health.py` | Shared integration-health service: one latest check result per system (COROS health + training hub, Open-Meteo, Drive, Monarch, Hy-Vee, plus Todoist, Calendar, Gmail, Home Assistant recorded by an agent). One failure is `warn`, two in a row `down`. Feeds the hub Systems tile and attention strip |
 | `scripts/reauth.py` | Remote re-auth service: Google Drive two-step paste sign-in (consent link, then paste the `localhost/callback` address), so an expired Drive login can be refreshed from any device. Shared by `reauth_store.py` (Telegram, via the `myhub` agent) and the dashboard Reconnect page |
 | `scripts/reauth_store.py` | Thin CLI over `reauth.py` (start / complete / verify) |
@@ -448,12 +448,18 @@ insight and system health (expired logins, failed scheduled tasks). The `myhub` 
 - **Calendar and tasks** come from a snapshot (`hub_items` table) because Google Calendar and Todoist are only reachable
   through the agent connectors: the `myhub` agent copies them in via `myhub_store.py snapshot set` on a schedule. The page
   says when they were last synced and flags them when older than 36 hours.
+- **No repeat nagging**: after each refresh `myhub_store.py notify-check` decides what to message. An item is announced once
+  when new (and again only if it escalates); urgent items repeat every 6 h while awake; warn items are only repeated by one
+  morning digest (the first refresh at 7am); info items never message; from 8pm to 7am only a new urgent item gets through.
+  What was told is remembered in `hub_notified`. **Dismissals are one shared list** (`hub_dismissed`) used by the My Hub
+  page, the Summary page, the agent and the notifier, so dismissing an item anywhere hides it everywhere and stops it
+  notifying; the old `state/dashboard_dismissed.json` is imported once and renamed.
 - Not on the hub yet: finance items waiting on a decision (Monarch is live-only) and Hy-Vee cart state; see `docs/TODO.md`.
 
 Register once (calendar and tasks need the agent, so every 2 hours 7am-9pm):
 ```
 python scripts/scheduler_store.py add --name "myhub-refresh" \
-  --prompt "Delegate to the myhub subagent to refresh the hub's calendar and task snapshot (silent unless something is urgent)." \
+  --prompt "Delegate to the myhub subagent to refresh the hub's calendar and task snapshot then run notify-check and send only what it says (otherwise stay silent)." \
   --cron "0 7-21/2 * * *" --target-chat-id "<your chat_id>"
 ```
 Sleep, recovery, weather and habits are script-reachable, so `assistant-insights-refresh.timer` refreshes them every
