@@ -144,6 +144,14 @@ def test_new_item_is_announced_once_then_quiet(db):
     assert not again["send"]  # same item, only 2h later
 
 
+def test_resyncing_the_snapshot_does_not_make_items_new_again(db):
+    nc(db, 7)
+    _overdue(db, "Pay bill")
+    assert nc(db, 9)["send"]
+    _overdue(db, "Pay bill")  # a refresh replaces every task row with a new id
+    assert not nc(db, 11)["send"]
+
+
 def test_urgent_repeats_every_six_hours_while_awake(db):
     nc(db, 7)
     _overdue(db, "Pay bill")
