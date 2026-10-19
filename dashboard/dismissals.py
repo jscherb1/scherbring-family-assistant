@@ -1,52 +1,43 @@
-"""Dismissed 'needs attention' items on the Summary page.
+"""Dismissed 'needs attention' items, shared by the Summary page, the My Hub page and the hub's
+Telegram notifications.
 
-Each attention item has a stable key tied to the specific event (for example a failed run's
-timestamp), so a dismissal hides that event for good but a new one still shows up. Stored in
-state/dashboard_dismissed.json, the dashboard's only state besides the ask box's inbox row.
+There is one store: the `hub_dismissed` table, owned by scripts/myhub.py. This module is a thin
+adapter so the Summary page uses it too; a dismissal anywhere hides the item everywhere it appears and
+stops it from notifying. Keys are tied to the specific event (a failed run's timestamp, say), so a new
+occurrence of the same kind of thing still shows up. The old state/dashboard_dismissed.json is imported
+once and renamed.
 """
-import json
-import os
-import tempfile
-from datetime import datetime, timedelta, timezone
+import sys
 
 from .data import common
 
-MAX_AGE = timedelta(days=60)
+if str(common.SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(common.SCRIPTS_DIR))
+import myhub as service  # noqa: E402
 
 
-def _path():
-    return common.state_dir() / "dashboard_dismissed.json"
+def _migrate_legacy() -> None:
+    path = common.state_dir() / "dashboard_dismissed.json"
+    data = common.read_json(path)
+    if isinstance(data, dict):
+        have = service.dismissed_rows(db_path=common.db_path())
+        for key in data:
+            if key not in have:
+                service.dismiss_key(key, db_path=common.db_path())
+    if path.exists():
+        path.rename(path.with_suffix(".json.migrated"))
 
 
 def load() -> dict:
-    data = common.read_json(_path())
-    return data if isinstance(data, dict) else {}
+    _migrate_legacy()
+    return {k: {"at": at} for k, at in service.dismissed_rows(db_path=common.db_path()).items()}
 
 
-def _save(data: dict) -> None:
-    path = _path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".dismissed-", suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=1)
-    os.replace(tmp, path)
-
-
-def dismiss(key: str, active_keys: set[str]) -> None:
-    """Dismiss one item; also forget dismissals that are stale (the condition is gone or old)."""
-    data = load()
-    cutoff = datetime.now(timezone.utc) - MAX_AGE
-    keep = {}
-    for k, v in data.items():
-        at = common.parse_ts(v.get("at")) if isinstance(v, dict) else None
-        if k in active_keys and at and at > cutoff:
-            keep[k] = v
-    keep[key] = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-    _save(keep)
+def dismiss(key: str, text: str = "") -> None:
+    _migrate_legacy()
+    service.dismiss_key(key, text, db_path=common.db_path())
 
 
 def restore(key: str | None = None) -> None:
     """Un-dismiss one item, or all of them when key is None."""
-    data = {} if key is None else load()
-    data.pop(key, None)
-    _save(data)
+    service.restore(key, db_path=common.db_path())

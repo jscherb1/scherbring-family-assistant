@@ -134,6 +134,7 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## System health (PR 1 built 2026-10-14)
 
+- [ ] Hub notify-check (2026-10-17): verify live. The 7am refresh should send one digest, later refreshes stay silent unless something is new/escalated, urgent repeats every 6 h, nothing after 8pm except a new urgent item; dismissing on Summary or My Hub must stop the message. Check `hub_notified` and the run log after a day.
 - [x] PR 2 built 2026-10-14: `myhub` agent pings Todoist, Calendar, Gmail, Home Assistant (`system-ping-morning` 6:35am,
       `system-ping-evening` 5:05pm); a Telegram alert fires once when a system goes down and once on recovery; an agent
       ping older than 30 h shows amber. Gmail/Home Assistant pings failed twice in the long-lived worker session because its cached `myhub` definition lacks the new tools; verify on the first scheduled (fresh-session) run, restarting the agent worker if still missing. Also unchecked: the `myhub` agent can call

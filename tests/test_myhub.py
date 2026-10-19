@@ -123,3 +123,105 @@ def test_tasks_are_grouped_out_of_the_attention_strip(db):
     assert [g["label"] for g in h["groups"]] == ["Tasks"]
     assert len(h["groups"][0]["items"]) == 2
     assert h["counts"]["urgent"] == sum(1 for a in h["attention"] if a["level"] == "urgent")
+
+
+# ---- notifications ----
+
+def _overdue(db, *titles):
+    myhub.set_snapshot("task", [{"title": t, "day": "2026-10-10", "priority": 1} for t in titles], db_path=db)
+
+
+def nc(db, hour, day=14, **kw):
+    return myhub.notify_check(db_path=db, now=datetime(2026, 10, day, hour, 0), **kw)
+
+
+def test_new_item_is_announced_once_then_quiet(db):
+    myhub.notify_check(db_path=db, now=datetime(2026, 10, 14, 7, 0))  # morning digest used up
+    _overdue(db, "Pay bill")
+    first = nc(db, 9)
+    assert first["send"] and "Pay bill" in first["message"] and first["mode"] == "update"
+    again = nc(db, 11)
+    assert not again["send"]  # same item, only 2h later
+
+
+def test_resyncing_the_snapshot_does_not_make_items_new_again(db):
+    nc(db, 7)
+    _overdue(db, "Pay bill")
+    assert nc(db, 9)["send"]
+    _overdue(db, "Pay bill")  # a refresh replaces every task row with a new id
+    assert not nc(db, 11)["send"]
+
+
+def test_urgent_repeats_every_six_hours_while_awake(db):
+    nc(db, 7)
+    _overdue(db, "Pay bill")
+    assert nc(db, 8)["send"]
+    assert not nc(db, 13)["send"]
+    r = nc(db, 14)
+    assert r["send"] and r["reminders"] and "Still urgent" in r["message"]
+
+
+def test_quiet_window_only_lets_new_urgent_through(db):
+    nc(db, 7)  # consume the day's digest
+    myhub.set_snapshot("task", [{"title": "Call vet", "day": "2026-10-14", "priority": 1}], db_path=db)  # warn
+    assert not nc(db, 21)["send"]
+    myhub.set_snapshot("task", [{"title": "Call vet", "day": "2026-10-14", "priority": 1},
+                                {"title": "Pay bill", "day": "2026-10-10", "priority": 1}], db_path=db)
+    r = nc(db, 22)
+    assert r["send"] and "Pay bill" in r["message"] and "Call vet" not in r["message"]
+    # the warn item was held back, not lost: it is in the next morning's digest
+    d = nc(db, 7, day=14 + 1)
+    assert d["mode"] == "digest" and "Call vet" in d["message"] and "Pay bill" in d["message"]
+
+
+def test_morning_digest_once_per_day_and_covers_open_items(db):
+    _overdue(db, "Pay bill")
+    d = nc(db, 7)
+    assert d["mode"] == "digest" and "Pay bill" in d["message"]
+    assert not nc(db, 9)["send"]
+    assert nc(db, 7, day=15)["mode"] == "digest"  # next day, repeats by design
+    assert nc(db, 9, day=15)["send"] is False
+
+
+def test_same_key_escalation(db, monkeypatch):
+    mod = next(m for m in myhub.discover_providers() if m.PROVIDER["name"] == "weather")
+    level = {"v": "warn"}
+    monkeypatch.setattr(mod, "collect", lambda conn, today: {"card": {}, "attention": [
+        {"key": "weather:x", "text": "Storm", "level": level["v"]}]})
+    nc(db, 7)
+    assert nc(db, 9)["send"] is False  # the 7am digest already covered it
+    level["v"] = "urgent"
+    r = nc(db, 10)
+    assert r["send"] and r["escalated"] == ["weather:x"]
+
+
+def test_dismissed_item_never_notifies_and_is_forgotten(db):
+    nc(db, 7)
+    _overdue(db, "Pay bill")
+    key = next(a["key"] for g in hub(db)["groups"] for a in g["items"])
+    myhub.dismiss(key, db_path=db, today=TODAY)
+    assert not nc(db, 9)["send"]
+    assert not nc(db, 15)["send"]
+    myhub.restore(key, db_path=db)
+    assert nc(db, 16)["send"]  # restored: counts as new
+
+
+def test_dismiss_key_works_without_hub_membership_and_survives_hub_dismiss(db):
+    myhub.dismiss_key("sched:foo:1", "A job failed", db_path=db)
+    _overdue(db, "Pay bill")
+    key = next(a["key"] for g in hub(db)["groups"] for a in g["items"])
+    myhub.dismiss(key, db_path=db, today=TODAY)
+    assert set(myhub.dismissed_rows(db_path=db)) == {"sched:foo:1", key}
+
+
+def test_dry_run_does_not_record(db):
+    nc(db, 7)
+    _overdue(db, "Pay bill")
+    assert nc(db, 9, record=False)["send"]
+    assert nc(db, 9)["send"]
+
+
+def test_notify_check_cli(db, monkeypatch, capsys):
+    monkeypatch.setattr(myhub, "connect", lambda p=None: dayrating.connect(db))
+    assert myhub_store.main(["notify-check", "--dry-run"]) == 0
+    assert "send" in json.loads(capsys.readouterr().out)

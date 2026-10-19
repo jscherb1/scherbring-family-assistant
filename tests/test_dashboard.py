@@ -677,7 +677,10 @@ def test_dismiss_and_restore_attention(client, state):
     assert _sched_items(client) == []
     page = client.get("/")
     assert "1 dismissed" in page.text and item["text"] in page.text  # restorable
-    assert (state / "dashboard_dismissed.json").exists()
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    assert item["key"] in service.dismissed_rows(db_path=state / "agent_results.db")  # one shared store
     client.post("/attention/restore", data={"key": item["key"]})
     assert len(_sched_items(client)) == 1
 
@@ -933,3 +936,30 @@ def test_hub_dismiss_restore_and_new_event_still_shows(client, state):
         service.dismiss("nope", db_path=db)
     except service.HubError as exc:
         assert exc.code == 1
+
+
+def test_summary_and_hub_share_one_dismissal_store(client, state):
+    """Dismissing on the Summary page is visible to the hub service (and so to notifications), and vice versa."""
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    db = state / "agent_results.db"
+    _seed_recent_failure(state)
+    (item,) = _sched_items(client)
+    client.post("/attention/dismiss", data={"key": item["key"]})
+    assert item["key"] in service.dismissed_rows(db_path=db)
+    service.dismiss_key("other:key", "x", db_path=db)
+    client.post("/attention/restore", data={"key": item["key"]})
+    assert item["key"] not in service.dismissed_rows(db_path=db)
+
+
+def test_legacy_dismissal_file_is_imported_once(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    (state / "dashboard_dismissed.json").write_text('{"legacy:k": {"at": "2026-10-01T00:00:00+00:00"}}')
+    client.get("/api/summary")
+    from dashboard import dismissals
+    dismissals.load()
+    assert "legacy:k" in service.dismissed_rows(db_path=state / "agent_results.db")
+    assert not (state / "dashboard_dismissed.json").exists()
