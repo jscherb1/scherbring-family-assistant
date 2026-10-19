@@ -1235,6 +1235,9 @@ a.chip {
   align-items: center;
 }
 
+.habit-date { min-height: 48px; padding: 0 8px; font-size: 14px; }
+.hcal-day[data-pick] { cursor: pointer; }
+
 .habit-done {
   flex: 1;
   min-height: 48px;

@@ -46,7 +46,9 @@
 
   {% if h.active %}
   <div class="habit-actions">
-    <button class="button habit-done" hx-post="/habits/{{ h.id }}/log" hx-target="#habit-{{ h.id }}" hx-swap="outerHTML">
+    <input type="date" name="log_date" id="hdate-{{ h.id }}" class="habit-date" aria-label="Date to log" title="Date to log (blank = today)"
+           onfocus="this.max=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10)">
+    <button class="button habit-done" hx-post="/habits/{{ h.id }}/log" hx-include="#hdate-{{ h.id }}" hx-target="#habit-{{ h.id }}" hx-swap="outerHTML">
       {{ '✓ Done' if h.has_goal else '+ Log it' }}
     </button>
     <button class="link-button" hx-post="/habits/{{ h.id }}/undo" hx-target="#habit-{{ h.id }}" hx-swap="outerHTML"
@@ -65,10 +67,10 @@
   <div class="habit-face habit-back" hidden>
     <div class="habit-back-head">
       <strong>{{ h.name }}</strong>
-      <span class="muted">{{ h.calendar.days_done if h.calendar else 0 }} days in view</span>
+      <span class="muted">{{ h.calendar.days_done if h.calendar else 0 }} days in view · tap a day to log it</span>
     </div>
     {% if h.calendar %}
-    <div class="hcal-pair">{% for g in h.calendar.months %}{{ month(g, 1) }}{% endfor %}</div>
+    <div class="hcal-pair">{% for g in h.calendar.months %}{{ month(g, 1, true) }}{% endfor %}</div>
     {% endif %}
     <button class="link-button habit-flip" type="button" data-flip>← Back</button>
   </div>

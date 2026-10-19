@@ -1,5 +1,5 @@
 {# Month grids. cal = service.calendar() output; day shading follows count (1..4+). #}
-{% macro month(g, max_count) %}
+{% macro month(g, max_count, pick=false) %}
 <div class="hcal">
   <div class="hcal-title">{{ g.label }}</div>
   <div class="hcal-row hcal-dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
@@ -7,7 +7,7 @@
   <div class="hcal-row">
     {% for c in week %}
       {% if c %}<span class="hcal-day{{ ' on l' ~ (2 if max_count <= 1 else [c.count, 4]|min) if c.count }}{{ ' today' if c.today }}{{ ' future' if c.future }}"
-            title="{{ c.date }}{% if c.count %}: {{ c.count }}{% endif %}">{{ c.day }}</span>
+            title="{{ c.date }}{% if c.count %}: {{ c.count }}{% endif %}"{% if pick and not c.future %} data-pick="{{ c.date }}" role="button"{% endif %}>{{ c.day }}</span>
       {% else %}<span class="hcal-day pad"></span>{% endif %}
     {% endfor %}
   </div>
