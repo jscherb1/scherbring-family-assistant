@@ -11,12 +11,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "fitness"))
 
 SOURCE = {"name": "coros_wellness", "kind": "auto",
-          "description": "COROS overnight HRV, resting heart rate, fatigue and training load per day"}
+          "description": "COROS overnight HRV (and its normal range), resting heart rate, fatigue and training load per day"}
 
 # COROS field -> (metric name, keep zero values?)
 FIELDS = {"avgSleepHrv": ("hrv_ms", False), "rhr": ("resting_hr", False),
           "tiredRateNew": ("fatigue", True), "trainingLoad": ("training_load", True),
-          "trainingLoadRatio": ("load_ratio", False), "t7d": ("load_7d", True)}
+          "trainingLoadRatio": ("load_ratio", False), "t7d": ("load_7d", True),
+          # Kept for the Wellness charts: acute/chronic training index, 28-day load, COROS's recommended
+          # 7-day load range and its fatigue / load-ratio state codes. insights.NOT_ANALYZED keeps all but
+          # ati/cti out of the day-rating analysis.
+          "ati": ("ati", True), "cti": ("cti", True), "t28d": ("load_28d", True),
+          "recomendTlMin": ("load_rec_min", False), "recomendTlMax": ("load_rec_max", False),
+          "tiredRateStateNew": ("fatigue_state", False), "trainingLoadRatioState": ("load_ratio_state", False)}
 
 
 def fetch_day_details(start, end) -> list[dict]:
@@ -57,6 +63,11 @@ def to_metrics(day_list: list[dict]) -> dict:
         hrv, base = d.get("avgSleepHrv"), d.get("sleepHrvBase")
         if hrv and base:
             out.setdefault("coros:hrv_vs_baseline", {})[day] = float(hrv - base)
+        # sleepHrvIntervalList is COROS's HRV zone edges [low, below-normal, normal-from, normal-to].
+        band = d.get("sleepHrvIntervalList") or []
+        if len(band) == 4 and band[2] and band[3]:
+            out.setdefault("coros:hrv_base_low", {})[day] = float(band[2])
+            out.setdefault("coros:hrv_base_high", {})[day] = float(band[3])
     return out
 
 

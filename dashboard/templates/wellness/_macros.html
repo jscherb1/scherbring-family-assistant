@@ -1,0 +1,37 @@
+{# Shared bits for the Wellness pages. Charts arrive pre-rendered (dashboard/charts.py); these only frame them. #}
+
+{% macro legend(items) %}
+<ul class="wlegend">{% for label, cls in items %}<li><i class="sw {{ cls }}"></i>{{ label }}</li>{% endfor %}</ul>
+{% endmacro %}
+
+{% macro delta(summary, key, better, fmt) %}
+  {%- if summary and summary.delta is not none and summary.prev_avg is not none -%}
+    {%- set up = summary.delta > 0 -%}
+    {%- set good = (better == 'up' and up) or (better == 'down' and not up) -%}
+    <span class="wdelta {{ 'neutral' if not better or summary.delta|abs < 0.005 else ('good' if good else 'bad') }}"
+          title="Previous period averaged {{ fmt(key, summary.prev_avg) }}">{{ '▲' if up else '▼' }} {{ fmt(key, summary.delta|abs) }}</span>
+  {%- endif -%}
+{% endmacro %}
+
+{# A chart card: title, the range's average with change vs the previous window, a legend, the chart and
+   the readout bar the tap-to-pin script fills on touch screens. #}
+{% macro figure(title, chart, series=none, fmt=none, legend_items=none, note='', wide=false, id='') %}
+<figure class="card wfig{{ ' card-wide' if wide }}"{% if id %} id="{{ id }}"{% endif %}>
+  <figcaption>
+    <h2>{{ title }}</h2>
+    {% if series and series.summary.avg is not none %}
+      <span class="wavg">{{ fmt(series.key, series.summary.avg) }} <small>avg</small> {{ delta(series.summary, series.key, series.better, fmt) }}</span>
+    {% endif %}
+  </figcaption>
+  {% if legend_items %}{{ legend(legend_items) }}{% endif %}
+  <div class="wplot">{{ chart }}</div>
+  <div class="wreadout" aria-live="polite"></div>
+  {% if note %}<p class="wnote">{{ note }}</p>{% endif %}
+</figure>
+{% endmacro %}
+
+{% macro freshness(items) %}
+<p class="wfresh">
+  {% for f in items %}<span class="{{ 'stale' if f.stale }}" title="{{ 'Overdue: ' if f.stale }}last written {{ f.at|fmt_dt }}">{{ f.label }} · {{ f.at|fmt_dt }}</span>{% endfor %}
+</p>
+{% endmacro %}

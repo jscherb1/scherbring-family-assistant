@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% from "wellness/_macros.html" import freshness %}
+
+{% block head %}<link rel="stylesheet" href="/static/wellness.css?v={{ asset_version() }}">{% endblock %}
+
+{% block page_header %}
+  <h1>Wellness</h1>
+  <p class="subtitle">Last night, today so far and yesterday in full. Each number waits until its day is complete.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+<div class="wellness">
+  {% set rec = data.rings.recovery %}{% set sl = data.rings.sleep %}{% set st = data.rings.strain %}
+  <section class="wrings" aria-label="Readiness">
+    <figure class="card wring">
+      {{ charts.rings.recovery }}
+      <figcaption><strong>Recovery</strong>
+        <span>{{ 'COROS, today' if rec.source == 'coros' else ('Estimated from HRV, resting HR and sleep' if rec.source == 'estimate' else rec.note) }}</span></figcaption>
+    </figure>
+    <figure class="card wring">
+      {{ charts.rings.sleep }}
+      <figcaption><strong>Sleep</strong>
+        <span>{% if sl.status == 'final' %}Last night{% elif sl.day %}Waiting for last night · showing {{ sl.day|fmt_date }}{% else %}No sleep data yet{% endif %}</span></figcaption>
+    </figure>
+    <figure class="card wring">
+      {{ charts.rings.strain }}
+      <figcaption><strong>Load</strong>
+        <span>{% if st.zone == 'ok' %}In the recommended range{% elif st.zone == 'low' %}Below the recommended range{% elif st.zone == 'high' %}Above the recommended range{% elif st.day %}7 days to {{ st.day|fmt_date }}{% else %}No load data yet{% endif %}</span></figcaption>
+    </figure>
+  </section>
+
+  <div class="wgrid">
+    {% set s = data.sleep %}
+    <section class="card">
+      <h2>Last night {% if s.status != 'final' and s.day %}<span class="pill pill-muted" title="Sleep is filed on the morning you wake up and arrives once the watch syncs">not synced yet</span>{% endif %}</h2>
+      {% if s.day %}
+        {% set v = s['values'] %}
+        <div class="wbig">{{ s.display.sleep_hours }}
+          <small>{% if s.avg_hours_30 %}30-day avg {{ fmt('sleep_hours', s.avg_hours_30) }} · {% endif %}target {{ fmt('sleep_hours', s.target_hours) }}</small></div>
+        {% if s.awake_pct is defined %}
+        <div class="wstages" role="img" aria-label="Deep {{ s.display.deep_pct }}, REM {{ s.display.rem_pct }}, light {{ s.display.light_pct }}">
+          <i class="s-deep" style="flex: {{ v.deep_pct }}" title="Deep {{ s.display.deep_pct }}"></i>
+          {% if v.rem_pct %}<i class="s-rem" style="flex: {{ v.rem_pct }}" title="REM {{ s.display.rem_pct }}"></i>{% endif %}
+          <i class="s-light" style="flex: {{ v.light_pct }}" title="Light {{ s.display.light_pct }}"></i>
+          {% if s.awake_pct %}<i class="s-awake" style="flex: {{ s.awake_pct }}" title="Awake {{ s.display.awake_min }}"></i>{% endif %}
+        </div>
+        <ul class="wlegend">
+          <li><i class="sw s-deep"></i>Deep {{ s.display.deep_pct }}</li>
+          {% if v.rem_pct %}<li><i class="sw s-rem"></i>REM {{ s.display.rem_pct }}</li>{% endif %}
+          <li><i class="sw s-light"></i>Light {{ s.display.light_pct }}</li>
+          <li><i class="sw s-awake"></i>Awake {{ s.display.awake_min }}</li>
+        </ul>
+        {% endif %}
+        <dl class="wfacts">
+          <div><dt>Bed</dt><dd>{{ s.display.bedtime }}</dd></div>
+          <div><dt>Up</dt><dd>{{ s.display.wake_time }}</dd></div>
+          <div><dt>Score</dt><dd>{{ s.display.sleep_score }}</dd></div>
+          <div><dt>Wake-ups</dt><dd>{{ s.display.wakeups }}</dd></div>
+        </dl>
+        {% if s.status != 'final' %}<p class="wnote">Showing the night ending {{ s.day|fmt_date }}.</p>{% endif %}
+      {% else %}
+        <div class="empty-state">No COROS sleep data yet.</div>
+      {% endif %}
+    </section>
+
+    {% set m = data.mood %}
+    <section class="card">
+      <h2>Day rating</h2>
+      {% if m.shown %}
+        <div class="wbig">{{ m.shown.score }}<small>/10 · {{ m.shown_when|lower }}</small></div>
+        {% if m.shown.note %}<p class="wquote">“{{ m.shown.note }}”</p>{% endif %}
+      {% else %}
+        <div class="wbig muted">—<small>no recent rating</small></div>
+      {% endif %}
+      {% if m.today_state == 'later' %}
+        <div class="wplaceholder" title="Today's rating is given in the evening, so it isn't missing yet">Today: rate tonight · nudge at {{ m.nudge_label }}</div>
+      {% elif m.today_state == 'due' %}
+        <a class="wplaceholder due" href="/rating">Today isn't rated yet. Rate it now</a>
+      {% endif %}
+      {% if m.yesterday_unrated %}<a class="wplaceholder due" href="/rating">Yesterday has no rating. Add it</a>{% endif %}
+      <dl class="wfacts">
+        <div><dt>7-day avg</dt><dd>{{ m.avg_7 if m.avg_7 is not none else '—' }}</dd></div>
+        <div><dt>30-day avg</dt><dd>{{ m.avg_30 if m.avg_30 is not none else '—' }}</dd></div>
+        <div><dt>Streak</dt><dd>{{ m.streak }}d</dd></div>
+      </dl>
+      <div class="wspark">{{ charts.sparks.rating }}</div>
+    </section>
+  </div>
+
+  <section class="card card-wide">
+    <h2>Vitals against your normal</h2>
+    <p class="wnote">Normal = your average ±1 standard deviation over the 30 days before the reading.</p>
+    <div class="wvitals">
+      {% for v in data.vitals %}
+      <div class="wvital {{ 'v-' ~ (v.verdict or 'none') }}">
+        <div class="wv-head"><span class="wv-label">{{ v.label }}</span>
+          {% if v.range %}<span class="wchip {{ v.verdict }}" title="Normal {{ fmt(v.key, v.baseline.low) }}–{{ fmt(v.key, v.baseline.high) }}">{{ 'normal' if v.range == 'normal' else v.range ~ ' normal' }}</span>{% endif %}
+        </div>
+        <div class="wv-val">{{ v.display }}
+          {% if v.delta is defined and v.delta is not none %}<small>{{ '+' if v.delta > 0 }}{{ fmt(v.key, v.delta) }} vs avg</small>{% endif %}
+        </div>
+        <div class="wspark">{{ charts.sparks[v.key] }}</div>
+        {% if v.day %}<div class="wv-asof{{ ' stale' if v.when.startswith('Last synced') }}"{% if v.when.startswith('Last synced') %} title="Today's reading hasn't synced yet"{% endif %}>{{ 'Last synced ' ~ (v.day|fmt_date) if v.when.startswith('Last synced') else v.when }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if data.habits %}
+  <section class="card card-wide">
+    <h2>Habits this period</h2>
+    <ul class="whabits">
+      {% for h in data.habits %}
+      <li class="{{ h.status }}"><span class="wh-name">{{ h.name }}</span>
+        <span class="wh-prog">{{ h.done }}/{{ h.target }} {{ 'today' if h.frequency == 'daily' else 'this week' }}</span>
+        {% if h.streak %}<span class="wh-streak" title="Current streak">🔥 {{ h.streak }}</span>{% endif %}
+        <span class="pill {{ 'pill-ok' if h.status == 'met' else ('pill-warn' if h.status == 'at_risk' else 'pill-muted') }}">{{ h.status|replace('_', ' ') }}</span></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {{ freshness(data.freshness) }}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/wellness.js?v={{ asset_version() }}" defer></script>{% endblock %}

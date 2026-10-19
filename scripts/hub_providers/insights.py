@@ -15,4 +15,4 @@ def collect(conn, today):
         findings = []
     text = (r["narrative"] or "").strip()
     return {"card": {"report": {"created_at": r["created_at"], "excerpt": text[:420], "findings": [
-        {k: f.get(k) for k in ("metric", "label", "confidence", "r", "effect", "n") if k in f} for f in findings]}}}
+        {k: f.get(k) for k in ("metric", "confidence", "correlation", "effect", "n") if k in f} for f in findings]}}}

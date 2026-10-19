@@ -29,6 +29,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/chores.md` | Chores subagent — kid chore chart (chores, dollar balances, streaks, payouts), the weekly payday summary and the optional afternoon open-chores check |
 | `.claude/agents/myhub.md` | My Hub subagent: answers "what needs my attention?" and keeps the hub's calendar/Todoist snapshot fresh (scheduled morning + evening) |
 | `.claude/agents/dayrating.md` | Day-rating subagent: daily 1-10 rating with a note, the nightly nudge, and the weekly insights report (stats plus an AI-written story) |
+| `.claude/agents/wellness.md` | Wellness subagent (read-only, Whoop-style): today's recovery, sleep and vitals against your normal, trends over time, and what drives the day rating / HRV / sleep / resting HR |
 | `.claude/agents/habits.md` | Habits subagent — habit/streak tracker (daily or weekly goals, no-goal counters), logging, streaks, and the daily at-risk nudge |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.claude/agents/home-assistant.md` | Home-assistant subagent (Phases 1-3) — ad-hoc smart-home control/query via the hosted Home Assistant connector plus a local `ha` MCP server (vendor/ha-mcp) for automation/script/scene/helper/dashboard authoring and history/log debugging; proactive monitoring is a later phase |
@@ -84,7 +85,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/dayrating_store.py` | Zero-dep CLI over `dayrating.py` and `insights.py` for the dayrating subagent (rate/show/list/status/nudge, insights refresh/stats/save) |
 | `scripts/calendar_load.py` | Per-day calendar load rules and storage (events, hours booked, shift/travel/kid flags). Events come from the dayrating agent's Calendar connector via `dayrating_store.py calendar sync` |
 | `scripts/insights.py` | Insights engine: auto-discovers sources in `scripts/insight_sources/`, stores daily metrics, ranks what moves the rating (Spearman, with/without comparisons, permutation p-values), stores AI narratives |
-| `scripts/insight_sources/` | One module per data source (`habits`, `calendar_day`, `weather` via free Open-Meteo, `coros_wellness` for HRV / resting HR / fatigue / load, `coros_health` for sleep / steps / stress from the official COROS MCP server). Drop a new module here and it flows into the analysis |
+| `scripts/insight_sources/` | One module per data source (`habits`, `calendar_day`, `weather` via free Open-Meteo, `coros_wellness` for HRV (and its normal range) / resting HR / fatigue / load (incl. acute and chronic load and COROS's recommended 7-day range), `coros_health` for sleep / steps / stress from the official COROS MCP server). Drop a new module here and it flows into the analysis |
+| `scripts/wellness.py` | Shared wellness service (read-only): metric timing classes and point status, readiness, vitals vs personal baseline, trend series and bands, heatmap, drivers, scatter. The single code path used by `wellness_store.py` and the `/wellness` dashboard section |
+| `scripts/wellness_store.py` | Zero-dep CLI over `wellness.py` for the wellness subagent (today / metric / trends / drivers / scatter / metrics) |
 | `scripts/habits.py` | Shared habit-tracker service (streak rules, logging, at-risk). The single code path used by both `habits_store.py` and the dashboard |
 | `scripts/habits_store.py` | Zero-dep CLI over `habits.py` for the habits subagent (habit/log/at-risk/config sub-commands) |
 | `scripts/home_maintenance_store.py` | Zero-dep CLI for home maintenance data (item/completion/due sub-commands) |
@@ -394,6 +397,29 @@ python scripts/scheduler_store.py add --name "habits-daily-nudge" \
   --prompt "Delegate to the habits subagent to run the daily at-risk check." \
   --cron "0 19 * * *" --target-chat-id "<your chat_id>"
 ```
+
+## Wellness dashboard
+
+A Whoop-style view of everything the assistant already collects (COROS sleep, HRV, resting HR, load, steps, stress,
+the day rating, habits). The `wellness` subagent and the dashboard's **Wellness** section run the **same code**
+(`scripts/wellness.py`) over the same tables (`insight_daily`, `day_ratings`, habits). It writes nothing and needs no
+scheduled task of its own: data arrives through the insights sources (30-minute timer for COROS sleep/activity,
+weather and habits; the weekly `dayrating-weekly-insights` run for COROS HRV and load).
+
+- **Timing**: each metric has a class (overnight, filed on the wake-up date; daytime, complete only once the day ends;
+  evening, the day rating; snapshot, COROS recovery). Every daily point is final, partial, pending (not synced yet) or
+  missing. Charts mark pending days with a dashed stub instead of a zero, averages and baselines use final days only,
+  and the Today page shows yesterday's rating until today's is given in the evening.
+- **Today** (`/wellness`): recovery / sleep / 7-day load rings (COROS recovery when read today, else an estimate from
+  HRV, resting HR and sleep score against your baseline), last night's sleep and stages, vitals against your normal
+  (mean ±1 SD over the prior 30 days), the day rating, habits and source freshness.
+- **Trends** (`/wellness/trends`, 30/90/180 days): sleep hours, window, score and stages; HRV in its normal band;
+  resting HR; training load with acute/chronic load and the load ratio zones; weekly steps and exercise; mood and
+  rating by weekday; a 6-month calendar heatmap of any metric.
+- **Drivers** (`/wellness/drivers`): what moves the day rating, HRV, sleep score or resting HR (the insights engine's
+  findings, `insights.analyze` / `analyze_against`), a two-metric scatter, and the latest written story.
+- Charts are server-rendered SVG (`dashboard/charts.py`); `dashboard/static/wellness.js` adds hover tooltips, a
+  crosshair shared across charts, and tap-to-pin readouts on phones.
 
 ## Day rating and insights
 

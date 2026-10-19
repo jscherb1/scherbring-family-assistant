@@ -148,6 +148,24 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
       `system_health` rows' `checked_at` after a few hours. Tune the 2 h interval as needed.
 
+## Wellness dashboard (built 2026-10-19, branch `feat/wellness-dashboard`)
+
+- [ ] Backfill the new COROS fields (acute/chronic load, recommended 7-day load range, HRV normal band, state codes):
+      `python scripts/dayrating_store.py insights refresh --days 90 --source coros_wellness`. This logs into the
+      COROS web session, which signs COROS out elsewhere, so it waits for the user's OK. Until then the HRV band is
+      our rolling ±1 SD, the load chart has no ATI/CTI lines and the load ring has no recommended range. The weekly
+      insights run will fill them going forward.
+- [ ] HRV and load are only as fresh as the weekly COROS web pull. Moving them to the official MCP
+      (`querySleepHrv`, `queryTrainingLoadAssessment`) would let the 30-minute timer keep them current.
+- [ ] Not yet seen by a real phone: the tap-to-pin readouts were checked in a Playwright mobile emulation only.
+- [ ] The `wellness` subagent is untested over Telegram (new agent file; the agent worker needs a restart to see it).
+- [ ] `insights.analyze` still counts COROS sleep scores of 0 (nights COROS didn't score) as real values; the
+      wellness service treats them as missing. Decide whether the insights source should drop them too.
+- Later phases (suggested): Performance tab from COROS `/analyse/query` + `/dashboard/query` (race predictor, EvoLab
+  scores, threshold HR/pace, time in HR zones); MCP `queryFitnessAssessmentOverview` for VO2max; Whoop-style yes/no
+  journal questions in the nightly nudge (caffeine late, alcohol, screens, late meal, sick) as count-only habits;
+  sleep need / sleep debt; energy and stress self-ratings; weight; Caroline's data if she wears a COROS.
+
 ## Day rating + insights (built 2026-10-14)
 
 - [ ] Registered `dayrating-nightly-nudge` (8:30 PM) and `dayrating-weekly-insights` (Sun 7:30 PM); neither has fired yet.

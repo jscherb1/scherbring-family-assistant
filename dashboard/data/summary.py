@@ -5,7 +5,8 @@ already safe to show (no finance amounts, no memory text).
 """
 from datetime import timedelta
 
-from . import activity, agent, chores, common, family, finance, habits, health, home, ops, schedule, shopping_fitness
+from . import (activity, agent, chores, common, family, finance, habits, health, home, ops, schedule, shopping_fitness,
+               wellness)
 from .. import dismissals
 from ..web import fmt_dt
 
@@ -124,6 +125,25 @@ def _habits_tile(attention):
     return {"title": "Habits", "href": "/habits", "headline": headline, "sub": sub, "state": state}
 
 
+def _wellness_tile():
+    w = wellness.get_today()
+    href = "/wellness"
+    if not _ok(w):
+        return {"title": "Wellness", "href": href, "headline": "Unknown", "sub": "", "state": "warn"}
+    rec, sleep = w["rings"]["recovery"], w["sleep"]
+    if rec["value"] is not None:
+        headline = f"{rec['value']}% recovery" + (" (est.)" if rec["source"] == "estimate" else "")
+    else:
+        headline = "Waiting for last night"
+    parts = []
+    if sleep["day"]:
+        parts.append(f"{sleep['display']['sleep_hours']} sleep" + ("" if sleep["status"] == "final" else " (earlier night)"))
+    if w["out_of_range"]:
+        parts.append(f"{', '.join(w['out_of_range'])} off normal")
+    return {"title": "Wellness", "href": href, "headline": headline, "sub": " · ".join(parts),
+            "state": "warn" if rec["zone"] == "bad" else "ok"}
+
+
 def _chores_tile():
     o = chores.get_overview()
     href = "/chores"
@@ -209,7 +229,8 @@ def get_summary():
     schedule_tile = _schedule_tile(attention)
     systems = _credentials(attention)
     tiles = [
-        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _chores_tile(), _meals_tile(), _finance_tile(),
+        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _wellness_tile(), _chores_tile(),
+        _meals_tile(), _finance_tile(),
         _fitness_tile(), _family_tile(), _hyvee_tile(systems),
     ]
     dismissed = dismissals.load()

@@ -41,6 +41,10 @@ SOLID_DAYS = 28        # paired days needed before a finding can be "solid"
 MIN_DAYS_BY_PREFIX = {"coros:wellness_": 14}  # sparse, irregularly-taken readings need more paired days
 MIN_GROUP = 3          # days in each side of a 0/1 comparison
 PERMUTATIONS = 2000
+# Stored for the Wellness charts (bands, recommended ranges, state codes), not as possible drivers: testing
+# them would only add chance findings.
+NOT_ANALYZED = {"coros:load_rec_min", "coros:load_rec_max", "coros:hrv_base_low", "coros:hrv_base_high",
+                "coros:fatigue_state", "coros:load_ratio_state", "coros:load_28d"}
 
 
 class InsightError(Exception):
@@ -243,24 +247,17 @@ def _series(conn: sqlite3.Connection) -> dict[str, dict[str, float]]:
     return out
 
 
-def analyze(*, days: int = 90, db_path=None, today: date | None = None) -> dict:
-    """The statistics behind the report: rating summary, ranked findings, and what's missing."""
-    today = today or datetime.now().date()
-    start = today - timedelta(days=days - 1)
-    ratings = {r["date"]: r for r in dayrating.list_ratings(days=days, db_path=db_path, today=today)}
-    scores = {d: float(r["score"]) for d, r in ratings.items()}
-    conn = connect(db_path)
-    try:
-        series = _series(conn)
-    finally:
-        conn.close()
-
+def _findings(series: dict[str, dict[str, float]], target: dict[str, float], exclude=()) -> tuple[list, list]:
+    """Every metric (same day and previous day) against the target values, strongest first, plus the
+    metrics skipped for too little data."""
     findings, skipped = [], []
     for metric in sorted(series):
+        if metric in NOT_ANALYZED or metric in exclude:
+            continue
         for lag in (0, 1):
             label = metric if lag == 0 else f"{metric} (previous day)"
             xs, ys = [], []
-            for day, score in sorted(scores.items()):
+            for day, score in sorted(target.items()):
                 src_day = (date.fromisoformat(day) - timedelta(days=lag)).isoformat()
                 if src_day in series[metric]:
                     xs.append(series[metric][src_day])
@@ -273,6 +270,41 @@ def analyze(*, days: int = 90, db_path=None, today: date | None = None) -> dict:
             else:
                 findings.append({"metric": label, "lag_days": lag, **res})
     findings.sort(key=lambda f: (f["p_value"], -abs(f["correlation"])))
+    return findings, skipped
+
+
+def analyze_against(target_metric: str, *, days: int = 90, exclude=(), db_path=None,
+                    today: date | None = None) -> dict:
+    """Like analyze(), but explains another daily metric (e.g. coros:hrv_ms) instead of the day rating.
+    `exclude` names metrics too close to the target to count as drivers (the target itself always is)."""
+    today = today or datetime.now().date()
+    start = today - timedelta(days=days - 1)
+    conn = connect(db_path)
+    try:
+        series = _series(conn)
+    finally:
+        conn.close()
+    target = {d: v for d, v in series.get(target_metric, {}).items() if start.isoformat() <= d <= today.isoformat()}
+    findings, skipped = _findings(series, target, exclude={target_metric, *exclude})
+    return {"window": {"start": start.isoformat(), "end": today.isoformat(), "days": days},
+            "target": target_metric, "target_days": len(target), "findings": findings, "not_enough_data": skipped,
+            "caveats": ["Many metrics are tested at once, so some will look meaningful by chance: treat findings "
+                        "as leads, not proof.", "Correlation is not causation."]}
+
+
+def analyze(*, days: int = 90, db_path=None, today: date | None = None) -> dict:
+    """The statistics behind the report: rating summary, ranked findings, and what's missing."""
+    today = today or datetime.now().date()
+    start = today - timedelta(days=days - 1)
+    ratings = {r["date"]: r for r in dayrating.list_ratings(days=days, db_path=db_path, today=today)}
+    scores = {d: float(r["score"]) for d, r in ratings.items()}
+    conn = connect(db_path)
+    try:
+        series = _series(conn)
+    finally:
+        conn.close()
+
+    findings, skipped = _findings(series, scores)
 
     by_weekday: dict[str, list[float]] = {}
     for day, score in scores.items():

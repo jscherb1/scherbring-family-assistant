@@ -95,6 +95,16 @@ SECTIONS = [
         ],
     },
     {
+        "key": "wellness",
+        "label": "Wellness",
+        "href": "/wellness",
+        "pages": [
+            {"key": "today", "label": "Today", "href": "/wellness"},
+            {"key": "trends", "label": "Trends", "href": "/wellness/trends"},
+            {"key": "drivers", "label": "Drivers", "href": "/wellness/drivers"},
+        ],
+    },
+    {
         "key": "habits",
         "label": "Habits",
         "href": "/habits",

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block head %}<link rel="stylesheet" href="/static/wellness.css?v={{ asset_version() }}">{% endblock %}
+
+{% block page_header %}
+  <h1>Drivers</h1>
+  <p class="subtitle">What tends to move your day rating, HRV, sleep and resting heart rate, from everything we track. These are patterns in your own data: leads to test, not proof.</p>
+{% endblock %}
+
+{% block content %}
+<div class="wellness">
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  <nav class="wrange" aria-label="Explain">
+    {% for t in data.targets %}<a href="/wellness/drivers?target={{ t.key }}&x={{ scatter.x.key if not scatter.error else 'sleep_hours' }}&y={{ scatter.y.key if not scatter.error else 'rating' }}"
+       class="{{ 'active' if t.key == data.target }}">{{ t.label }}</a>{% endfor %}
+    <span class="wrange-dates">last {{ data.days }} days · {{ data.target_days }} days with {{ data.label|lower }}</span>
+  </nav>
+
+  <section class="card card-wide">
+    <h2>What moves {{ data.label|lower }}</h2>
+    {% if not data.enough_data %}
+      <div class="empty-state">{{ data.target_days }} of {{ data.min_days_needed }} days so far. Findings appear once there's enough data.</div>
+    {% elif not data.findings %}
+      <div class="empty-state">Nothing stands out yet.</div>
+    {% else %}
+      {% set shown = data.findings|rejectattr('confidence', 'equalto', 'none')|list %}
+      {% if not shown %}<div class="empty-state">No pattern is strong enough yet. Here are the closest ones.</div>{% set shown = data.findings[:6] %}{% endif %}
+      <ul class="wdiverge">
+        <li class="wd-axis" aria-hidden="true"><span></span><span>lower {{ data.label|lower }}</span><span>higher {{ data.label|lower }}</span><span></span></li>
+        {% for f in shown[:14] %}
+        {% set pct = (f.correlation|abs / top * 50)|round(1) %}
+        {% set tip_rows = [["Link (r)", f.correlation|string, ""], ["Days", f.n|string, ""], ["Confidence", f.confidence, ""]] %}
+        {% if f.kind == 'yes_no' %}{% set tip_rows = tip_rows + [["With", f.avg_with|string, ""], ["Without", f.avg_without|string, ""]] %}{% endif %}
+        <li class="wd-row" data-tip='{{ {"d": f.label, "rows": tip_rows, "note": "p = " ~ f.p_value}|tojson|forceescape }}'>
+          <span class="wd-label">{{ f.label }}</span>
+          <span class="wd-bar"><i class="{{ 'pos' if f.correlation > 0 else 'neg' }} c-{{ f.confidence }}"
+             style="{{ 'left' if f.correlation > 0 else 'right' }}: 50%; width: {{ pct }}%"></i></span>
+          <span class="wd-val">
+            {% if f.kind == 'yes_no' and f.effect is not none %}{{ '%+.1f'|format(f.effect) }} {{ data.unit }}
+            {% else %}r {{ '%+.2f'|format(f.correlation) }}{% endif %}
+          </span>
+          <span class="pill {{ 'pill-ok' if f.confidence in ('solid', 'emerging') else 'pill-muted' }}">{{ f.confidence }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="wreadout" aria-live="polite"></div>
+      <p class="wnote">Bar length = strength of the link (Spearman r). For yes/no items the number is the average difference on days with it vs without. "Day before" compares a day's {{ data.label|lower }} with the previous day's value. {{ data.caveats[0] }}</p>
+    {% endif %}
+  </section>
+
+  <section class="card card-wide wfig">
+    <h2>Compare any two</h2>
+    {% if scatter.error %}<div class="error-state">{{ scatter.error }}</div>{% else %}
+    <form class="wpick" method="get" action="/wellness/drivers">
+      <input type="hidden" name="target" value="{{ data.target }}">
+      <label>Across <select name="x" onchange="this.form.submit()">{% for c in scatter.choices %}<option value="{{ c.key }}" {{ 'selected' if c.key == scatter.x.key }}>{{ c.label }}</option>{% endfor %}</select></label>
+      <label>Up <select name="y" onchange="this.form.submit()">{% for c in scatter.choices %}<option value="{{ c.key }}" {{ 'selected' if c.key == scatter.y.key }}>{{ c.label }}</option>{% endfor %}</select></label>
+      <noscript><button type="submit">Show</button></noscript>
+    </form>
+    {% if scatter.n >= 3 %}
+      <p class="wavg">{{ scatter.n }} days · r {{ '%+.2f'|format(scatter.r) if scatter.r is not none else '—' }}
+        <small>{% if scatter.r is none %}no variation{% elif scatter.r|abs >= 0.5 %}strong link{% elif scatter.r|abs >= 0.3 %}moderate link{% else %}weak or no link{% endif %}</small></p>
+      <div class="wplot wscatter">{{ plot }}</div>
+      <div class="wreadout" aria-live="polite"></div>
+      <table class="tbl wscatter-table">
+        <thead><tr><th>Day</th><th>{{ scatter.x.label }}</th><th>{{ scatter.y.label }}</th></tr></thead>
+        <tbody>{% for p in scatter.points|reverse %}{% if loop.index <= 10 %}<tr><td>{{ p.date|fmt_date }}</td><td>{{ fmt(scatter.x.key, p.x) }}</td><td>{{ fmt(scatter.y.key, p.y) }}</td></tr>{% endif %}{% endfor %}</tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">Only {{ scatter.n }} days have both. Pick another pair.</div>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  {% if data.report %}
+  <section class="card card-wide">
+    <h2>The latest written story</h2>
+    <p class="muted">Written {{ data.report.created_at|fmt_dt }} by the assistant's weekly insights run.</p>
+    <div class="wstory">{{ data.report.narrative }}</div>
+  </section>
+  {% endif %}
+{% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="/static/wellness.js?v={{ asset_version() }}" defer></script>{% endblock %}
