@@ -407,6 +407,21 @@ def test_habits_create_log_undo_pause_via_ui(client):
     assert "paused" in client.get("/habits").text
 
 
+def test_habits_log_for_past_date_via_ui(client):
+    from datetime import date, timedelta
+    client.post("/habits", data={"name": "Read", "frequency": "daily", "target": "1"}, follow_redirects=False)
+    hid = client.get("/api/habits").json()["habits"][0]["id"]
+    page = client.get("/habits").text
+    assert 'name="log_date"' in page and "data-pick=" in page
+    yday = (date.today() - timedelta(days=1)).isoformat()
+    r = client.post(f"/habits/{hid}/log", data={"log_date": yday}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert client.get(f"/api/habits/{hid}").json()["last_done"] == yday
+    future = (date.today() + timedelta(days=2)).isoformat()
+    r = client.post(f"/habits/{hid}/log", data={"log_date": future}, headers={"HX-Request": "true"})
+    assert client.get(f"/api/habits/{hid}").json()["total_count"] == 1
+
+
 def test_habits_ui_and_service_share_data(client, state):
     """A habit created through the agent CLI's service shows in the UI, and vice versa."""
     import sys

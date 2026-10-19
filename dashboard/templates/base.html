@@ -72,6 +72,15 @@
     window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
     // Habit cards: flip between the streak face and the calendar face (delegated, so it survives htmx swaps).
     document.addEventListener("click", function (e) {
+      var day = e.target.closest("[data-pick]");
+      if (day && day.closest(".habit-card")) {
+        // Calendar day tapped: pre-fill the date on the front face and flip back; the user then presses Done.
+        var c = day.closest(".habit-card"), inp = c.querySelector(".habit-date");
+        if (inp) inp.value = day.dataset.pick;
+        c.querySelector(".habit-front").hidden = false;
+        c.querySelector(".habit-back").hidden = true;
+        return;
+      }
       var btn = e.target.closest("[data-flip]");
       var card = btn && btn.closest(".habit-card");
       if (!card) return;
