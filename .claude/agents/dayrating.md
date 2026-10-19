@@ -44,10 +44,11 @@ into the analysis on their own.
 
 0. **Calendar sync** (needed before refresh, because scripts can't reach Google Calendar): list the user's
    calendars, then `list_events` on each for the last 14 days (90 for a first run or backfill), including
-   today. Write ONE JSON list of events to a temp file under `state/dayrating_tmp/` (use the Write tool; reuse the same file name each run) with `{"title", "calendar", "start",
+   today. Write ONE JSON list of events to a temp file under `state/dayrating_tmp/` (use the Write tool; name it for the run date, e.g. `cal_events_YYYY-MM-DD.json`, because you cannot overwrite or delete an earlier file) with `{"title", "calendar", "start",
    "end", "all_day"}` each (calendar = its name; keep Meal Planning and holiday calendars out or in, the
    script drops them), then run `python scripts/dayrating_store.py calendar sync --start YYYY-MM-DD
    --end YYYY-MM-DD --events-file state/dayrating_tmp/<file>.json` for that same date range. Do not try to delete the file (no permission).
+   Never build, check or transform files with inline scripts (`python -c`, `python3 -`, heredocs, `jq`, `sed`, pipes, shell loops): scheduled runs have no one to approve them, so they are denied and the whole run is marked failed. Compose the JSON yourself and write it with Write.
    If the calendar tools fail, say so in one line and carry on; stale calendar data is fine.
 1. `python scripts/dayrating_store.py insights refresh` pulls the latest from every source (a failing
    source is reported and skipped; mention it only if it matters). If `coros_health` reports an error that

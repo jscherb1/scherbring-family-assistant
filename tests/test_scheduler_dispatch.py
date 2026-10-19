@@ -21,3 +21,26 @@ def test_clean_or_missing_log_means_zero(tmp_path):
     clean.write_text("all fine\n")
     assert sd.count_permission_denials(clean) == 0
     assert sd.count_permission_denials(tmp_path / "missing.log") == 0
+
+
+def _git(repo, *args):
+    import subprocess
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def test_checkout_problem_names_branch_and_dirty_state(tmp_path):
+    _git(tmp_path, "init", "-b", "main")
+    _git(tmp_path, "config", "user.email", "t@t")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "f").write_text("a")
+    _git(tmp_path, "add", "f")
+    _git(tmp_path, "commit", "-m", "x")
+    assert sd.checkout_problem(tmp_path) == ""
+    (tmp_path / "f").write_text("b")
+    assert "uncommitted" in sd.checkout_problem(tmp_path)
+    _git(tmp_path, "checkout", "-q", "-b", "feat/x")
+    assert "feat/x" in sd.checkout_problem(tmp_path)
+
+
+def test_checkout_problem_is_empty_outside_git(tmp_path):
+    assert sd.checkout_problem(tmp_path) == ""

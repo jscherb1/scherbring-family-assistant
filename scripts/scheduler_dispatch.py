@@ -168,6 +168,29 @@ def count_permission_denials(debug_log: Path) -> int:
     return text.count("tool permission denied")
 
 
+def checkout_problem(repo: Path = REPO_ROOT) -> str:
+    """Why the checkout isn't a clean `main`, or "" when it is (or git can't say).
+
+    Scheduled runs read agents and scripts from the working tree, so a feature branch
+    checked out for development silently changes what they can do (a missing command
+    shows up as a vague permission denial). Naming it makes the real cause obvious.
+    """
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=str(repo), capture_output=True, text=True, timeout=10
+        ).stdout.strip()
+
+    try:
+        branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        if branch and branch != "main":
+            return f"checkout is on branch '{branch}', not main"
+        if branch and git("status", "--porcelain", "--untracked-files=no"):
+            return "checkout has uncommitted changes to tracked files"
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return ""
+
+
 def _now_local_iso() -> str:
     # Local wall-clock time, no timezone suffix. PowerShell's [datetime] cast treats
     # a bare ISO string as local time, which is correct for the watchdog comparison.
@@ -326,6 +349,9 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         if denials:
             success = False
             summary = f"[{denials} tool permission denial(s): the run was degraded] {summary}"
+        problem = checkout_problem()
+        if problem and not success:
+            summary = f"[possible cause: {problem}] {summary}"
 
         status_label = "ok" if success else "failed"
         print(

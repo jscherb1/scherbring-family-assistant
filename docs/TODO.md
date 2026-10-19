@@ -194,3 +194,5 @@ See the Backlog section of `README.md`.
       scheduled prompt asking Justin to run the shortcut.
 - [ ] Faster refresh: confirm `assistant-insights-refresh.timer` keeps firing (`systemctl --user list-timers`) and that the first
       `myhub-refresh` runs (7am onward) land; tune the intervals if the footer shows amber sources.
+
+- [ ] Scheduled runs share the development checkout (decided 2026-10-19: no separate worktree). A failed run now carries a `[possible cause: checkout is on branch ...]` note, but keep dev work off the main checkout (use `git worktree add`) where possible. Verify `dayrating-weekly-insights` on its next Sunday 19:30 run (should be `ok`, no denials).
