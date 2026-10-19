@@ -116,3 +116,15 @@ def test_on_login_saved_records_time_and_runs_the_one_check(tmp_path, monkeypatc
 def test_credential_check_no_longer_owns_hyvee():
     import credential_check as cc
     assert "hyvee" not in cc.SYSTEMS and "hyvee" not in cc.PROBES
+
+
+@pytest.mark.parametrize("status,body,want", [
+    (401, None, True),
+    (403, None, True),
+    (200, {"purchaseGroups": []}, False),
+    (429, None, False),  # a bot check or blip must not force a CAPTCHA sign-in
+])
+def test_login_test_forces_fresh_login_only_on_clear_rejection(status, body, want):
+    import login_test
+
+    assert login_test.session_rejected(FakePage(status, body)) is want

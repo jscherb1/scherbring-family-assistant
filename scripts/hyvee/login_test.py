@@ -72,6 +72,17 @@ def is_logged_in(page) -> bool:
         return False
 
 
+def session_rejected(page) -> bool:
+    """True when the order-history API clearly rejects the session (401/403).
+
+    The page can still show the cart icon from stale cookies, so the page alone can't be trusted.
+    Anything other than a clear rejection (Cloudflare check, network blip) keeps the session.
+    """
+    import hyvee_connection
+
+    return hyvee_connection.probe_page(page)["status"] == "expired"
+
+
 def do_login(page, username: str, password: str, manual_wait: int = 0) -> None:
     print("[login] Navigating to sign-in (Auth0)...")
     goto_login(page)
@@ -172,7 +183,11 @@ def _run_browser(args, post_check: list) -> int:
         page = context.new_page()
 
         try:
-            if is_logged_in(page):
+            reuse = is_logged_in(page)
+            if reuse and session_rejected(page):
+                print("[login] Page looks signed in, but Hy-Vee's server rejected the saved session.")
+                reuse = False
+            if reuse:
                 print("[login] Reusing saved session — already signed in.")
                 post_check.append("reuse")
             else:
