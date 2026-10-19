@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .. import charts
-from ..data import wellness as data
+from ..data import journal as journal_data, wellness as data
 from ..web import render
 
 router = APIRouter()
@@ -191,7 +191,7 @@ def drivers_page(request: Request, target: str = "rating", x: str = "sleep_hours
                               y_label=sc["y"]["label"])
     top = max((abs(f["correlation"]) for f in d.get("findings", [])), default=1) or 1
     return render(request, "wellness/drivers.html", "wellness", "drivers", "Wellness drivers",
-                  data=d, scatter=sc, plot=plot, top=top, fmt=fmt)
+                  data=d, scatter=sc, plot=plot, top=top, fmt=fmt, impact=journal_data.get_impact(days))
 
 
 # ---------------------------------------------------------------------------

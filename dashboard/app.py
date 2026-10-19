@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from .routers import (activity, agent, ask, chores, dayrating, myhub, family, reauth, finance, habits, health, home, home_summary, kids, meals,
-                      shopping_fitness, wellness)
+                      journal, shopping_fitness, wellness)
 from .web import APP_NAME, HERE
 
 app = FastAPI(
@@ -46,6 +46,7 @@ app.include_router(family.router)
 app.include_router(home.router)
 app.include_router(habits.router)
 app.include_router(wellness.router)
+app.include_router(journal.router)
 app.include_router(dayrating.router)
 app.include_router(myhub.router)
 app.include_router(reauth.router)

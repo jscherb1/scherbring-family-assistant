@@ -35,6 +35,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import dayrating  # noqa: E402
 import habits  # noqa: E402
 import insights  # noqa: E402
+import journal  # noqa: E402
 
 RANGES = (30, 90, 180)
 HEATMAP_DAYS = 182
@@ -142,6 +143,8 @@ def label_for(metric: str) -> str:
     group, _, name = base.partition(":")
     if group == "habit":
         return f"{name} (habit){lag}"
+    if group == "journal":
+        return f"{name.replace('_', ' ').capitalize()} (journal){lag}"
     if group == "day":
         return name + lag
     return name.replace("_", " ").capitalize() + lag
@@ -422,6 +425,7 @@ def today_view(*, now: datetime | None = None, db_path=None) -> dict:
                       zone=None if lo is None or hi is None else "low" if v < lo else "high" if v > hi else "ok")
 
     goals = [h for h in habits.list_status(db_path=db_path, today=today) if h["has_goal"]]
+    checkin = journal.pending(journal.checkin_date(now, db_path=db_path), today=today, db_path=db_path)
     out_of_range = [v["label"] for v in vitals.values() if v.get("verdict") == "bad"]
     return {
         "now": now.strftime("%Y-%m-%dT%H:%M:%S"), "today": t,
@@ -435,6 +439,7 @@ def today_view(*, now: datetime | None = None, db_path=None) -> dict:
         "habits": [{"name": h["name"], "status": h["period_status"], "done": h["done_this_period"],
                     "target": h["target_count"], "frequency": h["frequency"], "streak": h["current_streak"]}
                    for h in goals],
+        "checkin": checkin, "checkin_open": now.hour >= journal.CHECKIN_FROM_HOUR or not checkin["is_today"],
         "freshness": _freshness(now, db_path),
     }
 

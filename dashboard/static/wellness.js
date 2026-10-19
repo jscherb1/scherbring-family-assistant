@@ -109,6 +109,17 @@
     }
   });
 
+  // Check-in: "Mark the rest no" fills every yes/no question still blank.
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-rest]");
+    if (!b) return;
+    b.closest("form").querySelectorAll(".wck-qs li").forEach(function (li) {
+      if (li.querySelector("input:checked")) return;
+      var pick = li.querySelector('input[value="' + b.getAttribute("data-rest") + '"]');
+      if (pick) pick.checked = true;
+    });
+  });
+
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") hide(); });
   document.addEventListener("htmx:beforeSwap", hide);
 })();

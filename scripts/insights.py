@@ -98,7 +98,7 @@ def list_sources(*, db_path=None) -> list[dict]:
 
 # Sources the 30-minute timer keeps current. Excluded: calendar_day (static), calendar_load (agent-fed) and
 # coros_wellness (Training Hub web login; a frequent re-login would sign COROS out elsewhere).
-LIVE_SOURCES = "coros_health,weather,habits"
+LIVE_SOURCES = "coros_health,weather,habits,journal"
 LIVE_DAYS = 3  # a short window keeps COROS to a few calls instead of the 60-day wellness backfill
 
 

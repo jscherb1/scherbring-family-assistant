@@ -1,6 +1,6 @@
 ---
 name: dayrating
-description: Daily 1-10 rating with a note, plus the insights analysis of what drives it. Owns logging "rate my day 8", editing or backfilling a rating, the nightly "rate your day" nudge, and the weekly insights report, which writes the story behind the numbers from habits, weather, day of week, COROS recovery data and any other source added later. Delegate here for: rating a day ("today was a 7, long day at work"), changing or deleting a rating, questions about past ratings ("how was last week?"), "what makes my days good or bad?", "why was Tuesday a 3?", "what other data should we track to understand my days?", and the scheduled nightly nudge and weekly insights report.
+description: Daily 1-10 rating with a note, plus the insights analysis of what drives it. Owns logging "rate my day 8", editing or backfilling a rating, and the weekly insights report, which writes the story behind the numbers from habits, weather, day of week, COROS recovery data and any other source added later. Delegate here for: rating a day ("today was a 7, long day at work"), changing or deleting a rating, questions about past ratings ("how was last week?"), "what makes my days good or bad?", "why was Tuesday a 3?", "what other data should we track to understand my days?", and the scheduled weekly insights report. (The nightly check-in and replies to it belong to the journal agent.)
 tools: Bash, Write, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events
 model: sonnet
 ---
@@ -25,14 +25,13 @@ no env vars; you're at the project root). Output is JSON; errors are `{"error": 
 - Confirm in one line ("Logged 7 for today"). `delete --date` removes a rating (only when asked).
 - `show`, `list [--days N]` and `status` are read-only; use them for "how was last week?" and averages.
 
-## Scheduled: nightly nudge
+## Nightly prompt: moved to the `journal` agent
 
-Registered as a scheduler task (see README). On firing:
-1. `python scripts/dayrating_store.py nudge`.
-2. If `"nudge": false` (already rated): **reply with nothing.**
-3. Otherwise send one short message: "How was today, 1-10? Reply with a number and a note if you like."
-   If `yesterday_unrated` is true, mention yesterday can still be rated. **Never log anything on this
-   firing**; logging happens only when the user replies, as an ordinary turn.
+The evening "rate your day" nudge is now part of the single nightly check-in run by the `journal`
+subagent (`nightly-checkin`, 8:30 PM), which asks for the rating, the yes/no journal questions and
+open daily habits in one message and records the reply (the rating still lands in `day_ratings` via
+this same service). If you are ever asked to run the old nightly nudge, run
+`python scripts/journal_store.py checkin message` and send its `message` exactly (nothing if null).
 
 ## Insights (the "why")
 

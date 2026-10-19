@@ -32,6 +32,8 @@
     </figure>
   </section>
 
+  {% with c=data.checkin, open=data.checkin_open, next='/wellness' %}{% include "wellness/_checkin.html" %}{% endwith %}
+
   <div class="wgrid">
     {% set s = data.sleep %}
     <section class="card">

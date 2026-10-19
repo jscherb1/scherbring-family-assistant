@@ -157,6 +157,7 @@ and its `state/schema.sql` tables):
 | Weather-driven prep nudges | `weather-reminders` |
 | Habit / streak tracking | `habits` |
 | Daily 1-10 day rating with insights on what drives it | `dayrating` |
+| Nightly check-in (rate the day, yes/no journal, open habits in one message) | `journal` |
 | Wellness summary: recovery, sleep and HRV trends, what drives them (the Wellness dashboard pages) | `wellness` |
 | "What needs my attention?", today/this week at a glance, the My Hub page | `myhub` |
 | Kid chore chart with dollar payouts and streaks | `chores` |

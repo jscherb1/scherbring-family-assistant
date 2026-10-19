@@ -138,6 +138,8 @@ def _wellness_tile():
     parts = []
     if sleep["day"]:
         parts.append(f"{sleep['display']['sleep_hours']} sleep" + ("" if sleep["status"] == "final" else " (earlier night)"))
+    if w["checkin_open"] and not w["checkin"]["complete"]:
+        parts.append("check-in open")
     if w["out_of_range"]:
         parts.append(f"{', '.join(w['out_of_range'])} off normal")
     return {"title": "Wellness", "href": href, "headline": headline, "sub": " · ".join(parts),

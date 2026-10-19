@@ -29,6 +29,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/chores.md` | Chores subagent — kid chore chart (chores, dollar balances, streaks, payouts), the weekly payday summary and the optional afternoon open-chores check |
 | `.claude/agents/myhub.md` | My Hub subagent: answers "what needs my attention?" and keeps the hub's calendar/Todoist snapshot fresh (scheduled morning + evening) |
 | `.claude/agents/dayrating.md` | Day-rating subagent: daily 1-10 rating with a note, the nightly nudge, and the weekly insights report (stats plus an AI-written story) |
+| `.claude/agents/journal.md` | Journal subagent: the 8:30 PM nightly check-in (day rating + yes/no journal questions + open daily habits in one message), recording the reply, managing questions, and "what does X do to my HRV/sleep/mood" |
 | `.claude/agents/wellness.md` | Wellness subagent (read-only, Whoop-style): today's recovery, sleep and vitals against your normal, trends over time, and what drives the day rating / HRV / sleep / resting HR |
 | `.claude/agents/habits.md` | Habits subagent — habit/streak tracker (daily or weekly goals, no-goal counters), logging, streaks, and the daily at-risk nudge |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
@@ -47,7 +48,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -86,6 +87,8 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/calendar_load.py` | Per-day calendar load rules and storage (events, hours booked, shift/travel/kid flags). Events come from the dayrating agent's Calendar connector via `dayrating_store.py calendar sync` |
 | `scripts/insights.py` | Insights engine: auto-discovers sources in `scripts/insight_sources/`, stores daily metrics, ranks what moves the rating (Spearman, with/without comparisons, permutation p-values), stores AI narratives |
 | `scripts/insight_sources/` | One module per data source (`habits`, `calendar_day`, `weather` via free Open-Meteo, `coros_wellness` for HRV (and its normal range) / resting HR / fatigue / load (incl. acute and chronic load and COROS's recommended 7-day range), `coros_health` for sleep / steps / stress from the official COROS MCP server). Drop a new module here and it flows into the analysis |
+| `scripts/journal.py` | Shared journal + nightly check-in service (yes/no questions and answers, habit import, check-in pending/message/record across rating, journal and habits, yes-vs-no impact). The single code path used by `journal_store.py` and the Wellness check-in card / Journal page |
+| `scripts/journal_store.py` | Zero-dep CLI over `journal.py` for the journal subagent (checkin message/pending/record, answer, day, history, impact, question list/add/update/import-habit) |
 | `scripts/wellness.py` | Shared wellness service (read-only): metric timing classes and point status, readiness, vitals vs personal baseline, trend series and bands, heatmap, drivers, scatter. The single code path used by `wellness_store.py` and the `/wellness` dashboard section |
 | `scripts/wellness_store.py` | Zero-dep CLI over `wellness.py` for the wellness subagent (today / metric / trends / drivers / scatter / metrics) |
 | `scripts/habits.py` | Shared habit-tracker service (streak rules, logging, at-risk). The single code path used by both `habits_store.py` and the dashboard |
@@ -421,6 +424,33 @@ weather and habits; the weekly `dayrating-weekly-insights` run for COROS HRV and
 - Charts are server-rendered SVG (`dashboard/charts.py`); `dashboard/static/wellness.js` adds hover tooltips, a
   crosshair shared across charts, and tap-to-pin readouts on phones.
 
+## Nightly check-in and journal
+
+One evening message gathers everything the assistant needs from the user that day. The `journal` subagent and the
+Wellness section's check-in card (Today) and **Journal** page run the **same code** (`scripts/journal.py`) against
+`journal_questions`, `journal_answers`, `day_ratings` and the habits tables.
+
+- **What it asks** (8:30 PM, silent if everything is already filled in): the day rating, every active yes/no journal
+  question (Whoop-style: alcohol, caffeine after 2 PM, THC, screens in bed, late meal, sick or sore, stressful day,
+  sex, date night; add or pause more), and any daily habit not logged yet. One reply records it all, e.g.
+  "7, busy but good. alcohol yes, rest no, did stretching" (`journal_store.py checkin record`).
+- **Explicit answers**: yes, no, or unanswered. Unanswered days stay out of the analysis, unlike count-only habits,
+  where an unlogged day reads as "no". The former count-only habits Alcohol, THC, Sex and Date night were moved into the
+  journal (logged days became "yes", earlier days unanswered) and paused.
+- **Timing**: the card shows today's check-in from 5 PM; before that, yesterday's if it's unfinished.
+- **Impact** (Wellness → Drivers): the average day rating (same day) and next-night HRV, sleep score and resting HR on
+  "yes" vs "no" days, shown once a question has 5 of each. Answers also flow into the insights analysis as
+  `journal:<slug>` (the `journal` insights source).
+- To add another nightly input, add it to `pending`, `checkin_message` and `record` in `scripts/journal.py`.
+
+Register once (replaces the old `dayrating-nightly-nudge`, now disabled):
+```
+python scripts/scheduler_store.py add --name "nightly-checkin" \
+  --prompt "Delegate to the journal subagent to run the nightly check-in (send the check-in message exactly as the script gives it; silent if everything for today is already filled in)." \
+  --cron "30 20 * * *" --target-chat-id "<your chat_id>"
+python scripts/scheduler_store.py disable --name "dayrating-nightly-nudge"
+```
+
 ## Day rating and insights
 
 A daily happiness score plus the "why". The `dayrating` subagent and the dashboard's **Day Rating** section run the
@@ -428,7 +458,7 @@ A daily happiness score plus the "why". The `dayrating` subagent and the dashboa
 `insight_reports`).
 
 - **Rating**: one 1-10 score and a short note per day, from Telegram ("today was a 7, long day") or the dashboard;
-  rating a day again edits it, past days can be backfilled. A nightly nudge (8:30 PM, silent if already rated) asks.
+  rating a day again edits it, past days can be backfilled. The nightly check-in (8:30 PM, `journal` agent, see above) asks for it.
 - **Sources** (`scripts/insight_sources/`, one module each, auto-discovered): every habit done / not done, day of
   week, daily weather (free Open-Meteo archive, location from `weather_config`), and COROS recovery data (overnight
   HRV, resting heart rate, fatigue, training load, from the same login as the workout sync), and calendar load
@@ -445,9 +475,6 @@ A daily happiness score plus the "why". The `dayrating` subagent and the dashboa
 
 Register once:
 ```
-python scripts/scheduler_store.py add --name "dayrating-nightly-nudge" \
-  --prompt "Delegate to the dayrating subagent to run the nightly rating nudge (silent if today is already rated)." \
-  --cron "30 20 * * *" --target-chat-id "<your chat_id>"
 python scripts/scheduler_store.py add --name "dayrating-weekly-insights" \
   --prompt "Delegate to the dayrating subagent to run the weekly insights report (refresh sources, analyze, write and save the story, reply with a short summary and up to two suggestions for new data sources)." \
   --cron "30 19 * * 0" --target-chat-id "<your chat_id>"
@@ -489,7 +516,7 @@ python scripts/scheduler_store.py add --name "myhub-refresh" \
   --cron "0 7-21/2 * * *" --target-chat-id "<your chat_id>"
 ```
 Sleep, recovery, weather and habits are script-reachable, so `assistant-insights-refresh.timer` refreshes them every
-30 minutes (6am-10pm, no model tokens; `insights refresh --days 3 --source coros_health,weather,habits`). The hub footer
+30 minutes (6am-10pm, no model tokens; `insights refresh --days 3 --source coros_health,weather,habits,journal`). The hub footer
 shows each source's last refresh (amber when older than twice its interval) and a **Refresh now** button for the script tier.
 Install: `scripts/install_systemd.sh assistant-insights-refresh.timer`.
 

@@ -150,20 +150,26 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## Wellness dashboard (built 2026-10-19, branch `feat/wellness-dashboard`)
 
-- [ ] Backfill the new COROS fields (acute/chronic load, recommended 7-day load range, HRV normal band, state codes):
-      `python scripts/dayrating_store.py insights refresh --days 90 --source coros_wellness`. This logs into the
-      COROS web session, which signs COROS out elsewhere, so it waits for the user's OK. Until then the HRV band is
-      our rolling ±1 SD, the load chart has no ATI/CTI lines and the load ring has no recommended range. The weekly
-      insights run will fill them going forward.
+- [x] Nightly check-in + yes/no journal built 2026-10-19 (`scripts/journal.py`, `journal` agent, check-in card on
+      Wellness → Today, Wellness → Journal page, impact table on Drivers). `nightly-checkin` registered (8:30 PM) and
+      the old `dayrating-nightly-nudge` disabled. Alcohol, THC, Sex and Date night moved from habits into the journal
+      (6 yes days imported, habits paused).
+- [ ] Watch the first `nightly-checkin` run (2026-10-19 20:30) and the first reply: check `scheduler_store.py runs`
+      and that the reply landed (`journal_store.py day`). Not yet seen end to end over Telegram.
+- [ ] The 7 PM `habits-daily-nudge` still runs separately (it's a "do it now" reminder for at-risk streaks); fold it
+      into the check-in if two evening messages feel like too many.
+- [x] Backfill the new COROS fields (acute/chronic load, recommended 7-day load range, HRV normal band, state codes):
+      `python scripts/dayrating_store.py insights refresh --days 90 --source coros_wellness`. Run 2026-10-19
+      (1,340 values; ATI/CTI and the recommended range from 7/20, COROS HRV band from 8/22). The weekly insights run
+      keeps them current.
 - [ ] HRV and load are only as fresh as the weekly COROS web pull. Moving them to the official MCP
       (`querySleepHrv`, `queryTrainingLoadAssessment`) would let the 30-minute timer keep them current.
 - [ ] Not yet seen by a real phone: the tap-to-pin readouts were checked in a Playwright mobile emulation only.
-- [ ] The `wellness` subagent is untested over Telegram (new agent file; the agent worker needs a restart to see it).
+- [ ] The `wellness` and `journal` subagents are untested over Telegram.
 - [ ] `insights.analyze` still counts COROS sleep scores of 0 (nights COROS didn't score) as real values; the
       wellness service treats them as missing. Decide whether the insights source should drop them too.
 - Later phases (suggested): Performance tab from COROS `/analyse/query` + `/dashboard/query` (race predictor, EvoLab
-  scores, threshold HR/pace, time in HR zones); MCP `queryFitnessAssessmentOverview` for VO2max; Whoop-style yes/no
-  journal questions in the nightly nudge (caffeine late, alcohol, screens, late meal, sick) as count-only habits;
+  scores, threshold HR/pace, time in HR zones); MCP `queryFitnessAssessmentOverview` for VO2max;
   sleep need / sleep debt; energy and stress self-ratings; weight; Caroline's data if she wears a COROS.
 
 ## Day rating + insights (built 2026-10-14)

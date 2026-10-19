@@ -257,6 +257,8 @@ def client(state):
     "/wellness", "/wellness/trends", "/wellness/trends?range=30&heat=hrv", "/wellness/trends?range=180",
     "/wellness/drivers", "/wellness/drivers?target=hrv&x=steps&y=hrv", "/api/wellness", "/api/wellness/trends",
     "/api/wellness/heatmap", "/api/wellness/drivers", "/api/wellness/scatter",
+    "/wellness/journal", "/wellness/journal?date=2026-10-01", "/api/journal/checkin", "/api/journal/history",
+    "/api/journal/questions", "/api/journal/impact",
     "/chores", "/chores/manage", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
@@ -376,7 +378,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     write route elsewhere must be a deliberate change to this allow-list."""
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
-    allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore", "/me/refresh",
+    allowed = {"/wellness/checkin", "/journal/questions", "/journal/questions/{slug}/update", "/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore", "/me/refresh",
                "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
@@ -994,6 +996,57 @@ def test_wellness_charts_are_valid_svg_and_theme_driven():
     assert ts.count('class="hit"') == 10 and "pending-mark" in ts and "Not synced yet" in ts
     tip = ET.fromstring(ts).find(".//{*}rect[@class='hit']").get("data-tip")
     assert json.loads(tip)["rows"][0] == ["Band", "0 – 2", "b"]
+
+
+# ---- Journal + nightly check-in (shared service: scripts/journal.py) ----
+
+def test_checkin_ui_and_service_share_data(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import habits
+    import journal as service
+    db = state / "agent_results.db"
+    hid = habits.create_habit("Stretch", "daily", 1, db_path=db)["id"]
+    today = datetime.now().date().isoformat()
+    r = client.post("/wellness/checkin", data={"date": today, "score": "7", "note": "fine <b>day", "q_alcohol": "yes",
+                                               "q_thc": "no", "habit": hid},
+                    headers={"Origin": "http://testserver", "HX-Request": "true"})
+    assert r.status_code == 200 and "Saved." in r.text and "fine <b>day" not in r.text   # escaped
+    p = service.pending(today, db_path=db)
+    assert p["rating"]["score"] == 7 and p["habits_open"] == []
+    assert {q["slug"]: q["answer"] for q in p["questions"]}["alcohol"] == "yes"
+    assert client.get(f"/api/journal/checkin?date={today}").json() == p
+    # service writes show up in the UI
+    service.set_answer("late_meal", "yes", db_path=db)
+    assert "late_meal" in p["unanswered"]
+    assert "late_meal" not in client.get(f"/api/journal/checkin?date={today}").json()["unanswered"]
+    hist = client.get("/api/journal/history?days=7").json()
+    assert next(q for q in hist["questions"] if q["slug"] == "late_meal")["cells"][-1]["answer"] == "yes"
+    assert 'id="checkin"' in client.get("/wellness").text
+    # plain (no-htmx) post redirects back; errors come back as a message
+    r = client.post("/wellness/checkin", data={"date": today, "score": "12", "next": "/wellness"},
+                    headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/wellness?error=")
+    r = client.post("/wellness/checkin", data={"date": today, "next": "https://evil.example"},
+                    headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/wellness/journal")
+
+
+def test_journal_questions_via_ui_and_origin_guard(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import journal as service
+    db = state / "agent_results.db"
+    ok = {"Origin": "http://testserver"}
+    assert client.post("/journal/questions", data={"text": "Nap"}, headers=ok, follow_redirects=False).status_code == 303
+    assert service.resolve_question("nap", db_path=db)["text"] == "Nap?"
+    client.post("/journal/questions/nap/update", data={"active": "0"}, headers=ok, follow_redirects=False)
+    assert service.resolve_question("nap", db_path=db)["active"] == 0
+    bad = {"Origin": "https://evil.example"}
+    for path, data in (("/wellness/checkin", {"score": "5"}), ("/journal/questions", {"text": "X"}),
+                       ("/journal/questions/nap/update", {"active": "1"})):
+        assert client.post(path, data=data, headers=bad).status_code == 403
+    assert client.get("/api/journal/checkin?date=2099-01-01").status_code == 400
 
 
 # ---- My Hub (shared service: scripts/myhub.py) ----
