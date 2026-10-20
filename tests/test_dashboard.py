@@ -696,7 +696,8 @@ def test_dismiss_and_restore_attention(client, state):
     assert r.status_code == 303
     assert _sched_items(client) == []
     page = client.get("/")
-    assert "1 dismissed" in page.text and item["text"] in page.text  # restorable
+    assert "Dismissed (1)" in page.text and "Scheduled task daily-thing failed" in page.text  # restorable (hub's wording)
+    assert "1 dismissed" in client.get("/archive/").text  # the old Summary page shares the store
     import sys
     sys.path.insert(0, str(ROOT / "scripts"))
     import myhub as service
@@ -1029,7 +1030,7 @@ def test_checkin_ui_and_service_share_data(client, state):
     assert r.status_code == 303 and r.headers["location"].startswith("/wellness?error=")
     r = client.post("/wellness/checkin", data={"date": today, "next": "https://evil.example"},
                     headers={"Origin": "http://testserver"}, follow_redirects=False)
-    assert r.headers["location"].startswith("/wellness/journal")
+    assert r.headers["location"].startswith("/checkin")
 
 
 def test_journal_questions_via_ui_and_origin_guard(client, state):
@@ -1059,9 +1060,10 @@ def test_hub_ui_and_service_share_data(client, state):
                          db_path=state / "agent_results.db")
     api = client.get("/api/me").json()
     assert any("Renew <b>passport" in a["text"] for g in api["groups"] for a in g["items"])  # tasks live under Show all > Tasks
-    page = client.get("/me")
-    assert page.status_code == 200 and "My Hub" in page.text
+    page = client.get("/")
+    assert page.status_code == 200 and "Needs attention" in page.text
     assert "passport" in page.text and "<b>passport" not in page.text  # escaped
+    assert "My Hub" in client.get("/archive/me").text
 
 
 def test_hub_dismiss_restore_and_new_event_still_shows(client, state):
@@ -1144,7 +1146,8 @@ def test_every_router_page_is_in_the_nav():
     for f in routers.glob("*.py"):
         used |= {f"{a}:{b}" for a, b in re.findall(r'render\([^)]*?"[^"]+\.html", "([a-z_]+)", "([a-z_]+)"', f.read_text())}
     used |= {f"chores:{p}" for p in ("overview", "manage", "ledger")}  # chores passes its page key as a variable
-    assert used and used <= srcs, used - srcs
+    archive_only = {"summary:overview", "myhub:hub", "dayrating:today"}  # retired pages, served only under /archive
+    assert used and used - archive_only <= srcs, used - archive_only - srcs
 
 
 def test_archive_serves_every_legacy_page_with_links_kept_inside(client):
@@ -1176,3 +1179,82 @@ def test_archive_writes_go_through_the_same_routes_and_stay_in_archive(client):
                     follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("/archive/habits")
     assert "Archived stretch" in client.get("/habits").text
+
+
+# ---- Today, Check-in and System status (UX overhaul PR 2) ----
+
+def test_retired_pages_redirect_and_stay_in_archive(client):
+    for old, new in (("/me", "/"), ("/rating", "/checkin"), ("/wellness/journal?date=2026-01-02", "/checkin?date=2026-01-02")):
+        r = client.get(old, follow_redirects=False)
+        assert r.status_code == 302 and r.headers["location"] == new, old
+    assert "Rate a day" in client.get("/archive/rating").text
+    assert "Ask or tell the assistant" in client.get("/archive/").text
+    assert "Orchestrator Health" in client.get("/archive/health").text
+
+
+def test_today_merges_hub_and_summary_attention(client, state, monkeypatch):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    from dashboard.data import summary
+    real = summary.get_summary
+
+    def with_extras():
+        out = real()
+        extra = [{"key": "cred:drive:x", "text": "Google Drive login expires in 2d", "href": "/reconnect", "tile": "Hy-Vee"},
+                 {"key": "habits:h1:p", "text": "Hub already covers habits", "href": "/habits", "tile": "Habits"}]
+        out["all_attention"] = out.get("all_attention", []) + extra
+        return out
+    monkeypatch.setattr(summary, "get_summary", with_extras)
+    db = state / "agent_results.db"
+    service.set_snapshot("task", [{"title": "Overdue thing", "day": "2020-01-01", "priority": 1}], db_path=db)
+    today = client.get("/api/today").json()
+    hub = client.get("/api/me").json()
+    keys = [a["key"] for a in today["attention"]]
+    assert set(a["key"] for a in hub["attention"]) <= set(keys)  # every hub item
+    assert "cred:drive:x" in keys and "habits:h1:p" not in keys  # plus only the summary-only kinds
+    assert [g["label"] for g in today["groups"]] == [g["label"] for g in hub["groups"]]
+    page = client.get("/").text
+    assert "Google Drive login expires in 2d" in page and "Overdue thing" in page
+    assert {g["tab"] for g in today["glance"]} <= {"Me", "Family", "Home", "Money", "System"}
+
+
+def test_dismiss_on_today_hides_it_everywhere(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    db = state / "agent_results.db"
+    service.set_snapshot("task", [{"title": "Old task", "day": "2020-01-01", "priority": 1}], db_path=db)
+    item = client.get("/api/today").json()["groups"][0]["items"][0]
+    r = client.post("/attention/dismiss", data={"key": item["key"]}, headers={"Origin": "http://testserver"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/#attention"
+    assert item["key"] in [a["key"] for a in client.get("/api/me").json()["dismissed"]]
+    assert service.dismissed_rows(db_path=db)[item["key"]]
+    assert not client.get("/api/today").json()["groups"]
+
+
+def test_quick_rate_on_today_and_checkin_page(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import dayrating
+    today = datetime.now().date().isoformat()
+    assert 'class="quick-rate"' in client.get("/").text
+    r = client.post("/wellness/checkin", data={"date": today, "score": "8", "next": "/"},
+                    headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert dayrating.get_rating(today, db_path=state / "agent_results.db")["score"] == 8
+    page = client.get("/").text
+    assert 'class="quick-rate"' not in page and "/10 today" in page
+    ck = client.get("/checkin").text
+    assert 'id="checkin"' in ck and f'href="/checkin?date={today}"' in ck  # recent days link back to a day
+    yday = (datetime.now().date() - timedelta(days=1)).isoformat()
+    assert f'value="{yday}"' in client.get("/checkin?date=yesterday").text
+
+
+def test_status_board_and_its_json_twin(client):
+    page = client.get("/health")
+    assert page.status_code == 200 and "System status" in page.text and "Services" in page.text
+    board = client.get("/api/system/status").json()
+    assert {"problems", "checks", "integrations", "logins", "runs"} <= set(board)
+    assert all(c["state"] in ("ok", "bad", "unknown") for c in board["checks"])

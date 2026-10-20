@@ -1,39 +1,65 @@
 {% extends "base.html" %}
 
 {% block page_header %}
-  <h1>Orchestrator Health</h1>
-  <p class="subtitle" id="generated-at">Loading…</p>
+  <h1>System status</h1>
+  <p class="subtitle">Is everything running? Updated {{ b.generated_at|fmt_dt }} · refreshes every minute.</p>
 {% endblock %}
 
 {% block content %}
-  <div class="grid" id="grid">
-    <section class="card" id="card-uptime">
-      <h2>Uptime</h2>
-      <div class="card-body">Loading…</div>
+<div id="status-board" hx-get="/health" hx-select="#status-board" hx-target="this" hx-swap="outerHTML" hx-trigger="every 60s">
+  <div class="status-banner {{ 'ok' if not b.problems else 'warn' }}">
+    <span class="dot"></span>
+    {% if not b.problems %}All systems OK.{% else %}{{ b.problems }} problem{{ 's' if b.problems != 1 }} need{{ 's' if b.problems == 1 }} a look.{% endif %}
+  </div>
+
+  <div class="status-cols">
+    <section class="card">
+      <h2>Services</h2>
+      <ul class="status-list">
+        {% for c in b.checks %}
+          <li class="st-{{ c.state }}"><a href="{{ c.href }}"><i class="lamp"></i><span>{{ c.label }}</span><em>{{ c.detail }}</em></a></li>
+        {% endfor %}
+      </ul>
     </section>
 
-    <section class="card" id="card-success">
-      <h2>Task Success Rate</h2>
-      <div class="card-body">Loading…</div>
+    <section class="card">
+      <h2>Connections</h2>
+      {% if b.integrations %}
+      <ul class="status-list">
+        {% for s in b.integrations %}
+          {% set st = 'ok' if s.status == 'ok' else ('bad' if s.status == 'down' else ('unknown' if s.status == 'unknown' else 'warn')) %}
+          <li class="st-{{ st }}"><a href="{{ '/reconnect' if s.key in ('drive', 'hyvee') and st != 'ok' else '/health/system' }}"><i class="lamp"></i><span>{{ s.label }}</span><em>{{ 'not checked yet' if s.status == 'unknown' else s.detail }}</em></a></li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty-state">No connection checks recorded yet.</div>{% endif %}
     </section>
 
-    <section class="card" id="card-watchdogs">
-      <h2>Watchdog Health</h2>
-      <div class="card-body">Loading…</div>
+    <section class="card">
+      <h2>Logins</h2>
+      <ul class="status-list">
+        {% for s in b.logins %}
+          {% set st = {'ok': 'ok', 'warn': 'warn', 'expired': 'bad'}.get(s.state, 'unknown') %}
+          <li class="st-{{ st }}"><a href="{{ '/reconnect' if st != 'ok' else '/health/system' }}"><i class="lamp"></i><span>{{ s.label }}</span>
+            <em>{% if s.state == 'expired' %}expired{% elif s.days_left is defined and s.days_left is not none %}{{ s.days_left|round(1) }} days left{% else %}{{ s.detail or s.state }}{% endif %}</em></a></li>
+        {% else %}<li class="st-unknown"><span>No logins recorded.</span></li>{% endfor %}
+      </ul>
     </section>
 
-    <section class="card" id="card-fallback">
-      <h2>Telegram Fallback</h2>
-      <div class="card-body">Loading…</div>
-    </section>
-
-    <section class="card card-wide" id="card-failures">
-      <h2>Recent Failures</h2>
-      <div class="card-body">Loading…</div>
+    <section class="card">
+      <h2>Scheduled tasks</h2>
+      {% if b.runs %}
+        <div class="metric {{ 'fail-count' if b.runs.fail_24h }}">{{ b.runs.success_rate_24h|round|int if b.runs.success_rate_24h is not none else '–' }}% ok</div>
+        <div class="metric-sub">{{ b.runs.ok_24h }} ok / {{ b.runs.fail_24h }} failed in 24 h · {{ b.runs.fail_7d }} failed in 7 days</div>
+        {% if b.runs.recent_failures %}
+          <ul class="link-list">{% for f in b.runs.recent_failures[:3] %}<li><a href="/health/schedule">{{ f.task_name }}</a> <span class="muted">failed {{ f.run_at|fmt_dt }}</span></li>{% endfor %}</ul>
+        {% endif %}
+      {% endif %}
+      {% if b.upcoming %}
+        <h3 class="mini-h">Next up</h3>
+        <ul class="link-list">{% for t in b.upcoming %}<li><a href="/health/schedule">{{ t.name }}</a> <span class="muted">{{ t.next_run|fmt_dt }}</span></li>{% endfor %}</ul>
+      {% endif %}
+      {% if b.uptime %}<p class="footnote">Orchestrator up {{ b.uptime.uptime_seconds|fmt_duration }} · {{ b.uptime.restarts_7d }} restart{{ 's' if b.uptime.restarts_7d != 1 }} in 7 days · <a href="/health/restarts">history</a></p>{% endif %}
     </section>
   </div>
-{% endblock %}
-
-{% block scripts %}
-  <script src="/static/dashboard.js?v={{ asset_version() }}"></script>
+</div>
 {% endblock %}

@@ -152,7 +152,7 @@ def get_hub(*, db_path=None, today: date | None = None) -> dict:
                 errors[name] = str(exc)
                 attention.append({"key": f"hub:{name}:error", "area": mod.PROVIDER.get("title", name),
                                   "text": f"{mod.PROVIDER.get('title', name)} couldn't be read ({exc})",
-                                  "href": "/me", "level": "warn"})
+                                  "href": "/", "level": "warn"})
                 continue
             cards[name] = {"title": mod.PROVIDER.get("title", name), **(res.get("card") or {})}
             for a in res.get("attention") or []:

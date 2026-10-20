@@ -153,8 +153,11 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - [x] PR 1: 6-tab navigation (System behind the gear, bottom tab bar on phones), one dark HUD theme, and `/archive`
       serving every pre-redesign page through the same routes (`dashboard/README.md`, "Navigation and look").
 - [ ] Check it on the phone: bottom tab bar, safe areas on the home-screen app, and the sub-nav scrolling sideways.
-- [ ] PR 2: merged **Today** page (Summary + My Hub), **Check-in** page (day rating + journal in one place), and a
-      **System Status** overview; old Summary / My Hub / Day Rating Today pages then live only in the archive.
+- [x] PR 2: merged **Today** page (`/`, Summary + My Hub), **Check-in** page (`/checkin`: rating + journal + daily
+      habits in one place) and the **System status** board (`/health`). `/me`, `/rating` and `/wellness/journal?date=`
+      redirect; the old pages are at `/archive/`, `/archive/me`, `/archive/rating`, `/archive/health`.
+- [ ] Use Today for a few days and decide whether anything from the old My Hub is missed (vitals detail, sleep stages,
+      insight story and the Systems list now live on Wellness, Insights and System status).
 - [ ] PR 3: page cleanup (Groceries/Hy-Vee tables collapsed and filterable, Agent Live and Activity paged, shared page
       header and empty states, habit card layout), plus a **Week** page and **jump-to search**.
 - [ ] Delete the archive about 30 days after PR 2 merges (steps in `dashboard/README.md`, "Archive").

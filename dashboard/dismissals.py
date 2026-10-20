@@ -1,4 +1,4 @@
-"""Dismissed 'needs attention' items, shared by the Summary page, the My Hub page and the hub's
+"""Dismissed 'needs attention' items, shared by the Today page (and the archived Summary / My Hub pages) and the hub's
 Telegram notifications.
 
 There is one store: the `hub_dismissed` table, owned by scripts/myhub.py. This module is a thin

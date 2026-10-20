@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block head %}<link rel="stylesheet" href="/static/wellness.css?v={{ asset_version() }}">{% endblock %}
+
+{% block page_header %}
+  <h1>Check-in</h1>
+  <p class="subtitle">Log a day in one place: the rating, the yes/no questions and daily habits. The 8:30 PM Telegram check-in asks the same things.</p>
+{% endblock %}
+
+{% block content %}
+<div class="wellness">
+  {% if error %}<div class="card"><div class="error-state">{{ error }}</div></div>{% endif %}
+
+  {% set day = checkin.date if not checkin.error else today %}
+  <nav class="day-pick" aria-label="Pick a day">
+    <a href="/checkin" class="chip {{ 'active' if day == today }}">Today</a>
+    <a href="/checkin?date=yesterday" class="chip {{ 'active' if day == yesterday }}">Yesterday</a>
+    <form method="get" action="/checkin">
+      <label><span class="sr-only">Another day</span>
+        <input type="date" name="date" value="{{ day }}" max="{{ today }}" onchange="this.form.submit()"></label>
+      <noscript><button type="submit">Show</button></noscript>
+    </form>
+  </nav>
+
+  {% with c=checkin, open=true, next='/checkin' %}{% include "wellness/_checkin.html" %}{% endwith %}
+
+  {% if not rating.error %}
+  {% set s = rating.status %}
+  <div class="grid stats">
+    <section class="card"><h2>Today</h2><div class="metric">{{ s.today.score if s.today else '–' }}</div>
+      <div class="metric-sub">{{ 'rated' if s.today else 'not rated yet' }}</div></section>
+    <section class="card"><h2>7-day avg</h2><div class="metric">{{ s.avg_7 if s.avg_7 is not none else '–' }}</div></section>
+    <section class="card"><h2>30-day avg</h2><div class="metric">{{ s.avg_30 if s.avg_30 is not none else '–' }}</div></section>
+    <section class="card"><h2>Streak</h2><div class="metric">{{ s.logging_streak }}</div><div class="metric-sub">days rated in a row</div></section>
+  </div>
+
+  <section class="card card-wide">
+    <h2>Recent days</h2>
+    {% if rating.ratings %}
+    <ul class="day-list">
+      {% for r in rating.ratings %}
+        <li><a href="/checkin?date={{ r.date }}">
+          <span class="score s{{ r.score }}">{{ r.score }}</span>
+          <time>{{ r.date|fmt_date }}</time>
+          <span class="note">{{ r.note or '' }}</span></a></li>
+      {% endfor %}
+    </ul>
+    {% else %}<div class="empty-state">No ratings yet. Rate today above.</div>{% endif %}
+    <p class="footnote">What moves the score: <a href="/rating/insights">Insights</a>. Yes/no history and questions: <a href="/wellness/journal">Journal</a>.</p>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="/static/wellness.js?v={{ asset_version() }}" defer></script>{% endblock %}

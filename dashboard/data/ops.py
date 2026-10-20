@@ -109,3 +109,13 @@ def get_heartbeat():
 
 def get_system():
     return {"credentials": get_credentials(), "backups": get_backups(), "heartbeat": get_heartbeat()}
+
+
+@common.guarded
+def get_integrations():
+    """Every integration's last connection check (scripts/system_health.py), as the hub's Systems tile shows it."""
+    import sys
+    if str(common.SCRIPTS_DIR) not in sys.path:
+        sys.path.insert(0, str(common.SCRIPTS_DIR))
+    import system_health
+    return {"systems": system_health.get_status(db_path=common.db_path())}

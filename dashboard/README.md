@@ -15,8 +15,8 @@ nav never touches a router. Page URLs did not change.
 
 | Tab | Pages |
 |---|---|
-| Today | Overview (`/`), My Hub (`/me`) |
-| Me | Wellness Today/Trends/Drivers, Journal, Day rating, Insights, Habits Streaks/Analysis, Fitness |
+| Today | Today (`/`) |
+| Me | Wellness Today/Trends/Drivers, Check-in, Journal, Insights, Habits Streaks/Analysis, Fitness |
 | Family | Chores Today/Chores & kids/Money, Kid chart (`/kids`), Profile, Kids memories |
 | Home | Menu, Recipes, Groceries (`/hyvee`), Maintenance, Lawn & garden, Weather alerts |
 | Money | Tagging, Reports & planning |
@@ -36,11 +36,11 @@ through the normal write routes. To remove the archive, delete `templates/archiv
 `routers/archive.py`, the middleware, `ARCHIVE`/`LEGACY_SECTIONS` in `web.py` and the archive tests (tracked in
 `docs/TODO.md`).
 
-## Summary page and the ask box
+## Today page and the ask box
 
-`/` is a minimal landing page: the ask box, one status line ("All good" or "N things need
-attention" with links), and one glance tile per section. `/api/summary` is its JSON twin.
-`data/summary.py` only composes the existing readers.
+`/` is the Today page (see the Sections table). Its glance tiles and the agent/login-expiry attention items come from
+`data/summary.py`, which only composes the existing readers; `/api/summary` is that reader's JSON twin. The old Summary
+page is at `/archive/`.
 
 Each needs-attention item has an ✕ to dismiss it. A dismissal is tied to the specific event (a
 failed run's timestamp, a login's last-auth time, a maintenance item's due date), so it stays hidden
@@ -60,7 +60,7 @@ other family members.
 
 | Section | Page | URL | What it shows |
 |---|---|---|---|
-| Orchestrator Health | Overview | `/health` | Uptime, task success rate, watchdog health, Telegram fallback, recent failures (auto-refreshes every 30 s) |
+| System | Status | `/health`, `/api/system/status` | One "is everything OK?" board: services (bridge, worker, MCP, health check, reply delivery, scheduler, backups), each integration's last connection check, login expiry, task success rate, recent failures and what runs next (refreshes every minute). Composes `data/health.py`, `data/agent.py`, `data/ops.py`, `data/schedule.py` (`data/status.py`) |
 | | Scheduled Tasks | `/health/schedule` | Every scheduled task: what it does, schedule in plain English, next run, last run, 7-day ok/failed, recent runs |
 | | Restart History | `/health/restarts` | Every orchestrator launch with the inferred cause, previous exit code, downtime, and the raw log records behind it |
 | | Reconnect | `/reconnect`, `/reconnect/hyvee` | Refresh an expired Drive login (paste flow); shows Hy-Vee status and points at the desktop "Hy-Vee Login" shortcut (the only Hy-Vee sign-in). Write routes use the same-origin guard; same `scripts/reauth.py` service as the agent |
@@ -78,12 +78,13 @@ other family members.
 | Fitness | Overview | `/fitness` | This week's plan, COROS push status, library. Planned workouts only (no completion tracking) |
 | Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe; add, edit and delete recipes (same service as the meal-planner agent, `scripts/recipes.py`) |
 | | Menu & Insights | `/meals/plan` | Upcoming menu (from the meal-planner's logged plans), recently cooked, stale recipes, collection counts |
-| My Hub | Hub | `/me`, `/api/me` | Personal command page: ranked needs-attention strip plus calendar, tasks, dinner, mood, recovery/sleep/vitals, habits, weather, household, insight and a Systems tile with the live health of each integration (`scripts/system_health.py`). Read-only except dismissing/restoring reviewed attention items (stored in `hub_dismissed`, shared with the Summary page and the hub's Telegram notifications); same `scripts/myhub.py` service as the `myhub` agent. Own stylesheet `static/hub.css` |
+| Today | Today | `/`, `/api/today` | The home page (Summary + My Hub merged): ask box, ranked needs-attention list, today's calendar/tasks/dinner, a quick 1-10 rating (full check-in on `/checkin`), weather, kids' chores, body (recovery, sleep, habits), the week ahead, and one row of glance tiles per tab. `data/today.py` composes `scripts/myhub.py` (cards, attention, dismissals) with `data/summary.py` (tiles plus the agent and login-expiry items the hub doesn't raise). `/me` redirects here; `/api/me` and `/api/summary` stay |
 | Wellness | Today | `/wellness` | Whoop-style readiness: recovery / sleep / 7-day load rings, last night's sleep and stages, vitals against your 30-day normal, the day rating (yesterday's until today's is given in the evening), habits and source freshness. Same `scripts/wellness.py` service as the `wellness` agent |
 | | Trends | `/wellness/trends` | 30/90/180-day SVG charts (sleep, HRV with its normal band, resting HR, load and load ratio, steps, exercise, mood) with hover tooltips / tap-to-pin and a 6-month calendar heatmap. Pending days show as dashed stubs, never zeros |
 | | Drivers | `/wellness/drivers` | What moves the day rating, HRV, sleep score or resting HR (`insights.analyze` / `analyze_against`), a two-metric scatter, and the latest written story |
-| | Journal | `/wellness/journal` | The nightly check-in for any day (rating + note, yes/no per journal question, daily habits), a 28-day yes/no/unanswered grid, and adding / pausing questions. Same `scripts/journal.py` service as the `journal` agent; the check-in card also sits on Wellness → Today and Drivers shows each question's yes-vs-no impact |
-| Day Rating | Today, Insights | `/rating`, `/rating/insights` | Rate a day 1-10 with a note (same `scripts/dayrating.py` service as the `dayrating` agent), recent ratings, then the stats on what moves the score (`scripts/insights.py`), the AI-written weekly story and the data-source list |
+| Me | Check-in | `/checkin` | The one place to log a day: rating + note, yes/no per journal question, daily habits, for today, yesterday (`?date=yesterday`) or any date; plus rating averages/streak and recent days. Same `scripts/journal.py` / `scripts/dayrating.py` services as the agents. `/rating` and `/wellness/journal?date=` redirect here |
+| | Journal | `/wellness/journal` | A 28-day yes/no/unanswered grid (tap a day to open it in Check-in) and adding / pausing questions. Same `scripts/journal.py` service as the `journal` agent; the check-in card also sits on Wellness → Today and Drivers shows each question's yes-vs-no impact |
+| Me | Insights | `/rating/insights` | The stats on what moves the day rating (`scripts/insights.py`), the AI-written weekly story and the data-source list |
 | Habits | Analysis | `/habits/analysis` | Combined habits-done-per-day calendar (3 months) and a per-habit table (days done, last 30 days, best weekday, weekly strip); the place to grow cross-habit analysis. Same `scripts/habits.py` service (`analysis`) |
 | Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, a 📅 Calendar flip on each card (2 months of days done), add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
 | Chores | Today, Chores & kids, Money | `/chores`, `/chores/manage`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, balances and payouts, and fixing a missed or mistaken completion. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |

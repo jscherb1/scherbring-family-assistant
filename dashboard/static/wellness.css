@@ -316,3 +316,24 @@
   .wimpact td.wi-span::before { display: none; }
   .wimpact td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--text-muted); }
 }
+
+/* ---- Check-in page ---- */
+.day-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.day-pick form { margin: 0; }
+.day-pick input[type=date] { font: inherit; font-size: 14px; color: var(--text); background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 12px; }
+.day-pick .chip { padding: 7px 14px; }
+.day-list { list-style: none; margin: 0; padding: 0; }
+.day-list a { display: grid; grid-template-columns: 36px 110px 1fr; gap: 12px; align-items: center; padding: 8px 4px;
+  border-bottom: 1px solid var(--border); color: var(--text); text-decoration: none; }
+.day-list li:last-child a { border-bottom: 0; }
+.day-list a:hover { background: var(--muted-bg); }
+.day-list time { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+.day-list .note { color: var(--text-muted); font-size: 14px; }
+.day-list .score { font-family: var(--mono); text-align: center; border-radius: 8px; padding: 3px 0; background: var(--muted-bg); }
+.day-list .score.s7, .day-list .score.s8, .day-list .score.s9, .day-list .score.s10 { color: var(--ok); background: var(--ok-bg); }
+.day-list .score.s1, .day-list .score.s2, .day-list .score.s3, .day-list .score.s4 { color: var(--warn); background: var(--warn-bg); }
+@media (max-width: 760px) {
+  .day-list a { grid-template-columns: 32px 1fr; }
+  .day-list .note { grid-column: 2; }
+}

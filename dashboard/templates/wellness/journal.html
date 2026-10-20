@@ -4,18 +4,14 @@
 
 {% block page_header %}
   <h1>Journal</h1>
-  <p class="subtitle">The nightly check-in: rate the day, answer the yes/no questions, log daily habits. A blank day stays blank (never counted as “no”), so the impact numbers on Drivers stay honest.</p>
+  <p class="subtitle">Your yes/no answers over time and the questions the nightly check-in asks. A blank day stays blank (never counted as “no”), so the impact numbers on Drivers stay honest.</p>
 {% endblock %}
 
 {% block content %}
 <div class="wellness">
   {% if error %}<div class="card"><div class="error-state">{{ error }}</div></div>{% endif %}
 
-  <form class="wpick wck-date" method="get" action="/wellness/journal">
-    <label>Day <input type="date" name="date" value="{{ checkin.date if not checkin.error else '' }}" max="{{ history.dates[-1] if not history.error else '' }}" onchange="this.form.submit()"></label>
-    <noscript><button type="submit">Show</button></noscript>
-  </form>
-  {% with c=checkin, open=true, next='/wellness/journal' %}{% include "wellness/_checkin.html" %}{% endwith %}
+  <p class="wnote">To fill in a day, use <a href="/checkin">Check-in</a> or tap a day below.</p>
 
   <section class="card card-wide">
     <h2>Last {{ history.days if not history.error else 28 }} days</h2>
@@ -24,12 +20,12 @@
     <div class="wjgrid-wrap">
       <table class="wjgrid">
         <thead><tr><th></th>
-          {% for d in history.dates %}<th class="{{ 'wk' if loop.index0 % 7 == 0 }}"><a href="/wellness/journal?date={{ d }}" title="{{ d|fmt_date }}">{{ d[8:]|int }}</a></th>{% endfor %}
+          {% for d in history.dates %}<th class="{{ 'wk' if loop.index0 % 7 == 0 }}"><a href="/checkin?date={{ d }}" title="{{ d|fmt_date }}">{{ d[8:]|int }}</a></th>{% endfor %}
           <th>Yes</th><th>No</th></tr></thead>
         <tbody>
         {% for q in history.questions %}
           <tr class="{{ '' if q.active else 'paused' }}"><th scope="row">{{ q.label }}{% if not q.active %} <small>(paused)</small>{% endif %}</th>
-            {% for cell in q.cells %}<td class="{{ cell.answer or 'blank' }}" title="{{ cell.date|fmt_date }}: {{ cell.answer or 'not answered' }}"><a href="/wellness/journal?date={{ cell.date }}" aria-label="{{ q.label }} {{ cell.date }}: {{ cell.answer or 'not answered' }}"></a></td>{% endfor %}
+            {% for cell in q.cells %}<td class="{{ cell.answer or 'blank' }}" title="{{ cell.date|fmt_date }}: {{ cell.answer or 'not answered' }}"><a href="/checkin?date={{ cell.date }}" aria-label="{{ q.label }} {{ cell.date }}: {{ cell.answer or 'not answered' }}"></a></td>{% endfor %}
             <td class="num">{{ q.yes }}</td><td class="num">{{ q.no }}</td></tr>
         {% endfor %}
         </tbody>

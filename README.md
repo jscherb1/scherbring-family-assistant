@@ -453,7 +453,7 @@ python scripts/scheduler_store.py disable --name "dayrating-nightly-nudge"
 
 ## Day rating and insights
 
-A daily happiness score plus the "why". The `dayrating` subagent and the dashboard's **Day Rating** section run the
+A daily happiness score plus the "why". The `dayrating` subagent and the dashboard's **Check-in** page (`/checkin`, Me tab) and Insights page run the
 **same code** (`scripts/dayrating.py`, `scripts/insights.py`) against the same tables (`day_ratings`, `insight_daily`,
 `insight_reports`).
 
@@ -489,11 +489,13 @@ python scripts/scheduler_store.py add --name "system-ping-morning" \
 
 ## My Hub (the personal command page)
 
-One visual page (`/me`, JARVIS-style dark theme) for everything that matters to the person: a ranked **Needs attention**
+Since the 2026-10-19 dashboard redesign the hub is the dashboard's **Today** page (`/`; `/me` redirects there, the
+old page is at `/archive/me`), merged with the old Summary page's ask box and glance tiles. It shows everything that matters to the person: a ranked **Needs attention**
 strip (urgent / to act on / to note, never hidden, "All clear" when empty) on top, then today's calendar, dinner and
 tasks, mood, COROS recovery/sleep/vitals/wellness check, habits, weather, household (chores, maintenance), the latest
 insight and system health (expired logins, failed scheduled tasks). The `myhub` subagent and the page run the **same code**
-(`scripts/myhub.py` and the providers in `scripts/hub_providers/`); `/api/me` is the JSON twin.
+(`scripts/myhub.py` and the providers in `scripts/hub_providers/`); `/api/me` is the JSON twin (`/api/today` adds the
+Summary tiles plus agent and login-expiry items).
 
 - **Self-completing**: each area is a provider module; its needs-attention items flow into the strip with no other wiring,
   and a test fails if a required area has no provider. A provider that errors shows up as a visible warning, never silently
@@ -504,8 +506,8 @@ insight and system health (expired logins, failed scheduled tasks). The `myhub` 
 - **No repeat nagging**: after each refresh `myhub_store.py notify-check` decides what to message. An item is announced once
   when new (and again only if it escalates); urgent items repeat every 6 h while awake; warn items are only repeated by one
   morning digest (the first refresh at 7am); info items never message; from 8pm to 7am only a new urgent item gets through.
-  What was told is remembered in `hub_notified`. **Dismissals are one shared list** (`hub_dismissed`) used by the My Hub
-  page, the Summary page, the agent and the notifier, so dismissing an item anywhere hides it everywhere and stops it
+  What was told is remembered in `hub_notified`. **Dismissals are one shared list** (`hub_dismissed`) used by the Today
+  page, the archived Summary and My Hub pages, the agent and the notifier, so dismissing an item anywhere hides it everywhere and stops it
   notifying; the old `state/dashboard_dismissed.json` is imported once and renamed.
 - Not on the hub yet: finance items waiting on a decision (Monarch is live-only) and Hy-Vee cart state; see `docs/TODO.md`.
 

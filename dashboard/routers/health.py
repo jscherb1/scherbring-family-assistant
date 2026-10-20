@@ -1,7 +1,7 @@
-"""Orchestrator Health section: overview, scheduled tasks, restart history."""
+"""System tab: the status board (/health), scheduled tasks, restart history, logins & backups."""
 from fastapi import APIRouter, Request
 
-from ..data import health, ops, restarts, schedule
+from ..data import health, ops, restarts, schedule, status
 from ..web import render
 
 router = APIRouter()
@@ -9,7 +9,12 @@ router = APIRouter()
 
 @router.get("/health", include_in_schema=False)
 def overview(request: Request):
-    return render(request, "health/index.html", "health", "overview", "Orchestrator Health")
+    return render(request, "health/index.html", "health", "overview", "System status", b=status.get_status_board())
+
+
+@router.get("/api/system/status")
+def api_status_board():
+    return status.get_status_board()
 
 
 @router.get("/health/schedule", include_in_schema=False)
