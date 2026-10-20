@@ -65,7 +65,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/watchdog_telegram_health.py` | Detects a stuck Telegram MCP connection and kills `claude` so the loop restarts it |
 | `scripts/watchdog_scheduler_health.py` | Detects a stalled scheduler dispatcher (via the heartbeat file), restarts the timer, and sends a direct Telegram alert |
 | `scripts/scheduler_run_now.py` | Runs one scheduled task immediately through the real dispatch path, for testing |
-| `scripts/credential_check.py` | Daily check that warns on Telegram before Google Drive and Monarch logins expire (Hy-Vee is owned by `hyvee_connection.py`) |
+| `scripts/credential_check.py` | Daily real-request check that messages on Telegram only when a Google Drive or Monarch login is really down (Hy-Vee is owned by `hyvee_connection.py`) |
 | `scripts/backup.py` | Daily backup: SQLite snapshot, Claude memory notes, age-encrypted secrets; keeps 14 daily + 8 weekly |
 | `scripts/monarch_result.py` | Read-only queries over large saved Monarch results, so headless runs need no `python -c` or `jq` |
 | `scripts/kid_memories_store.py` | Zero-dep CLI for kid memories (add/update/get/list/mark-drive-synced/mark-drive-failed/add-trigger/triggers) |
@@ -726,7 +726,7 @@ cd vendor/monarch-mcp-server
 
 The `check_auth_status` tool ignores that file and reports "not authenticated" even when the login
 works. Judge auth by a real read such as `get_accounts`. The session lasts roughly two weeks;
-`scripts/credential_check.py` warns before it expires.
+`scripts/credential_check.py` tests it for real and tells you if it is down; the **Monarch Login** / **Google Drive Login** desktop shortcuts (`scripts/connection_refresh.py`) refresh it.
 
 All four subagents are **read-only against Monarch except `finance`** (the only one that
 writes tags / rules / review status), default to **Sonnet**, and follow the same "derive

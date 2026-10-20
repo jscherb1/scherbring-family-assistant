@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""Warn on Telegram before a manually refreshed login expires.
+"""Tell you on Telegram when a manually refreshed login has really stopped working.
 
 Some integrations cannot re-authenticate themselves: Google Drive (consent),
 Monarch (cookie paste). Hy-Vee is not here: scripts/hyvee/hyvee_connection.py owns it. This runs once a day from
 systemd/assistant-credential-check.timer, costs no model tokens, and sends
 direct Telegram messages so it still works if Claude itself is the broken piece.
 
-Two layers per system:
-  1. Advance reminder: once the login is older than (lifetime - 2 days) it
-     reminds you daily, with the exact command, until you re-login.
-  2. Live probe: checks the login really works right now. A dead login alerts
-     immediately and shortens that system's lifetime estimate to what was
-     observed, so the advance reminder gets better.
-
-Lifetimes are estimates until observed. Edit them in state/credential_check.json
-("lifetime_days") if you learn better. COROS is not listed: it re-logs in by
-itself with the stored credentials.
+Only a live probe (a real read against the service) can send a message:
+  dead    -> one red "EXPIRED" message per day with the desktop shortcut to run
+  ok      -> silence, however old the login is
+  unknown -> silence (network trouble is not an expired login)
+The age timer is a secondary signal: it is shown in --status, a dead probe
+shortens that system's lifetime estimate to what was observed, and a login past
+its estimate gets a quiet note appended to an EXPIRED message. It never sends
+anything on its own. COROS is not listed: it re-logs in by itself.
 
 Usage:
     python scripts/credential_check.py             # normal daily run
@@ -38,7 +36,6 @@ from typing import Callable
 from paths import REPO_ROOT, secrets_dir
 
 STATE_FILE = REPO_ROOT / "state" / "credential_check.json"
-REMIND_DAYS_BEFORE = 2
 ALERT_EVERY = timedelta(hours=20)  # at most one message per system per day
 
 
@@ -48,6 +45,7 @@ class System:
     label: str
     lifetime_days: float  # estimate until observed
     relogin: str  # what the user should do
+    shortcut: str  # name of the desktop shortcut that refreshes it
 
 
 SYSTEMS: dict[str, System] = {
@@ -55,11 +53,13 @@ SYSTEMS: dict[str, System] = {
         "drive", "Google Drive", 7,
         f"cd {REPO_ROOT} && .venv/bin/python scripts/drive_upload.py auth\n"
         "(open the printed URL in your browser and approve)",
+        "Google Drive Login",
     ),
     "monarch": System(
         "monarch", "Monarch", 14,
         f"cd {REPO_ROOT}/vendor/monarch-mcp-server && .venv/bin/python login_setup.py\n"
         "(choose option 1 and paste the cookie header from app.monarch.com)",
+        "Monarch Login",
     ),
 }
 
@@ -145,12 +145,14 @@ def probe_drive() -> str:
     try:
         import drive_upload
 
-        drive_upload._load_credentials(interactive=False)
+        # A real, read-only Drive call: also catches a revoked token or the weekly Testing-mode expiry.
+        drive_upload._service(interactive=False).files().list(pageSize=1, fields="files(id)").execute()
         return "ok"
     except RuntimeError:
         return "dead"  # missing token or a rejected refresh token
-    except Exception:  # noqa: BLE001 - network etc.
-        return "unknown"
+    except Exception as exc:  # noqa: BLE001 - network etc.
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        return "dead" if status == 401 else "unknown"  # 403 can be a quota limit
 
 
 PROBES: dict[str, Callable[[], str]] = {"drive": probe_drive, "monarch": probe_monarch}
@@ -192,32 +194,22 @@ def evaluate(
             return None, entry
         entry["last_alert_at"] = now.isoformat(timespec="seconds")
         since = f" (last login {_fmt_days(age_days)} days ago)" if age_days is not None else ""
+        note = ""
+        if age_days is not None and age_days >= lifetime:
+            note = f" That is past the usual {_fmt_days(lifetime)} days."
         return (
-            f"\U0001f534 {system.label} login has EXPIRED{since}. Anything that needs it will fail until you re-login:\n\n"
-            f"{system.relogin}",
+            f"\U0001f534 {system.label} login has EXPIRED{since}. A live check confirmed it.{note} "
+            f"Anything that needs it will fail until you re-login.\n\n"
+            f"Easiest: run \"{system.shortcut}\" on your desktop.\n"
+            f"Or from a terminal:\n{system.relogin}",
             entry,
         )
 
+    # ok or unknown: the age timer alone never sends a message.
     entry["status"] = probe_status
-    if age_days is None:
-        return None, entry
-    days_left = lifetime - age_days
-    if days_left > REMIND_DAYS_BEFORE:
-        entry.pop("last_alert_at", None)  # a fresh login re-arms the reminder
-        return None, entry
-    if not due_for_message:
-        return None, entry
-    entry["last_alert_at"] = now.isoformat(timespec="seconds")
-    if days_left > 0:
-        when = f"is expected to expire in about {_fmt_days(days_left)} day(s)"
-    else:
-        when = "is past its expected lifetime and may stop working any time"
-    return (
-        f"\U0001f7e1 {system.label} login {when} (last login {_fmt_days(age_days)} days ago, "
-        f"assumed lifetime {_fmt_days(lifetime)} days). Refresh it when convenient:\n\n"
-        f"{system.relogin}",
-        entry,
-    )
+    if probe_status == "ok":
+        entry.pop("last_alert_at", None)  # recovered: re-arm the alert
+    return None, entry
 
 
 # ----------------------------------------------------------------------------- main
@@ -281,7 +273,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--status", action="store_true", help="print the table only; send and save nothing")
     ap.add_argument("--dry-run", action="store_true", help="show messages without sending or saving")
-    ap.add_argument("--skip-probes", action="store_true", help="age-based reminders only (no live checks)")
+    ap.add_argument("--skip-probes", action="store_true", help="skip the live checks (nothing can be sent)")
     args = ap.parse_args()
     for line in run(dry_run=args.dry_run, status_only=args.status, skip_probes=args.skip_probes):
         print(line, flush=True)
