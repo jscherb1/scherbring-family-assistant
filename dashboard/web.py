@@ -2,6 +2,7 @@
 
 Adding a new section = a new router in routers/ plus one entry in SECTIONS below.
 """
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 
@@ -11,7 +12,78 @@ from fastapi.templating import Jinja2Templates
 APP_NAME = "Scherbring Family Assistant"
 HERE = Path(__file__).resolve().parent
 
+# Navigation: six tabs (System sits behind the gear icon). Each page names the (section, page) pair its
+# router passes to render() in "src", so routers keep their own keys while the nav is regrouped here.
+# "group" puts a small heading over a run of pages in the sub-nav.
 SECTIONS = [
+    {
+        "key": "today", "label": "Today", "icon": "today", "href": "/",
+        "pages": [
+            {"label": "Overview", "href": "/", "src": "summary:overview"},
+            {"label": "My Hub", "href": "/me", "src": "myhub:hub"},
+        ],
+    },
+    {
+        "key": "me", "label": "Me", "icon": "me", "href": "/wellness",
+        "pages": [
+            {"group": "Wellness", "label": "Today", "href": "/wellness", "src": "wellness:today"},
+            {"label": "Trends", "href": "/wellness/trends", "src": "wellness:trends"},
+            {"label": "Drivers", "href": "/wellness/drivers", "src": "wellness:drivers"},
+            {"group": "Log", "label": "Journal", "href": "/wellness/journal", "src": "wellness:journal"},
+            {"label": "Day rating", "href": "/rating", "src": "dayrating:today"},
+            {"label": "Insights", "href": "/rating/insights", "src": "dayrating:insights"},
+            {"group": "Habits", "label": "Streaks", "href": "/habits", "src": "habits:habits"},
+            {"label": "Analysis", "href": "/habits/analysis", "src": "habits:analysis"},
+            {"group": "Training", "label": "Fitness", "href": "/fitness", "src": "fitness:overview"},
+        ],
+    },
+    {
+        "key": "family", "label": "Family", "icon": "family", "href": "/chores",
+        "pages": [
+            {"group": "Chores", "label": "Today", "href": "/chores", "src": "chores:overview"},
+            {"label": "Chores & kids", "href": "/chores/manage", "src": "chores:manage"},
+            {"label": "Money", "href": "/chores/ledger", "src": "chores:ledger"},
+            {"label": "Kid chart ↗", "href": "/kids", "src": None},
+            {"group": "People", "label": "Profile", "href": "/family", "src": "family:profile"},
+            {"label": "Kids memories", "href": "/family/memories", "src": "family:memories"},
+        ],
+    },
+    {
+        "key": "house", "label": "Home", "icon": "home", "href": "/meals/plan",
+        "pages": [
+            {"group": "Food", "label": "Menu", "href": "/meals/plan", "src": "meals:plan"},
+            {"label": "Recipes", "href": "/meals", "src": "meals:recipes"},
+            {"label": "Groceries", "href": "/hyvee", "src": "hyvee:overview"},
+            {"group": "House & yard", "label": "Maintenance", "href": "/home", "src": "home:maintenance"},
+            {"label": "Lawn & garden", "href": "/home/lawn", "src": "home:lawn"},
+            {"label": "Weather alerts", "href": "/home/weather", "src": "home:weather"},
+        ],
+    },
+    {
+        "key": "money", "label": "Money", "icon": "money", "href": "/finance",
+        "pages": [
+            {"label": "Tagging", "href": "/finance", "src": "finance:tagging"},
+            {"label": "Reports & planning", "href": "/finance/reports", "src": "finance:reports"},
+        ],
+    },
+    {
+        "key": "system", "label": "System", "icon": "system", "href": "/health", "utility": True,
+        "pages": [
+            {"group": "Health", "label": "Status", "href": "/health", "src": "health:overview"},
+            {"label": "Scheduled tasks", "href": "/health/schedule", "src": "health:schedule"},
+            {"label": "Restarts", "href": "/health/restarts", "src": "health:restarts"},
+            {"label": "Logins & backups", "href": "/health/system", "src": "health:system"},
+            {"label": "Reconnect", "href": "/reconnect", "src": "health:reconnect"},
+            {"group": "Agent", "label": "Live", "href": "/agent", "src": "agent:live"},
+            {"label": "Usage", "href": "/agent/usage", "src": "agent:usage"},
+            {"label": "Activity", "href": "/activity", "src": "activity:feed"},
+            {"group": "Old pages", "label": "Archive", "href": "/archive", "src": "system:archive"},
+        ],
+    },
+]
+
+# The pre-redesign navigation, used only by the archived pages under /archive (see ARCHIVE below).
+LEGACY_SECTIONS = [
     {
         "key": "summary",
         "label": "Summary",
@@ -141,7 +213,20 @@ SECTIONS = [
     },
 ]
 
-templates = Jinja2Templates(directory=str(HERE / "templates"))
+# True while serving an /archive/... request (set by the middleware in app.py). Archived requests run the
+# same route handlers against the same data, but render the frozen pre-redesign templates in
+# templates/archive/ with LEGACY_SECTIONS. Remove with the archive (docs/TODO.md).
+ARCHIVE: ContextVar[bool] = ContextVar("dashboard_archive", default=False)
+
+
+class _Templates(Jinja2Templates):
+    def get_template(self, name):
+        if ARCHIVE.get() and not name.startswith("archive/"):
+            name = "archive/" + name
+        return super().get_template(name)
+
+
+templates = _Templates(directory=str(HERE / "templates"))
 
 
 def _to_datetime(value):
@@ -239,12 +324,26 @@ def asset_version() -> str:
 templates.env.globals["asset_version"] = asset_version
 
 
+def find_page(section: str, page: str):
+    """The (tab, page) of the navigation that holds a router's (section, page) pair."""
+    src = f"{section}:{page}"
+    for s in SECTIONS:
+        for p in s["pages"]:
+            if p.get("src") == src:
+                return s, p
+    return SECTIONS[0], None
+
+
 def render(request: Request, template: str, section: str, page: str,
            title: str, status_code: int = 200, **context):
     """Render a page inside base.html with navigation state."""
-    current = next((s for s in SECTIONS if s["key"] == section), SECTIONS[0])
+    if ARCHIVE.get():
+        current = next((s for s in LEGACY_SECTIONS if s["key"] == section), LEGACY_SECTIONS[0])
+        nav = {"sections": LEGACY_SECTIONS, "section": current, "page": page,
+               "archive_live_href": request.scope.get("archive_live_path", "/")}
+    else:
+        tab, current_page = find_page(section, page)
+        nav = {"sections": SECTIONS, "section": tab, "current_page": current_page, "page": page}
     return templates.TemplateResponse(
-        request, template,
-        {"sections": SECTIONS, "section": current, "page": page, "page_title": title, **context},
-        status_code=status_code,
+        request, template, {**nav, "page_title": title, **context}, status_code=status_code,
     )

@@ -5,6 +5,37 @@ assistant already keeps in `../state/` and never writes to it, with one exceptio
 "ask" box on the Summary page (below). It installs to a phone's home screen (web manifest and
 icons in `static/icons/`, no service worker).
 
+## Navigation and look
+
+Redesigned 2026-10-19 (PR 1 of the UX overhaul: navigation, theme, archive). Five tabs, **Today, Me, Family, Home,
+Money**, plus **System** behind the gear icon. Each tab has a sub-nav with small group headings (for example Me:
+Wellness / Log / Habits / Training). On phones the tabs become a bottom tab bar. The registry is `SECTIONS` in
+`web.py`. Each page entry's `src` names the `(section, page)` pair its router passes to `render()`, so regrouping the
+nav never touches a router. Page URLs did not change.
+
+| Tab | Pages |
+|---|---|
+| Today | Overview (`/`), My Hub (`/me`) |
+| Me | Wellness Today/Trends/Drivers, Journal, Day rating, Insights, Habits Streaks/Analysis, Fitness |
+| Family | Chores Today/Chores & kids/Money, Kid chart (`/kids`), Profile, Kids memories |
+| Home | Menu, Recipes, Groceries (`/hyvee`), Maintenance, Lawn & garden, Weather alerts |
+| Money | Tagging, Reports & planning |
+| System (gear) | Status (`/health`), Scheduled tasks, Restarts, Logins & backups, Reconnect, Agent Live, Usage, Activity, Archive |
+
+There is one dark "HUD" theme, taken from the old My Hub page. All colors are tokens in `:root` in `static/style.css`
+(and `--w-*` chart tokens in `static/wellness.css`), and there is no light mode. Labels, headings and numbers use
+monospace; prose and tables use the system sans font. The kid chart (`/kids`) keeps its own bright look (`static/kids.css`).
+
+### Archive (temporary)
+
+`/archive` lists every page as it was before the redesign, and `/archive/<path>` serves that old version. A
+middleware in `app.py` strips the prefix, sets `web.ARCHIVE`, and runs the **same route handler** against the same
+data. Templates then resolve to the frozen copies in `templates/archive/`, with `LEGACY_SECTIONS` and
+`static/archive/*`. In-app links and redirects get the `/archive` prefix, and archived pages still save
+through the normal write routes. To remove the archive, delete `templates/archive/`, `static/archive/`,
+`routers/archive.py`, the middleware, `ARCHIVE`/`LEGACY_SECTIONS` in `web.py` and the archive tests (tracked in
+`docs/TODO.md`).
+
 ## Summary page and the ask box
 
 `/` is a minimal landing page: the ask box, one status line ("All good" or "N things need
@@ -56,7 +87,7 @@ other family members.
 | Habits | Analysis | `/habits/analysis` | Combined habits-done-per-day calendar (3 months) and a per-habit table (days done, last 30 days, best weekday, weekly strip); the place to grow cross-habit analysis. Same `scripts/habits.py` service (`analysis`) |
 | Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, a 📅 Calendar flip on each card (2 months of days done), add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
 | Chores | Today, Chores & kids, Money | `/chores`, `/chores/manage`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, balances and payouts, and fixing a missed or mistaken completion. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |
-| (kids) | Chore Chart | `/kids` | Kid-facing page (no adult nav, not in the section bar): big tap-to-complete chores for each kid with balance, streaks, confetti/chime, week strip and badges |
+| (kids) | Chore Chart | `/kids` | Kid-facing page (no adult nav; linked from Family → Kid chart): big tap-to-complete chores for each kid with balance, streaks, confetti/chime, week strip and badges |
 | (kids) | One kid's chart | `/kids/<name>` | Same page as `/kids` filtered to a single kid (e.g. `/kids/ruth`), for that kid's tablet bookmark. Hides the other kid's chart but is not access control (no login) |
 | Activity | Agent Activity | `/activity` | Latest agent results and last run per agent; sensitive agents' summaries are hidden |
 
@@ -97,12 +128,12 @@ dashboard/
   web.py          templates, filters, and the SECTIONS navigation registry
   data/           read-only data layer (no web-framework imports; unit-tested)
   routers/        one router per section (HTML pages + /api/* JSON)
-  templates/      base.html shell + one folder per section
-  static/         style.css (design tokens, light/dark), htmx.min.js, dashboard.js
+  templates/      base.html shell + one folder per section; archive/ = frozen pre-redesign templates
+  static/         style.css (dark HUD design tokens), htmx.min.js, dashboard.js; archive/ = frozen old CSS/JS
 ```
 
 To add a section: create a router in `routers/`, include it in `app.py`, add templates, and add
-an entry to `SECTIONS` in `web.py` (that entry drives the navigation).
+a page entry (with `src` = the router's `"section:page"`) under the right tab in `SECTIONS` in `web.py`.
 
 ## Notes
 
@@ -112,7 +143,7 @@ an entry to `SECTIONS` in `web.py` (that entry drives the navigation).
   (`POST /chores...`, `POST /kids/...`), all same-origin guarded and going through `scripts/habits.py` /
   `scripts/chores.py`: the app opens `state/agent_results.db` in SQLite read-only mode
   and only reads files under `state/`; the ask box is the sole write (one row in `state/inbox.db`).
-- Mobile: below 760px the section pills collapse into a "Menu" dropdown, sub-nav scrolls
+- Mobile: below 760px the tabs move to a bottom tab bar, the sub-nav scrolls
   sideways, and `.tbl` tables stack into labelled cards (a small script in `base.html` copies
   each column header onto its cells).
 - Restart causes are inferred. Only the launch type (`wrapper-start` / `loop-restart`) is

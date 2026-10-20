@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0f" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Scherbring">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="icon" type="image/svg+xml" href="/static/icons/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <title>{{ page_title }} · {{ APP_NAME }}</title>
+  <link rel="stylesheet" href="/static/archive/style.css?v={{ asset_version() }}">
+  <script src="/static/htmx.min.js?v={{ asset_version() }}" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="/"><img src="/static/icons/favicon.svg" alt="" width="28" height="28"><span>{{ APP_NAME }}</span></a>
+      <details class="mobile-menu">
+        <summary aria-label="Menu">{{ section.label }} <span class="chev" aria-hidden="true">▾</span></summary>
+        <nav aria-label="Sections (mobile)">
+          {% for s in sections %}
+            <a href="{{ s.href }}" class="{{ 'active' if s.key == section.key }}">{{ s.label }}</a>
+          {% endfor %}
+        </nav>
+      </details>
+      <nav class="section-nav" aria-label="Sections">
+        {% for s in sections %}
+          <a href="{{ s.href }}" class="{{ 'active' if s.key == section.key }}"
+             {% if s.key == section.key %}aria-current="page"{% endif %}>{{ s.label }}</a>
+        {% endfor %}
+      </nav>
+    </div>
+  </header>
+
+  <div class="container" role="note" style="margin-top:-8px;margin-bottom:12px">
+    <div style="padding:10px 14px;border-radius:12px;background:#fff4d6;color:#6b4e00;font-size:13px">
+      Archived version of the old dashboard. It shows live data and still saves changes.
+      <a href="{{ archive_live_href or '/' }}">Open the new page</a> · <a href="/archive">All archived pages</a>
+    </div>
+  </div>
+
+  {% if section.pages|length > 1 %}
+  <nav class="sub-nav container" aria-label="{{ section.label }} pages">
+    {% for p in section.pages %}
+      <a href="{{ p.href }}" class="{{ 'active' if p.key == page }}"
+         {% if p.key == page %}aria-current="page"{% endif %}>{{ p.label }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <main class="container">
+    <div class="page-header">
+      {% block page_header %}<h1>{{ page_title }}</h1>{% endblock %}
+    </div>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Label table cells with their column header so tables can stack on small screens.
+    function labelTables(root) {
+      (root || document).querySelectorAll("table.tbl").forEach(function (t) {
+        var heads = Array.prototype.map.call(t.querySelectorAll("thead th"), function (th) { return th.textContent.trim(); });
+        t.querySelectorAll("tbody tr").forEach(function (tr) {
+          Array.prototype.forEach.call(tr.children, function (td, i) { if (!td.hasAttribute("data-label")) td.setAttribute("data-label", heads[i] || ""); });
+        });
+      });
+    }
+    labelTables();
+    document.addEventListener("htmx:afterSwap", function (e) { labelTables(e.target); });
+    // Back/forward can restore a frozen copy of a page (browser back-forward cache), which shows
+    // data from before an edit. Reload those so every page is current.
+    window.addEventListener("pageshow", function (e) { if (e.persisted) location.reload(); });
+    // Habit cards: flip between the streak face and the calendar face (delegated, so it survives htmx swaps).
+    document.addEventListener("click", function (e) {
+      var day = e.target.closest("[data-pick]");
+      if (day && day.closest(".habit-card")) {
+        // Calendar day tapped: pre-fill the date on the front face and flip back; the user then presses Done.
+        var c = day.closest(".habit-card"), inp = c.querySelector(".habit-date");
+        if (inp) inp.value = day.dataset.pick;
+        c.querySelector(".habit-front").hidden = false;
+        c.querySelector(".habit-back").hidden = true;
+        return;
+      }
+      var btn = e.target.closest("[data-flip]");
+      var card = btn && btn.closest(".habit-card");
+      if (!card) return;
+      var f = card.querySelector(".habit-front"), b = card.querySelector(".habit-back");
+      f.hidden = !f.hidden;
+      b.hidden = !b.hidden;
+    });
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

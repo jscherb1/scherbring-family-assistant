@@ -148,6 +148,17 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
       `system_health` rows' `checked_at` after a few hours. Tune the 2 h interval as needed.
 
+## Dashboard UX overhaul (started 2026-10-19, plan in 3 PRs)
+
+- [x] PR 1: 6-tab navigation (System behind the gear, bottom tab bar on phones), one dark HUD theme, and `/archive`
+      serving every pre-redesign page through the same routes (`dashboard/README.md`, "Navigation and look").
+- [ ] Check it on the phone: bottom tab bar, safe areas on the home-screen app, and the sub-nav scrolling sideways.
+- [ ] PR 2: merged **Today** page (Summary + My Hub), **Check-in** page (day rating + journal in one place), and a
+      **System Status** overview; old Summary / My Hub / Day Rating Today pages then live only in the archive.
+- [ ] PR 3: page cleanup (Groceries/Hy-Vee tables collapsed and filterable, Agent Live and Activity paged, shared page
+      header and empty states, habit card layout), plus a **Week** page and **jump-to search**.
+- [ ] Delete the archive about 30 days after PR 2 merges (steps in `dashboard/README.md`, "Archive").
+
 ## Wellness dashboard (built 2026-10-19, branch `feat/wellness-dashboard`)
 
 - [x] Nightly check-in + yes/no journal built 2026-10-19 (`scripts/journal.py`, `journal` agent, check-in card on

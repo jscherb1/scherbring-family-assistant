@@ -1,0 +1,52 @@
+{% extends "archive/base.html" %}
+
+{% block page_header %}
+  <h1>Chores</h1>
+  <p class="subtitle">Who has done what today, and what the kids are owed.
+    <a href="/kids" target="_blank" rel="noopener">Open the kids' screen ↗</a>
+    {% if data.kids %}<br>Single-kid pages for tablets:
+    {% for k in data.kids %}<a href="/kids/{{ k.kid.name|lower }}" target="_blank" rel="noopener">{{ k.kid.name }} ↗</a>{% if not loop.last %} · {% endif %}{% endfor %}{% endif %}</p>
+{% endblock %}
+
+{% block content %}
+<div class="chores-ui">
+{% include "archive/chores/_notice.html" %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.kids %}
+  <div class="card"><div class="empty-state">No kids yet. <a href="/chores/manage">Add the kids and their chores</a> to get started.</div></div>
+{% else %}
+  <div class="grid stats">
+    <section class="card"><h2>Done today</h2><div class="metric">{{ data.done_count }}<span class="muted-text"> / {{ data.total_count }}</span></div>
+      <div class="metric-sub">chores across all kids</div></section>
+    <section class="card"><h2>Owed to the kids</h2><div class="metric ok-count">{{ data.owed_total }}</div>
+      <div class="metric-sub"><a href="/chores/ledger">Record a payout</a></div></section>
+  </div>
+
+  <div class="kid-grid">
+  {% for v in data.kids %}
+    {% set s = data.summary[v.kid.id] %}
+    <article class="card">
+      <div class="kid-card-head">
+        <div><h3>{{ v.kid.avatar }} {{ v.kid.name }}</h3>
+          <div class="sub">{{ v.done_count }} of {{ v.total_count }} done today · {{ v.balance }} owed</div></div>
+        <div class="habit-streak" title="Best current streak"><span class="habit-streak-num">{{ v.best_streak }}</span>
+          <span class="habit-streak-label">streak</span></div>
+      </div>
+      <div class="bar" aria-hidden="true"><span style="width: {{ v.progress_pct }}%"></span></div>
+      {% for i in v.todo %}
+      <div class="chore-row {{ 'is-done' if i.done }}">
+        <div class="what">{{ i.icon }} {{ i.name }}</div>
+        <div class="meta">{{ i.value }}{% if i.current_streak %} · 🔥 {{ i.current_streak }}{% endif %}</div>
+        <span class="pill {{ 'pill-ok' if i.done else 'pill-muted' }}">{{ 'done' if i.done else 'to do' }}</span>
+      </div>
+      {% else %}<div class="chore-row"><div class="what muted-text">Nothing due today.</div></div>{% endfor %}
+      <div class="card-foot">
+        <span class="pill pill-muted">{{ s.earned_this_week }} earned this week</span>
+      </div>
+    </article>
+  {% endfor %}
+  </div>
+{% endif %}
+</div>
+{% endblock %}

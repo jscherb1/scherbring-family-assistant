@@ -1,0 +1,44 @@
+{% macro light(ok, up_text, down_text) %}<span class="pill {{ 'pill-ok' if ok else 'pill-warn' }}">{{ up_text if ok else down_text }}</span>{% endmacro %}
+{% if status.error %}
+  <div class="card"><div class="error-state">{{ status.error }}</div></div>
+{% else %}
+  <div class="grid">
+    <section class="card"><h2>Bridge</h2><div class="card-body">
+      {{ light(status.bridge_up, 'Up', 'DOWN') }}
+      <p>Heartbeat {{ status.bridge_heartbeat_age_s }}s ago</p>
+      <p>Telegram polling: {{ light(status.polling_ok, 'OK', 'failing') }}</p>
+    </div></section>
+    <section class="card"><h2>Agent worker</h2><div class="card-body">
+      {{ light(status.worker_up, 'Up', 'DOWN') }}{% if status.paused %} <span class="pill pill-muted">paused</span>{% endif %}
+      <p>Heartbeat {{ status.worker_heartbeat_age_s }}s ago</p>
+      <p>MCP servers: {% if status.mcp_down %}<span class="pill pill-warn">not connected: {{ status.mcp_down|join(', ') }}</span>{% else %}<span class="pill pill-ok">all connected</span>{% endif %}</p>
+    </div></section>
+    <section class="card"><h2>Queue</h2><div class="card-body">
+      <p>{{ status.inbox_pending }} waiting, {{ status.inbox_processing }} in progress</p>
+      {% if status.oldest_pending_age_s %}<p>Oldest waiting {{ status.oldest_pending_age_s|round|int }}s</p>{% endif %}
+      <p>Replies pending {{ status.outbox_pending }}{% if status.outbox_failed %}, <span class="pill pill-warn">{{ status.outbox_failed }} undeliverable</span>{% endif %}</p>
+      {% if status.current_turn %}<p>Working on message #{{ status.current_turn.inbox_id }}</p>{% endif %}
+    </div></section>
+    <section class="card"><h2>Health check</h2><div class="card-body">
+      {% if status.last_canary %}
+        {{ light(status.last_canary.ok, 'Passing', 'FAILING') }}
+        <p>{{ status.last_canary.kind }} check{% if status.last_canary.detail %}: {{ status.last_canary.detail }}{% endif %}</p>
+      {% else %}<p>No check yet.</p>{% endif %}
+    </div></section>
+  </div>
+{% endif %}
+
+<h2 style="margin-top:24px">Live activity</h2>
+{% if not stream.content_visible %}<p class="subtitle">Message text, tool inputs and results are hidden here because this page has no login. Use <code>scripts/agent_ctl.py tail</code> for the full stream.</p>{% endif %}
+<section class="card card-table">
+  <table class="tbl">
+    <thead><tr><th>Time</th><th>Msg</th><th>Event</th><th>{{ 'Detail' if stream.content_visible else '' }}</th></tr></thead>
+    <tbody>
+    {% for e in stream.events %}
+      <tr><td>{{ e.t[11:] }}</td><td>#{{ e.inbox_id }}</td>
+          <td>{{ e.type }}{% if e.name %} · {{ e.name }}{% endif %}{% if e.duration_s %} · {{ e.duration_s }}s{% endif %}{% if e.is_error %} · <span class="pill pill-warn">error</span>{% endif %}</td>
+          <td>{{ e.detail }}</td></tr>
+    {% else %}<tr><td colspan="4">No activity yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>

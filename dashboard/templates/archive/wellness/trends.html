@@ -1,0 +1,90 @@
+{% extends "archive/base.html" %}
+{% from "archive/wellness/_macros.html" import figure %}
+
+{% block head %}<link rel="stylesheet" href="/static/archive/wellness.css?v={{ asset_version() }}">{% endblock %}
+
+{% block page_header %}
+  <h1>Trends</h1>
+  <p class="subtitle">How sleep, recovery, load and mood move over time, against your own normal. Hover a day for detail (tap on a phone). Dashed stubs mark days whose data hasn't arrived yet.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+{% set s = data.series %}
+<div class="wellness" id="trends">
+  <nav class="wrange" aria-label="Range">
+    {% for r in data.ranges %}<a href="/wellness/trends?range={{ r }}&heat={{ heat.metric if not heat.error else 'rating' }}"
+       class="{{ 'active' if r == data.range }}" {% if r == data.range %}aria-current="true"{% endif %}
+       hx-get="/wellness/trends?range={{ r }}&heat={{ heat.metric if not heat.error else 'rating' }}" hx-target="#trends"
+       hx-select="#trends" hx-swap="outerHTML" hx-push-url="true">{{ r }} days</a>{% endfor %}
+    <span class="wrange-dates">{{ data.start|fmt_date }} – {{ data.end|fmt_date }}</span>
+  </nav>
+
+  <h2 class="wsection">Sleep</h2>
+  <div class="wgrid">
+    {{ figure("Hours asleep", charts.sleep, s.sleep_hours, fmt,
+              [("Score 67+", "s-sleep z-good"), ("34–66", "s-sleep z-mid"), ("Under 34", "s-sleep z-bad"), ("7-day avg", "avg"), ("Target", "target")],
+              note="Each night is filed on the morning you wake up. Bar colour = sleep score.") }}
+    {{ figure("Sleep window", charts.window, none, fmt, [("Bed → wake", "s-window")],
+              note=("Average bedtime " ~ data.sleep.avg_bed ~ " · varies ±" ~ data.sleep.bedtime_sd_min ~ " min (last 14 nights)") if data.sleep.bedtime_sd_min is not none else "Bedtime consistency needs at least 5 nights.") }}
+    {{ figure("Sleep score", charts.score, s.sleep_score, fmt, [("Score", "s-score"), ("67+ good", "zone-ok"), ("7-day avg", "avg")]) }}
+    {{ figure("Sleep stages", charts.stages, none, fmt, [("Deep", "s-deep"), ("REM", "s-rem"), ("Light", "s-light"), ("Awake", "s-awake")],
+              note="Share of each night. Nights before REM tracking started (Aug 18) are left out.") }}
+  </div>
+
+  <h2 class="wsection">Heart &amp; recovery</h2>
+  <div class="wgrid">
+    {% set hb = data.hrv_band|selectattr('source', 'equalto', 'coros')|list %}
+    {{ figure("Overnight HRV", charts.hrv, s.hrv, fmt,
+              [("HRV", "s-hrv"), ("Normal range", "band s-hrv"), ("7-day avg", "avg"), ("Below normal", "b-below")],
+              note=("Normal range from COROS." if hb else "Normal range = your previous 30 days ±1 SD.") ~ " HRV syncs with the weekly COROS pull, so recent days may be pending.") }}
+    {{ figure("Resting heart rate", charts.rhr, s.resting_hr, fmt,
+              [("Resting HR", "s-rhr"), ("Sleeping HR", "s-sleephr"), ("30-day normal", "band s-rhr")],
+              note="Lower than your normal usually means well recovered.") }}
+  </div>
+
+  <h2 class="wsection">Training</h2>
+  <div class="wgrid">
+    {{ figure("Training load", charts.load, s.load, fmt, [("Daily load", "s-load"), ("Acute (ATI)", "s-ati"), ("Fitness (CTI)", "s-cti")],
+              note="Acute = recent strain; fitness = long-term base. ATI and CTI fill in after the next COROS HRV & load pull." if not s.cti.summary.days else "Acute = recent strain; fitness = long-term base.") }}
+    {{ figure("Load ratio", charts.ratio, s.load_ratio, fmt, [("Under 0.8 detraining", "zone-low"), ("0.8–1.5 optimal", "zone-ok"), ("Over 1.5 overreaching", "zone-high")],
+              note="Acute vs chronic load. Staying in the green band builds fitness without overdoing it.") }}
+    {{ figure("Steps per day, by week", charts.steps, s.steps, fmt, [("Avg steps/day", "s-steps")], note="Today is left out until the day ends.") }}
+    {{ figure("Exercise per week", charts.exercise, s.exercise, fmt, [("Exercise minutes", "s-exercise")]) }}
+  </div>
+
+  <h2 class="wsection">Mood</h2>
+  <div class="wgrid">
+    {{ figure("Day rating", charts.mood, s.rating, fmt, [("Rating", "s-rating"), ("8+", "s-rating r-hi"), ("4 or less", "s-rating r-lo"), ("7-day avg", "avg")],
+              note="Rated each evening. Today shows as pending until then, never as a gap.") }}
+    {{ figure("Rating by weekday", charts.weekday, none, fmt, [("Average rating", "s-rating")]) }}
+  </div>
+
+  <h2 class="wsection">Calendar</h2>
+  <figure class="card wfig card-wide">
+    <figcaption><h2>Last 6 months</h2>
+      {% if not heat.error %}
+      <form class="wpick" method="get" action="/wellness/trends">
+        <input type="hidden" name="range" value="{{ data.range }}">
+        <label>Colour by <select name="heat" onchange="this.form.submit()">
+          {% for c in heat.choices %}<option value="{{ c.key }}" {{ 'selected' if c.key == heat.metric }}>{{ c.label }}</option>{% endfor %}
+        </select></label>
+        <noscript><button type="submit">Show</button></noscript>
+      </form>
+      {% endif %}
+    </figcaption>
+    {% if heat.error %}<div class="error-state">{{ heat.error }}</div>{% else %}
+    <div class="wplot wheat-wrap">{{ heatmap }}</div>
+    <div class="wreadout" aria-live="polite"></div>
+    <ul class="wlegend wheat-legend"><li>{{ 'Better' if heat.better == 'down' else 'Lower' }}</li>
+      {% for l in range(1, 6) %}<li><i class="sw hm l{{ l }}"></i></li>{% endfor %}<li>{{ 'Worse' if heat.better == 'down' else 'Higher' }}</li></ul>
+    <p class="wnote">Shading is relative to your own range over these months{{ ' (lower is better, so it is reversed)' if heat.better == 'down' }}.</p>
+    {% endif %}
+  </figure>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/archive/wellness.js?v={{ asset_version() }}" defer></script>{% endblock %}

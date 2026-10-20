@@ -1,0 +1,70 @@
+{% if v.error %}
+<section class="kid-col"><p class="kid-error">{{ v.error }}</p></section>
+{% else %}
+{% set kid = v.kid %}
+<section class="kid-col" id="kid-{{ kid.id }}" style="--kid: {{ kid.color or '#4dabf7' }}" data-kid="{{ kid.name }}">
+  <header class="kid-head">
+    <div class="kid-avatar" aria-hidden="true">{{ kid.avatar or '⭐' }}</div>
+    <div class="kid-who">
+      <h2>{{ kid.name }}</h2>
+      <div class="chips">
+        <span class="chip chip-money" title="Your money">💰 {{ v.balance }}</span>
+        {% if v.best_streak >= 2 %}<span class="chip chip-streak" title="Your best streak">🔥 {{ v.best_streak }}</span>{% endif %}
+      </div>
+    </div>
+  </header>
+
+  <div class="progress" role="progressbar" aria-valuenow="{{ v.progress_pct }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="progress-fill" style="width: {{ v.progress_pct }}%"></div>
+    <span class="progress-text">{{ v.done_count }} of {{ v.total_count }} done</span>
+  </div>
+
+  {% if error %}<p class="kid-error" role="alert">{{ error }}</p>{% endif %}
+
+  {% if v.all_done %}
+  <div class="all-done" data-all-done>🎉 All done! You're a superstar! 🎉</div>
+  {% endif %}
+
+  <ul class="chores">
+    {% for i in v.todo %}
+    <li class="chore {{ 'is-done' if i.done }}">
+      {% if i.can_complete %}
+      <button class="chore-main" type="button" hx-post="/kids/{{ kid.id }}/chores/{{ i.chore_id }}/done"
+              hx-target="#kid-{{ kid.id }}" hx-swap="outerHTML">
+      {% else %}
+      <div class="chore-main" aria-label="{{ i.name }} done">
+      {% endif %}
+        <span class="chore-icon">{{ i.icon }}</span>
+        <span class="chore-name">{{ i.name }}{% if i.target_count > 1 and i.frequency == 'daily' %} <small>{{ i.done_this_period }}/{{ i.target_count }}</small>{% endif %}</span>
+        <span class="chore-side">
+          {% if i.can_complete %}{% if i.value_cents %}<span class="chore-pay">+{{ i.value }}</span>{% endif %}
+          {% else %}<span class="chore-check" aria-hidden="true">✅</span>{% endif %}
+          {% if i.current_streak and i.current_streak >= 2 %}<span class="chore-streak" title="In a row">🔥 {{ i.current_streak }}</span>{% endif %}
+        </span>
+      {% if i.can_complete %}</button>{% else %}</div>{% endif %}
+      {% if i.can_undo %}
+      <button class="undo" type="button" hx-post="/kids/{{ kid.id }}/chores/{{ i.chore_id }}/undo"
+              hx-target="#kid-{{ kid.id }}" hx-swap="outerHTML" aria-label="Undo {{ i.name }}" title="Oops, undo">↩</button>
+      {% else %}<span class="undo undo-empty" aria-hidden="true"></span>{% endif %}
+    </li>
+    {% else %}
+    <li class="chore-none">Nothing to do today. Go play! 🛝</li>
+    {% endfor %}
+  </ul>
+
+  <div class="week" aria-label="This week">
+    {% for d in v.week %}
+    <div class="day {{ 'today' if d.is_today }} {{ 'future' if d.future }}">
+      <span class="day-name">{{ d.weekday[0] }}</span>
+      <span class="day-mark">{% if d.perfect %}👑{% elif d.any_done %}⭐{% else %}·{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="badges" aria-label="Badges">
+    {% for b in v.badges %}
+    <span class="badge {{ '' if b.earned else 'locked' }}" title="{{ b.label }}: {{ b.description }}">{{ b.icon }}</span>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

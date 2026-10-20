@@ -1115,3 +1115,64 @@ def test_legacy_dismissal_file_is_imported_once(client, state):
     dismissals.load()
     assert "legacy:k" in service.dismissed_rows(db_path=state / "agent_results.db")
     assert not (state / "dashboard_dismissed.json").exists()
+
+
+# ---- navigation and the /archive of pre-redesign pages ----
+
+def test_every_nav_page_renders(client):
+    from dashboard.web import SECTIONS
+    for s in SECTIONS:
+        for p in s["pages"]:
+            assert client.get(p["href"]).status_code == 200, p["href"]
+
+
+def test_nav_marks_the_current_tab_and_page(client):
+    import re
+    page = client.get("/habits/analysis").text
+    current = re.findall(r'<a href="([^"]+)" class="active"\s+aria-current="page"', page)
+    assert current == ["/wellness", "/habits/analysis"]  # the Me tab, then the page in its sub-nav
+    assert '<span class="sub-group">Habits</span>' in page
+
+
+def test_every_router_page_is_in_the_nav():
+    """Each (section, page) a router renders maps to a nav entry, so no page loses its tab highlight."""
+    import re
+    from dashboard.web import SECTIONS
+    srcs = {p["src"] for s in SECTIONS for p in s["pages"] if p.get("src")}
+    routers = Path(__file__).resolve().parents[1] / "dashboard" / "routers"
+    used = set()
+    for f in routers.glob("*.py"):
+        used |= {f"{a}:{b}" for a, b in re.findall(r'render\([^)]*?"[^"]+\.html", "([a-z_]+)", "([a-z_]+)"', f.read_text())}
+    used |= {f"chores:{p}" for p in ("overview", "manage", "ledger")}  # chores passes its page key as a variable
+    assert used and used <= srcs, used - srcs
+
+
+def test_archive_serves_every_legacy_page_with_links_kept_inside(client):
+    import re
+    from dashboard.web import LEGACY_SECTIONS
+    hrefs = {p["href"] for s in LEGACY_SECTIONS for p in s["pages"]} | {"/kids"}
+    for href in hrefs:
+        r = client.get("/archive" + href)
+        assert r.status_code == 200, href
+        if href == "/kids":
+            continue
+        assert "Archived version of the old dashboard" in r.text, href
+        for link in re.findall(r'\s(?:href|action|hx-get|hx-post)="(/[^"]*)"', r.text):
+            assert link.startswith(("/archive", "/static/", "/api/", "/manifest")), (href, link)
+    assert client.get("/archive").status_code == 200
+
+
+def test_archive_uses_frozen_templates_and_old_nav(client):
+    old = client.get("/archive/habits").text
+    assert "/static/archive/style.css" in old and "Orchestrator Health" in old
+    new = client.get("/habits").text
+    assert "/static/style.css" in new and "Orchestrator Health" not in new and "Archived version" not in new
+
+
+def test_archive_writes_go_through_the_same_routes_and_stay_in_archive(client):
+    r = client.post("/archive/attention/restore", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/archive/"
+    r = client.post("/archive/habits", data={"name": "Archived stretch", "frequency": "daily", "target": "1", "owner": "Justin"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/archive/habits")
+    assert "Archived stretch" in client.get("/habits").text

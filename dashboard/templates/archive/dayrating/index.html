@@ -1,0 +1,54 @@
+{% extends "archive/base.html" %}
+
+{% block page_header %}
+  <h1>Day rating</h1>
+  <p class="subtitle">Rate the day 1-10 with a quick note. The insights page looks for what moves the score.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
+  {% set s = data.status %}
+  <div class="grid stats">
+    <section class="card"><h2>Today</h2><div class="metric">{{ s.today.score if s.today else '–' }}</div>
+      <div class="metric-sub">{{ 'rated' if s.today else 'not rated yet' }}</div></section>
+    <section class="card"><h2>7-day average</h2><div class="metric">{{ s.avg_7 if s.avg_7 is not none else '–' }}</div></section>
+    <section class="card"><h2>30-day average</h2><div class="metric">{{ s.avg_30 if s.avg_30 is not none else '–' }}</div></section>
+    <section class="card"><h2>Rating streak</h2><div class="metric">{{ s.logging_streak }}</div><div class="metric-sub">days in a row</div></section>
+  </div>
+
+  <section class="card habit-new">
+    <h2>Rate a day</h2>
+    <form method="post" action="/rating" class="habit-form">
+      <label class="field"><span>Score (1-10)</span>
+        <select name="score" required>
+          {% for n in range(10, 0, -1) %}<option value="{{ n }}" {{ 'selected' if s.today and s.today.score == n }}>{{ n }}</option>{% endfor %}
+        </select></label>
+      <label class="field"><span>Day</span><input name="rating_date" type="date" placeholder="today"></label>
+      <label class="field habit-form-wide"><span>Note (optional)</span>
+        <input name="note" maxlength="500" value="{{ s.today.note if s.today and s.today.note else '' }}"></label>
+      <button class="button" type="submit">Save rating</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Recent days</h2>
+    {% if data.ratings %}
+    <table class="habit-table">
+      <thead><tr><th>Day</th><th>Score</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for r in data.ratings %}
+        <tr>
+          <td data-label="Day">{{ r.date }}</td>
+          <td data-label="Score"><span class="pill {{ 'pill-ok' if r.score >= 7 else 'pill-muted' }}">{{ r.score }}</span></td>
+          <td data-label="Note">{{ r.note or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty-state">No ratings yet. Add your first one above.</div>{% endif %}
+  </section>
+{% endif %}
+{% endblock %}

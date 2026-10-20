@@ -1,0 +1,49 @@
+{% extends "archive/base.html" %}
+
+{% block page_header %}
+  <a class="back-link" href="{{ cancel }}">← Back</a>
+  <h1>{{ heading }}</h1>
+{% endblock %}
+
+{% block content %}
+  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
+  <form class="card recipe-form" method="post" action="{{ action }}">
+    <label class="field recipe-form-wide"><span>Title</span>
+      <input name="title" required maxlength="120" value="{{ v.title or '' }}"></label>
+    <label class="field recipe-form-wide"><span>Description (optional)</span>
+      <input name="description" maxlength="300" value="{{ v.description or '' }}"></label>
+
+    <label class="field"><span>Meal type</span>
+      <input name="meal_type" list="meal-types" value="{{ v.meal_type or '' }}" placeholder="dinner"></label>
+    <label class="field"><span>Protein</span>
+      <input name="protein_type" list="proteins" value="{{ v.protein_type or '' }}" placeholder="chicken"></label>
+    <label class="field recipe-form-wide"><span>Tags (comma-separated)</span>
+      <input name="tags" value="{{ v.tags or '' }}" placeholder="Crockpot, Kid Friendly"></label>
+
+    <label class="field"><span>Prep (min)</span>
+      <input name="prep_time_min" type="number" min="0" value="{{ v.prep_time_min if v.prep_time_min is not none else '' }}"></label>
+    <label class="field"><span>Cook (min)</span>
+      <input name="cook_time_min" type="number" min="0" value="{{ v.cook_time_min if v.cook_time_min is not none else '' }}"></label>
+    <label class="field"><span>Total (min, blank = prep + cook)</span>
+      <input name="total_time_min" type="number" min="0" value="{{ v.total_time_min if v.total_time_min is not none else '' }}"></label>
+    <label class="field"><span>Servings</span>
+      <input name="servings" type="number" min="0" value="{{ v.servings if v.servings is not none else '' }}"></label>
+
+    <label class="field recipe-form-wide"><span>Ingredients (one per line; add “(pantry)” to keep one off the shopping list)</span>
+      <textarea name="ingredients" rows="8">{{ v.ingredients or '' }}</textarea></label>
+    <label class="field recipe-form-wide"><span>Steps (one per line)</span>
+      <textarea name="steps" rows="8">{{ v.steps or '' }}</textarea></label>
+    <label class="field recipe-form-wide"><span>Source link (optional)</span>
+      <input name="source_url" type="url" value="{{ v.source_url or '' }}"></label>
+    <label class="field recipe-form-wide"><span>Notes (optional)</span>
+      <textarea name="notes" rows="3">{{ v.notes or '' }}</textarea></label>
+
+    <datalist id="meal-types">{% for m in facets.meal_types or [] %}<option value="{{ m }}">{% endfor %}</datalist>
+    <datalist id="proteins">{% for p in facets.proteins or [] %}<option value="{{ p }}">{% endfor %}</datalist>
+
+    <div class="recipe-form-actions recipe-form-wide">
+      <button class="button" type="submit">Save recipe</button>
+      <a class="button button-quiet" href="{{ cancel }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}
