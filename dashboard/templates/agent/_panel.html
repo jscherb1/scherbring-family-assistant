@@ -31,7 +31,7 @@
 <h2 style="margin-top:24px">Live activity</h2>
 {% if not stream.content_visible %}<p class="subtitle">Message text, tool inputs and results are hidden here because this page has no login. Use <code>scripts/agent_ctl.py tail</code> for the full stream.</p>{% endif %}
 <section class="card card-table">
-  <table class="tbl">
+  <table class="tbl" data-limit="12" data-key="agent-stream">
     <thead><tr><th>Time</th><th>Msg</th><th>Event</th><th>{{ 'Detail' if stream.content_visible else '' }}</th></tr></thead>
     <tbody>
     {% for e in stream.events %}

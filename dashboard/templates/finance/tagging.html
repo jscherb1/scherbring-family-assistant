@@ -32,7 +32,7 @@
     <h2>Learned mapping <span class="muted">({{ data.who_map_total }} entries, {{ data.who_map_low }} under {{ (data.low_threshold * 100)|int }}% confidence)</span></h2>
     <section class="card card-table">
       {% if data.who_map %}
-      <table class="tbl">
+      <table class="tbl" data-limit="10" data-filter="Filter merchants">
         <thead><tr><th>WHO tag</th><th>Signal</th><th class="num">Entries</th><th class="num">Low confidence</th></tr></thead>
         <tbody>{% for w in data.who_map %}<tr><td>{{ w.tag }}</td><td>{{ w.signal_type }}</td><td class="num">{{ w.n }}</td><td class="num">{{ w.low or 0 }}</td></tr>{% endfor %}</tbody>
       </table>
@@ -53,7 +53,7 @@
     {% if data.daily %}
     <h2>Activity by day</h2>
     <section class="card card-table">
-      <table class="tbl">
+      <table class="tbl" data-limit="14">
         <thead><tr><th>Day</th><th class="num">Transactions</th></tr></thead>
         <tbody>{% for d in data.daily %}<tr><td>{{ d.day }}</td><td class="num">{{ d.n }}</td></tr>{% endfor %}</tbody>
       </table>

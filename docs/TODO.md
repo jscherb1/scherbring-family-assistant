@@ -158,8 +158,11 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       redirect; the old pages are at `/archive/`, `/archive/me`, `/archive/rating`, `/archive/health`.
 - [ ] Use Today for a few days and decide whether anything from the old My Hub is missed (vitals detail, sleep stages,
       insight story and the Systems list now live on Wellness, Insights and System status).
-- [ ] PR 3: page cleanup (Groceries/Hy-Vee tables collapsed and filterable, Agent Live and Activity paged, shared page
-      header and empty states, habit card layout), plus a **Week** page and **jump-to search**.
+- [x] PR 3: long tables paged and filterable (Groceries, Activity, Agent Live, People, Lawn, Finance, Menu,
+      Maintenance), habit cards tidied (Done + date on one row, Undo / Pause / Calendar below), denser recipe list on
+      phones, a **Week** page (`/week`) and **jump-to search** (`/` key or the magnifier).
+- [ ] Not done from the plan: one shared page-header macro (title, freshness, primary action) across every page.
+      Headers are already consistent in style; revisit only if pages start to drift.
 - [ ] Delete the archive about 30 days after PR 2 merges (steps in `dashboard/README.md`, "Archive").
 
 ## Wellness dashboard (built 2026-10-19, branch `feat/wellness-dashboard`)

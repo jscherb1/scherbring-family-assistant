@@ -15,7 +15,7 @@ nav never touches a router. Page URLs did not change.
 
 | Tab | Pages |
 |---|---|
-| Today | Today (`/`) |
+| Today | Today (`/`), Week (`/week`) |
 | Me | Wellness Today/Trends/Drivers, Check-in, Journal, Insights, Habits Streaks/Analysis, Fitness |
 | Family | Chores Today/Chores & kids/Money, Kid chart (`/kids`), Profile, Kids memories |
 | Home | Menu, Recipes, Groceries (`/hyvee`), Maintenance, Lawn & garden, Weather alerts |
@@ -25,6 +25,16 @@ nav never touches a router. Page URLs did not change.
 There is one dark "HUD" theme, taken from the old My Hub page. All colors are tokens in `:root` in `static/style.css`
 (and `--w-*` chart tokens in `static/wellness.css`), and there is no light mode. Labels, headings and numbers use
 monospace; prose and tables use the system sans font. The kid chart (`/kids`) keeps its own bright look (`static/kids.css`).
+
+### Jump-to search and long tables
+
+`static/ui.js` loads on every page:
+- **Jump-to search.** Press `/`, or tap the magnifier in the header, to fuzzy-find any page, a few common actions, recipes, habits
+  and people. `/api/nav-index` (`data/navindex.py`) builds the list from `SECTIONS` and the existing readers. People link to
+  `/family#q=Name`, which pre-fills the directory filter.
+- **Long tables.** `<table data-limit="N">` shows the first N rows and a "Show all" button. `data-filter="placeholder"` adds a
+  filter box. Expanded state survives htmx refreshes (`data-key` names a table that is re-rendered, like the Agent stream). Used on
+  Groceries, Activity, Agent Live, People, Lawn, Finance, Menu and Maintenance.
 
 ### Archive (temporary)
 
@@ -82,6 +92,7 @@ other family members.
 | Wellness | Today | `/wellness` | Whoop-style readiness: recovery / sleep / 7-day load rings, last night's sleep and stages, vitals against your 30-day normal, the day rating (yesterday's until today's is given in the evening), habits and source freshness. Same `scripts/wellness.py` service as the `wellness` agent |
 | | Trends | `/wellness/trends` | 30/90/180-day SVG charts (sleep, HRV with its normal band, resting HR, load and load ratio, steps, exercise, mood) with hover tooltips / tap-to-pin and a 6-month calendar heatmap. Pending days show as dashed stubs, never zeros |
 | | Drivers | `/wellness/drivers` | What moves the day rating, HRV, sleep score or resting HR (`insights.analyze` / `analyze_against`), a two-metric scatter, and the latest written story |
+| Today | Week | `/week`, `/api/week` | The next 7 days, one column per day: calendar events, dinner, tasks, planned workouts, maintenance due and birthdays, with anything overdue on top. `data/week.py` composes the hub snapshot (`scripts/myhub.py`), the meal-planner menu (`data/activity.py`), this week's fitness plan and the profile birthdays |
 | Me | Check-in | `/checkin` | The one place to log a day: rating + note, yes/no per journal question, daily habits, for today, yesterday (`?date=yesterday`) or any date; plus rating averages/streak and recent days. Same `scripts/journal.py` / `scripts/dayrating.py` services as the agents. `/rating` and `/wellness/journal?date=` redirect here |
 | | Journal | `/wellness/journal` | A 28-day yes/no/unanswered grid (tap a day to open it in Check-in) and adding / pausing questions. Same `scripts/journal.py` service as the `journal` agent; the check-in card also sits on Wellness → Today and Drivers shows each question's yes-vs-no impact |
 | Me | Insights | `/rating/insights` | The stats on what moves the day rating (`scripts/insights.py`), the AI-written weekly story and the data-source list |

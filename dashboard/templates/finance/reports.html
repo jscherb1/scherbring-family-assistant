@@ -24,7 +24,7 @@
     <h2>Report history</h2>
     <section class="card card-table">
       {% if data.reports %}
-      <table class="tbl">
+      <table class="tbl" data-limit="8">
         <thead><tr><th>Generated</th><th>Period</th><th>Covers</th><th>Report</th></tr></thead>
         <tbody>{% for r in data.reports %}<tr><td>{{ r.created_at|fmt_dt }}</td><td>{{ r.period }}</td><td>{{ r.range_start }} → {{ r.range_end }}</td>
           <td>{% if r.drive_url and r.drive_url.startswith('https://') %}<a href="{{ r.drive_url }}" rel="noopener noreferrer" target="_blank">Open in Drive</a>{% else %}<span class="muted">—</span>{% endif %}</td></tr>{% endfor %}</tbody>

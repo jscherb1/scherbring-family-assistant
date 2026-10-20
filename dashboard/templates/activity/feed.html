@@ -29,9 +29,9 @@
 
     <h2>{{ data.selected or 'Recent activity' }}</h2>
     <section class="card card-table">
-      <table class="tbl">
+      <table class="tbl" data-limit="20" data-filter="Filter activity">
         <thead><tr><th>When</th><th>Agent</th><th>Summary</th></tr></thead>
-        <tbody>{% for f in data.feed %}<tr><td>{{ f.created_at|fmt_dt }}</td><td>{{ f.agent }}</td><td>{{ f.summary }}</td></tr>{% endfor %}</tbody>
+        <tbody>{% for f in data.feed %}<tr><td>{{ f.created_at|fmt_dt }}</td><td>{{ f.agent }}</td><td><div class="clamp" title="{{ f.summary }}">{{ f.summary }}</div></td></tr>{% endfor %}</tbody>
       </table>
     </section>
   </div>

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Week</h1>
+  <p class="subtitle">The next 7 days: calendar, dinners, tasks, workouts, house jobs and birthdays.
+    Calendar and tasks as of {{ (data.synced.event or 'never')|fmt_dt }}.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.overdue.tasks or data.overdue.maintenance %}
+  <div class="status-banner warn"><span class="dot"></span>
+    Overdue: {{ (data.overdue.tasks + data.overdue.maintenance)|join(' · ') }}
+  </div>
+{% endif %}
+<div class="week-grid">
+  {% for d in data.days %}
+    {% set empty = not (d.events or d.dinner or d.tasks or d.workouts or d.chores or d.birthdays) %}
+    <section class="card week-day {{ 'is-today' if loop.first }} {{ 'is-empty' if empty }}">
+      <header><b>{{ d.label }}</b><span>{{ d.sub }}</span></header>
+      {% for b in d.birthdays %}<p class="wk birthday">🎂 {{ b.name }}{% if b.turning %} turns {{ b.turning }}{% endif %}</p>{% endfor %}
+      {% if d.events %}
+        <ul class="wk-list">{% for e in d.events %}<li><time>{{ e.time or 'all day' }}</time><span>{{ e.title }}</span></li>{% endfor %}</ul>
+      {% endif %}
+      {% if d.dinner %}<p class="wk meal"><span class="wk-tag">Dinner</span>{{ d.dinner }}</p>{% endif %}
+      {% for w in d.workouts %}<p class="wk workout"><span class="wk-tag">Workout</span>{{ w.title }}</p>{% endfor %}
+      {% for t in d.tasks %}<p class="wk task"><span class="wk-tag">Task</span>{{ t.title }}</p>{% endfor %}
+      {% for c in d.chores %}<p class="wk house"><span class="wk-tag">House</span><a href="{{ c.href }}">{{ c.title }}</a></p>{% endfor %}
+      {% if empty %}<p class="muted">Nothing planned.</p>{% endif %}
+    </section>
+  {% endfor %}
+</div>
+<p class="footnote">Plan dinners on <a href="/meals/plan">Menu</a> · workouts on <a href="/fitness">Fitness</a> · house jobs on <a href="/home">Maintenance</a>.</p>
+{% endblock %}
