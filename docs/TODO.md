@@ -237,3 +237,5 @@ See the Backlog section of `README.md`.
       `myhub-refresh` runs (7am onward) land; tune the intervals if the footer shows amber sources.
 
 - [ ] Scheduled runs share the development checkout (decided 2026-10-19: no separate worktree). A failed run now carries a `[possible cause: checkout is on branch ...]` note, but keep dev work off the main checkout (use `git worktree add`) where possible. Verify `dayrating-weekly-insights` on its next Sunday 19:30 run (should be `ok`, no denials).
+
+- [ ] Live-test the **Monarch Login** and **Google Drive Login** desktop shortcuts through a real expiry (only the "already working" path was exercised). The `.bat` copies are already on the Windows desktop.

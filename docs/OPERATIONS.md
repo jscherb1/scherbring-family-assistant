@@ -140,7 +140,9 @@ delayed, note when you sent and when it answered, then check `state/orchestrator
 ## Logins that expire
 
 Two systems need a manual login now and then. `assistant-credential-check.timer` probes each
-daily and sends a Telegram message two days before the expected expiry, with the exact command.
+daily with a **real request** (Drive: a read-only file list; Monarch: an account listing). Only a probe that
+comes back `dead` sends a Telegram message ("EXPIRED", naming the desktop shortcut); `ok` and `unknown` (network
+trouble) stay silent. The age timer is only a secondary note and `--status` column; there is no advance warning.
 COROS is not on the list: it logs in again by itself.
 
 **Hy-Vee is separate and has exactly one path.** The only way to sign in is the **Hy-Vee Login** desktop shortcut
@@ -152,6 +154,11 @@ It runs `login_test.py --login-only --manual-wait 300`, saves the session and re
 and how to fix it, and one when it recovers. A passing check re-saves the session file, which keeps rotated cookies alive.
 Every check is logged to `state/hyvee_checks.jsonl` (status, HTTP status, reason, login age) so the real session lifetime
 is visible. `python scripts/hyvee/hyvee_connection.py status|check` shows or runs it by hand. No advance-expiry warning.
+
+**Desktop shortcuts** (copies live on the Windows desktop, sources in `scripts/`): `Monarch Login.bat` and
+`Google Drive Login.bat` run `scripts/connection_refresh.py`, which does a real check first ("already working" if it
+passes), logs in only if it is down, then re-checks and shows the result. Monarch still needs the cookie header pasted;
+Drive still needs the approval click.
 
 | System | Lasts about | Re-login |
 |---|---|---|
