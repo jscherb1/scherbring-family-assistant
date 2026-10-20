@@ -628,3 +628,28 @@ CREATE TABLE IF NOT EXISTS hub_notify_meta (
     name  TEXT PRIMARY KEY,              -- e.g. 'digest_date'
     value TEXT NOT NULL
 );
+
+-- Daily yes/no journal (Whoop-style behaviours) and the nightly check-in. Shared service: scripts/journal.py
+-- (used by the journal subagent CLI and the /wellness dashboard section). A day with no answer row is
+-- "unanswered", never "no", so it stays out of the analysis.
+CREATE TABLE IF NOT EXISTS journal_questions (
+    id          TEXT PRIMARY KEY,        -- uuid4
+    slug        TEXT NOT NULL UNIQUE,    -- short key used in replies and metrics, e.g. 'alcohol'
+    text        TEXT NOT NULL,           -- the question as asked, e.g. 'Alcohol?'
+    category    TEXT,                    -- e.g. 'substances' | 'sleep' | 'food' | 'social' | 'health'
+    active      INTEGER NOT NULL DEFAULT 1,  -- 0/1: pause instead of delete
+    sort        INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS journal_answers (
+    id           TEXT PRIMARY KEY,       -- uuid4
+    question_id  TEXT NOT NULL REFERENCES journal_questions (id),
+    answer_date  TEXT NOT NULL,          -- YYYY-MM-DD the answer is about
+    value        INTEGER NOT NULL,       -- 1 = yes, 0 = no
+    source       TEXT,                   -- 'chat' | 'dashboard' | 'import:<habit name>'
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL,
+    UNIQUE (question_id, answer_date)
+);

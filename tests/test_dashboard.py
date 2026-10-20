@@ -254,6 +254,11 @@ def client(state):
     "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
     "/habits", "/habits?owner=Justin", "/api/habits", "/habits/analysis", "/api/habits/analysis",
     "/rating", "/rating/insights", "/api/rating", "/api/rating/insights",
+    "/wellness", "/wellness/trends", "/wellness/trends?range=30&heat=hrv", "/wellness/trends?range=180",
+    "/wellness/drivers", "/wellness/drivers?target=hrv&x=steps&y=hrv", "/api/wellness", "/api/wellness/trends",
+    "/api/wellness/heatmap", "/api/wellness/drivers", "/api/wellness/scatter",
+    "/wellness/journal", "/wellness/journal?date=2026-10-01", "/api/journal/checkin", "/api/journal/history",
+    "/api/journal/questions", "/api/journal/impact",
     "/chores", "/chores/manage", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
 ])
@@ -267,7 +272,7 @@ def test_landing_page(client):
     assert "Ask or tell the assistant" in r.text
     assert 'rel="manifest"' in r.text and "apple-touch-icon" in r.text
     data = client.get("/api/summary").json()
-    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 10
+    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 11
     assert "SECRET-MERCHANT" not in r.text
 
 
@@ -373,7 +378,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     write route elsewhere must be a deliberate change to this allow-list."""
     assert client.post("/meals/r1").status_code == 405
     assert client.delete("/api/recipes/r1").status_code == 405
-    allowed = {"/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore", "/me/refresh",
+    allowed = {"/wellness/checkin", "/journal/questions", "/journal/questions/{slug}/update", "/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore", "/me/refresh",
                "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
@@ -910,6 +915,138 @@ def test_rating_ui_and_service_share_data(client, state):
     assert "<b>day" not in client.get("/rating").text
     r = client.post("/rating", data={"score": "11"}, headers={"Origin": "http://testserver"}, follow_redirects=False)
     assert "between" in r.headers["location"]
+
+
+# ---- Wellness (shared service: scripts/wellness.py; SVG charts: dashboard/charts.py) ----
+
+def _seed_wellness(db):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import wellness as service
+    today = datetime.now().date()
+    conn = service.connect(db)
+    for i in range(1, 40):
+        day = (today - timedelta(days=i)).isoformat()
+        for metric, v in (("coros:sleep_hours", 6.5 + i % 3), ("coros:sleep_score", 60 + i % 30),
+                          ("coros:hrv_ms", 40 + i % 7), ("coros:resting_hr", 50 + i % 4), ("coros:steps", 7000 + i * 10),
+                          ("coros:training_load", 50 + i % 5), ("coros:bedtime_after_noon", 10.5 + (i % 3) / 4),
+                          ("coros:wake_hour", 6.5), ("coros:deep_pct", 20), ("coros:rem_pct", 20),
+                          ("coros:light_pct", 55)):
+            conn.execute("INSERT OR REPLACE INTO insight_daily VALUES (?,?,?,?,?)",
+                         (metric, day, v, "coros_health", datetime.now().isoformat(timespec="seconds")))
+    conn.commit()
+    conn.close()
+    for i in range(1, 15):
+        service.dayrating.set_rating(5 + i % 4, "note <i>x</i>" if i == 1 else None,
+                                     rating_date=(today - timedelta(days=i)).isoformat(), db_path=db)
+    return service
+
+
+def test_wellness_ui_and_service_share_data(client, state):
+    db = state / "agent_results.db"
+    service = _seed_wellness(db)
+    api = client.get("/api/wellness/trends?range=30").json()
+    assert api["series"]["sleep_hours"] == service.trends(30, db_path=db)["series"]["sleep_hours"]
+    today = client.get("/api/wellness").json()
+    assert today["mood"]["shown"]["score"] == service.today_view(db_path=db)["mood"]["shown"]["score"]
+    assert client.get("/api/wellness/scatter?x=sleep_hours&y=rating").json() == service.scatter(db_path=db)
+    page = client.get("/wellness").text
+    assert "Last night" in page and "<i>x</i>" not in page          # notes are escaped
+    trends = client.get("/wellness/trends?range=30").text
+    assert trends.count('class="wchart"') >= 10 and "data-tip='" in trends
+    tile = next(t for t in client.get("/api/summary").json()["tiles"] if t["title"] == "Wellness")
+    assert tile["href"] == "/wellness" and "sleep" in tile["sub"]
+
+
+def test_wellness_bad_input(client):
+    assert client.get("/api/wellness/trends?range=7").status_code == 400
+    assert client.get("/api/wellness/scatter?x=nope").status_code == 400
+    assert client.get("/api/wellness/drivers?target=mood").status_code == 400
+    r = client.get("/wellness/trends?range=7")
+    assert r.status_code == 200 and "range must be one of" in r.text
+
+
+def test_wellness_charts_are_valid_svg_and_theme_driven():
+    import re
+    import xml.etree.ElementTree as ET
+    from dashboard import charts
+    dates = [f"2026-10-{d:02d}" for d in range(1, 11)]
+    vals = {d: float(i) for i, d in enumerate(dates[:-1])}
+    svgs = [
+        charts.timeseries(dates, [
+            {"kind": "zones", "zones": [(0, 3, "zone-ok", "ok")]},
+            {"kind": "band", "low": vals, "high": {d: v + 2 for d, v in vals.items()}, "cls": "b", "label": "Band"},
+            {"kind": "bars", "values": vals, "status": {dates[-1]: "pending"}, "cls": "s", "label": "V"},
+            {"kind": "line", "values": vals, "cls": "l", "label": "L", "dots": True},
+            {"kind": "range", "low": vals, "high": {d: v + 1 for d, v in vals.items()}, "label": "R",
+             "fmt_low": str, "fmt_high": str},
+            {"kind": "stack", "parts": [("A", vals, "a")]}, {"kind": "hline", "y": 4, "label": "T"},
+            {"kind": "info", "values": vals, "label": "I"}], label="x"),
+        charts.ring(50, zone="good", center="50%"), charts.ring(None),
+        charts.spark([{"date": d, "value": vals.get(d)} for d in dates], band={"low": 1, "high": 3}),
+        charts.heatmap([[{"date": d, "value": 1.0, "status": "final", "level": 3, "display": "1"} for d in dates[:7]]]),
+        charts.scatter([{"date": d, "x": v, "y": v * 2} for d, v in vals.items()], fit={"slope": 2, "intercept": 0}),
+        charts.category_bars([{"label": "Mon", "value": 3}, {"label": "Tue", "value": None}]),
+    ]
+    for svg in svgs:
+        root = ET.fromstring(str(svg))
+        assert root.tag == "svg"
+        assert not re.search(r'(fill|stroke)="#', str(svg)), "colours must come from CSS"
+    ts = str(svgs[0])
+    assert ts.count('class="hit"') == 10 and "pending-mark" in ts and "Not synced yet" in ts
+    tip = ET.fromstring(ts).find(".//{*}rect[@class='hit']").get("data-tip")
+    assert json.loads(tip)["rows"][0] == ["Band", "0 – 2", "b"]
+
+
+# ---- Journal + nightly check-in (shared service: scripts/journal.py) ----
+
+def test_checkin_ui_and_service_share_data(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import habits
+    import journal as service
+    db = state / "agent_results.db"
+    hid = habits.create_habit("Stretch", "daily", 1, db_path=db)["id"]
+    today = datetime.now().date().isoformat()
+    r = client.post("/wellness/checkin", data={"date": today, "score": "7", "note": "fine <b>day", "q_alcohol": "yes",
+                                               "q_thc": "no", "habit": hid},
+                    headers={"Origin": "http://testserver", "HX-Request": "true"})
+    assert r.status_code == 200 and "Saved." in r.text and "fine <b>day" not in r.text   # escaped
+    p = service.pending(today, db_path=db)
+    assert p["rating"]["score"] == 7 and p["habits_open"] == []
+    assert {q["slug"]: q["answer"] for q in p["questions"]}["alcohol"] == "yes"
+    assert client.get(f"/api/journal/checkin?date={today}").json() == p
+    # service writes show up in the UI
+    service.set_answer("late_meal", "yes", db_path=db)
+    assert "late_meal" in p["unanswered"]
+    assert "late_meal" not in client.get(f"/api/journal/checkin?date={today}").json()["unanswered"]
+    hist = client.get("/api/journal/history?days=7").json()
+    assert next(q for q in hist["questions"] if q["slug"] == "late_meal")["cells"][-1]["answer"] == "yes"
+    assert 'id="checkin"' in client.get("/wellness").text
+    # plain (no-htmx) post redirects back; errors come back as a message
+    r = client.post("/wellness/checkin", data={"date": today, "score": "12", "next": "/wellness"},
+                    headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith("/wellness?error=")
+    r = client.post("/wellness/checkin", data={"date": today, "next": "https://evil.example"},
+                    headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert r.headers["location"].startswith("/wellness/journal")
+
+
+def test_journal_questions_via_ui_and_origin_guard(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import journal as service
+    db = state / "agent_results.db"
+    ok = {"Origin": "http://testserver"}
+    assert client.post("/journal/questions", data={"text": "Nap"}, headers=ok, follow_redirects=False).status_code == 303
+    assert service.resolve_question("nap", db_path=db)["text"] == "Nap?"
+    client.post("/journal/questions/nap/update", data={"active": "0"}, headers=ok, follow_redirects=False)
+    assert service.resolve_question("nap", db_path=db)["active"] == 0
+    bad = {"Origin": "https://evil.example"}
+    for path, data in (("/wellness/checkin", {"score": "5"}), ("/journal/questions", {"text": "X"}),
+                       ("/journal/questions/nap/update", {"active": "1"})):
+        assert client.post(path, data=data, headers=bad).status_code == 403
+    assert client.get("/api/journal/checkin?date=2099-01-01").status_code == 400
 
 
 # ---- My Hub (shared service: scripts/myhub.py) ----

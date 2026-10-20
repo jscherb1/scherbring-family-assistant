@@ -11,9 +11,10 @@ and kid page (routers/kids.py) do the same through scripts/chores.py. Run from t
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from .routers import (activity, agent, ask, chores, dayrating, myhub, family, reauth, finance, habits, health, home, home_summary, kids, meals,
-                      shopping_fitness)
+                      journal, shopping_fitness, wellness)
 from .web import APP_NAME, HERE
 
 app = FastAPI(
@@ -34,6 +35,8 @@ async def no_stale_pages(request: Request, call_next):
     return response
 
 
+# Chart-heavy pages (Wellness trends carry a tooltip per day per chart) shrink ~8x compressed.
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.include_router(agent.router)
 app.include_router(finance.router)
@@ -42,6 +45,8 @@ app.include_router(activity.router)
 app.include_router(family.router)
 app.include_router(home.router)
 app.include_router(habits.router)
+app.include_router(wellness.router)
+app.include_router(journal.router)
 app.include_router(dayrating.router)
 app.include_router(myhub.router)
 app.include_router(reauth.router)

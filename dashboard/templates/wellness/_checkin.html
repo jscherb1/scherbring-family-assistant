@@ -1,0 +1,68 @@
+{# The nightly check-in for one day (c = journal.pending output). Same form on Wellness > Today and the Journal
+   page; htmx swaps just this card after saving, a plain post redirects back. #}
+<section class="card card-wide wcheckin" id="checkin">
+{% if c.error %}
+  <div class="error-state">{{ c.error }}</div>
+{% else %}
+  {% set done_q = c.questions|selectattr('answer')|list|length %}
+  <details {{ 'open' if open or not c.complete }}>
+    <summary>
+      <h2>{{ 'Tonight’s check-in' if c.is_today else 'Check-in for ' ~ (c.date|fmt_date) }}</h2>
+      <span class="wck-status {{ 'done' if c.complete }}">
+        {% if c.complete %}✓ All filled in{% else %}
+          {{ 'rated' if not c.rating_needed else 'not rated' }} · {{ done_q }}/{{ c.questions|length }} answered{% if c.habits_open %} · {{ c.habits_open|length }} habit{{ 's' if c.habits_open|length != 1 }} open{% endif %}
+        {% endif %}
+      </span>
+    </summary>
+    {% if saved %}<p class="wck-saved" role="status">Saved.</p>{% endif %}
+    {% if error %}<div class="error-state">{{ error }}</div>{% endif %}
+    <form method="post" action="/wellness/checkin" hx-post="/wellness/checkin" hx-target="#checkin" hx-swap="outerHTML">
+      <input type="hidden" name="date" value="{{ c.date }}">
+      <input type="hidden" name="next" value="{{ next or '/wellness' }}">
+
+      <fieldset class="wck-block">
+        <legend>How was {{ 'today' if c.is_today else 'the day' }}?</legend>
+        <div class="wseg wseg-score" role="radiogroup" aria-label="Day rating">
+          {% for n in range(1, 11) %}
+          <label><input type="radio" name="score" value="{{ n }}" {{ 'checked' if c.rating and c.rating.score == n }}><span>{{ n }}</span></label>
+          {% endfor %}
+        </div>
+        <input class="wck-note" type="text" name="note" maxlength="500" placeholder="A few words on why (optional)"
+               value="{{ c.rating.note if c.rating and c.rating.note else '' }}">
+      </fieldset>
+
+      <fieldset class="wck-block">
+        <legend>Yes or no {{ 'today' if c.is_today else 'that day' }}</legend>
+        <ul class="wck-qs">
+          {% for q in c.questions %}
+          <li class="{{ 'answered' if q.answer }}">
+            <span class="wck-q">{{ q.label }}</span>
+            <span class="wseg wseg-yn" role="radiogroup" aria-label="{{ q.text }}">
+              <label><input type="radio" name="q_{{ q.slug }}" value="yes" {{ 'checked' if q.answer == 'yes' }}><span>Yes</span></label>
+              <label><input type="radio" name="q_{{ q.slug }}" value="no" {{ 'checked' if q.answer == 'no' }}><span>No</span></label>
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+        <button type="button" class="wck-rest" data-rest="no">Mark the rest “no”</button>
+      </fieldset>
+
+      {% if c.habits %}
+      <fieldset class="wck-block">
+        <legend>Daily habits</legend>
+        <div class="wck-habits">
+          {% for h in c.habits %}
+          <label class="{{ 'done' if h.done }}"><input type="checkbox" name="habit" value="{{ h.id }}" {{ 'checked disabled' if h.done }}><span>{{ h.name }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      {% endif %}
+
+      <div class="wck-actions">
+        <button type="submit" class="wck-save">Save check-in</button>
+        <span class="muted">Anything left blank stays unanswered, not “no”.</span>
+      </div>
+    </form>
+  </details>
+{% endif %}
+</section>

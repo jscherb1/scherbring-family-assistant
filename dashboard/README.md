@@ -48,6 +48,10 @@ other family members.
 | Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe; add, edit and delete recipes (same service as the meal-planner agent, `scripts/recipes.py`) |
 | | Menu & Insights | `/meals/plan` | Upcoming menu (from the meal-planner's logged plans), recently cooked, stale recipes, collection counts |
 | My Hub | Hub | `/me`, `/api/me` | Personal command page: ranked needs-attention strip plus calendar, tasks, dinner, mood, recovery/sleep/vitals, habits, weather, household, insight and a Systems tile with the live health of each integration (`scripts/system_health.py`). Read-only except dismissing/restoring reviewed attention items (stored in `hub_dismissed`, shared with the Summary page and the hub's Telegram notifications); same `scripts/myhub.py` service as the `myhub` agent. Own stylesheet `static/hub.css` |
+| Wellness | Today | `/wellness` | Whoop-style readiness: recovery / sleep / 7-day load rings, last night's sleep and stages, vitals against your 30-day normal, the day rating (yesterday's until today's is given in the evening), habits and source freshness. Same `scripts/wellness.py` service as the `wellness` agent |
+| | Trends | `/wellness/trends` | 30/90/180-day SVG charts (sleep, HRV with its normal band, resting HR, load and load ratio, steps, exercise, mood) with hover tooltips / tap-to-pin and a 6-month calendar heatmap. Pending days show as dashed stubs, never zeros |
+| | Drivers | `/wellness/drivers` | What moves the day rating, HRV, sleep score or resting HR (`insights.analyze` / `analyze_against`), a two-metric scatter, and the latest written story |
+| | Journal | `/wellness/journal` | The nightly check-in for any day (rating + note, yes/no per journal question, daily habits), a 28-day yes/no/unanswered grid, and adding / pausing questions. Same `scripts/journal.py` service as the `journal` agent; the check-in card also sits on Wellness → Today and Drivers shows each question's yes-vs-no impact |
 | Day Rating | Today, Insights | `/rating`, `/rating/insights` | Rate a day 1-10 with a note (same `scripts/dayrating.py` service as the `dayrating` agent), recent ratings, then the stats on what moves the score (`scripts/insights.py`), the AI-written weekly story and the data-source list |
 | Habits | Analysis | `/habits/analysis` | Combined habits-done-per-day calendar (3 months) and a per-habit table (days done, last 30 days, best weekday, weekly strip); the place to grow cross-habit analysis. Same `scripts/habits.py` service (`analysis`) |
 | Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, a 📅 Calendar flip on each card (2 months of days done), add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
@@ -60,7 +64,7 @@ Everything is view-only except the Habits page (see Notes). Because there is no 
 show summaries only.
 
 JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/restarts`, `/api/system`,
-`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.
+`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/wellness*`, `/api/journal/*`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.
 
 ## Run it
 
