@@ -1,4 +1,4 @@
-"""Home page: Today (the merged Summary + My Hub page), its /api/today twin, and dismissing attention items.
+"""Home page: Today (the merged Summary + My Hub page), the Week page, their /api twins, and dismissing attention items.
 
 Under /archive, "/" still renders the old Summary page. Dismiss/restore are plain form POSTs guarded by the same
 same-origin check as the ask box; dismissals are the one shared store (see dismissals.py).
@@ -7,7 +7,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from .. import dismissals
-from ..data import summary, today
+from ..data import summary, today, week
 from ..web import ARCHIVE, render
 from .ask import _same_origin
 
@@ -30,6 +30,16 @@ def landing(request: Request, sent: int = 0, ask_error: str = ""):
 @router.get("/api/today")
 def api_today():
     return today.get_today()
+
+
+@router.get("/week", include_in_schema=False)
+def week_page(request: Request):
+    return render(request, "today/week.html", "today", "week", "Week", data=week.get_week())
+
+
+@router.get("/api/week")
+def api_week():
+    return week.get_week()
 
 
 @router.get("/api/summary")

@@ -31,7 +31,7 @@
     <h2>Recently cooked</h2>
     <section class="card card-table">
       {% if data.recently_cooked %}
-      <table class="tbl">
+      <table class="tbl" data-limit="8">
         <thead><tr><th>Recipe</th><th>Rating</th><th>Last cooked</th></tr></thead>
         <tbody>{% for r in data.recently_cooked %}<tr><td><a href="/meals/{{ r.id|urlencode }}">{{ r.title }}</a></td>
           <td>{{ r.rating|stars if r.rating else '—' }}</td><td>{{ r.last_cooked_at|fmt_date }} <span class="muted">({{ r.days_since_cooked }} d ago)</span></td></tr>{% endfor %}</tbody>
@@ -42,7 +42,7 @@
     {% if data.stale %}
     <h2>Worth revisiting</h2>
     <section class="card card-table">
-      <table class="tbl">
+      <table class="tbl" data-limit="8">
         <thead><tr><th>Recipe</th><th>Type</th><th>Last cooked</th></tr></thead>
         <tbody>{% for r in data.stale %}<tr><td><a href="/meals/{{ r.id|urlencode }}">{{ r.title }}</a></td><td>{{ r.meal_type or '' }}</td>
           <td>{% if r.days_since_cooked is none %}<span class="muted">never</span>{% else %}{{ r.days_since_cooked }} d ago{% endif %}</td></tr>{% endfor %}</tbody>

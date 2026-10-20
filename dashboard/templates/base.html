@@ -26,6 +26,7 @@
     {%- elif name == 'family' %}<circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M14.5 20c.2-2.4 1.4-4.2 3.5-4.6 2 .4 3 2.2 3 4.6"/>
     {%- elif name == 'home' %}<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>
     {%- elif name == 'money' %}<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 9.5v5M17 9.5v5"/>
+    {%- elif name == 'search' %}<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
     {%- elif name == 'system' %}<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
     {%- endif %}
   </svg>
@@ -41,6 +42,7 @@
              {% if s.key == section.key %}aria-current="page"{% endif %}>{{ icon(s.icon) }}<span>{{ s.label }}</span></a>
         {% endfor %}
       </nav>
+      <button type="button" class="util-link search-btn" data-jump aria-label="Jump to (press /)" title="Jump to… (/)">{{ icon('search') }}<kbd>/</kbd></button>
       {% if util %}
       <a class="util-link {{ 'active' if util.key == section.key }}" href="{{ util.href }}" aria-label="{{ util.label }}" title="{{ util.label }}"
          {% if util.key == section.key %}aria-current="page"{% endif %}>{{ icon(util.icon) }}</a>
@@ -105,6 +107,12 @@
       b.hidden = !b.hidden;
     });
   </script>
+  <dialog id="jump" class="jump" aria-label="Jump to">
+    <input type="search" placeholder="Jump to a page, recipe, habit or person…" autocomplete="off" aria-controls="jump-list">
+    <ul id="jump-list" role="listbox"></ul>
+    <p class="jump-help"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close</p>
+  </dialog>
+  <script src="/static/ui.js?v={{ asset_version() }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

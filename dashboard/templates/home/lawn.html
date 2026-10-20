@@ -37,7 +37,7 @@
     <h2>Recent treatments <span class="muted">({{ data.treatment_count }} total)</span></h2>
     <section class="card card-table">
       {% if data.treatments %}
-      <table class="tbl">
+      <table class="tbl" data-limit="8">
         <thead><tr><th>Date</th><th>Product</th><th>Method</th><th>Area</th><th>Targets</th></tr></thead>
         <tbody>
         {% for t in data.treatments %}
@@ -68,7 +68,7 @@
     <h2>Products on hand</h2>
     <section class="card card-table">
       {% if data.products %}
-      <table class="tbl">
+      <table class="tbl" data-limit="10" data-filter="Filter products">
         <thead><tr><th>Product</th><th>Category</th><th>Active ingredient</th><th>Container</th><th>Stock</th></tr></thead>
         <tbody>
         {% for p in data.products %}
@@ -83,7 +83,7 @@
     <h2>Plants &amp; beds</h2>
     <section class="card card-table">
       {% if data.plants %}
-      <table class="tbl">
+      <table class="tbl" data-limit="10" data-filter="Filter plants and beds">
         <thead><tr><th>Name</th><th>Type</th><th>Location</th></tr></thead>
         <tbody>
         {% for p in data.plants %}

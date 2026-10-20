@@ -36,7 +36,7 @@
 
     <h2>Directory</h2>
     <section class="card card-table">
-      <table class="tbl">
+      <table class="tbl" data-limit="15" data-filter="Filter people">
         <thead><tr><th>Name</th><th>Relationship</th><th>Birthday</th><th>Facts on file</th></tr></thead>
         <tbody>
         {% for p in data.people %}

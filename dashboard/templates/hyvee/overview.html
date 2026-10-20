@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block page_header %}
-  <h1>Hy-Vee Cart Builder</h1>
-  <p class="subtitle">Purchase history, learned item preferences and recent cart builds. Carts are never checked out automatically.</p>
+  <h1>Groceries</h1>
+  <p class="subtitle">The Hy-Vee cart builder: recent carts, what you buy most and the item preferences it has learned. Carts are never checked out automatically.</p>
 {% endblock %}
 
 {% block content %}
@@ -21,12 +21,12 @@
     <h2>Recent cart builds</h2>
     <section class="card card-table">
       {% if data.runs %}
-      <table class="tbl">
+      <table class="tbl" data-limit="5">
         <thead><tr><th>When</th><th class="num">Items</th><th class="num">Auto</th><th class="num">Asked</th><th>Verified</th><th>Summary</th></tr></thead>
         <tbody>
         {% for r in data.runs %}
           <tr><td>{{ r.ts|fmt_dt }}</td><td class="num">{{ r.item_count }}</td><td class="num">{{ r.auto }}</td><td class="num">{{ r.flagged }}</td>
-            <td><span class="pill {{ 'pill-ok' if r.cart_verified else 'pill-muted' }}">{{ 'yes' if r.cart_verified else 'no' }}</span></td><td>{{ r.summary or '' }}</td></tr>
+            <td><span class="pill {{ 'pill-ok' if r.cart_verified else 'pill-muted' }}">{{ 'yes' if r.cart_verified else 'no' }}</span></td><td><div class="clamp" title="{{ r.summary or '' }}">{{ r.summary or '' }}</div></td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -36,7 +36,7 @@
     <h2>Most-bought items</h2>
     <section class="card card-table">
       {% if data.top_items %}
-      <table class="tbl">
+      <table class="tbl" data-limit="10" data-filter="Filter products">
         <thead><tr><th>Product</th><th class="num">Times</th><th>Last bought</th></tr></thead>
         <tbody>{% for t in data.top_items %}<tr><td>{{ t.product_name }}</td><td class="num">{{ t.times }}</td><td>{{ t.last_order }}</td></tr>{% endfor %}</tbody>
       </table>
@@ -46,7 +46,7 @@
     <h2>Learned preferences</h2>
     <section class="card card-table">
       {% if data.prefs %}
-      <table class="tbl">
+      <table class="tbl" data-limit="15" data-filter="Filter items or products">
         <thead><tr><th>Item</th><th>Product</th><th class="num">Confidence</th><th>Source</th><th class="num">✓ / ✗</th></tr></thead>
         <tbody>
         {% for p in data.prefs %}

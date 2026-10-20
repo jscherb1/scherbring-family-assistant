@@ -1258,3 +1258,38 @@ def test_status_board_and_its_json_twin(client):
     board = client.get("/api/system/status").json()
     assert {"problems", "checks", "integrations", "logins", "runs"} <= set(board)
     assert all(c["state"] in ("ok", "bad", "unknown") for c in board["checks"])
+
+
+# ---- Week page, jump-to search, long tables (UX overhaul PR 3) ----
+
+def test_week_page_lays_out_seven_days(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import myhub as service
+    today = datetime.now().date()
+    tomorrow = (today + timedelta(days=1)).isoformat()
+    service.set_snapshot("event", [{"title": "Dentist <b>", "day": tomorrow, "start_time": "09:00"}],
+                         start=today.isoformat(), end=(today + timedelta(days=7)).isoformat(),
+                         db_path=state / "agent_results.db")
+    api = client.get("/api/week").json()
+    assert len(api["days"]) == 7 and api["days"][0]["label"] == "Today"
+    assert api["days"][1]["events"] == [{"time": "09:00", "title": "Dentist <b>"}]
+    page = client.get("/week").text
+    assert "Dentist &lt;b&gt;" in page and "Dentist <b>" not in page
+    assert page.count('class="card week-day') == 7
+
+
+def test_nav_index_lists_pages_recipes_and_actions(client):
+    from dashboard.web import SECTIONS
+    items = client.get("/api/nav-index").json()["items"]
+    hrefs = {i["href"] for i in items}
+    assert {p["href"] for s in SECTIONS for p in s["pages"]} <= hrefs
+    assert any(i["kind"] == "recipe" and i["href"].startswith("/meals/") for i in items)
+    assert any(i["kind"] == "action" and i["href"] == "/checkin" for i in items)
+    page = client.get("/").text
+    assert 'id="jump"' in page and "/static/ui.js" in page and "data-jump" in page
+
+
+def test_long_tables_are_marked_for_paging(client):
+    assert 'data-filter="Filter items or products"' in client.get("/hyvee").text
+    assert 'data-limit="20" data-filter="Filter activity"' in client.get("/activity").text

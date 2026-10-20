@@ -44,7 +44,7 @@
     <h2>Recent completions</h2>
     <section class="card card-table">
       {% if data.recent %}
-      <table class="tbl">
+      <table class="tbl" data-limit="8">
         <thead><tr><th>Date</th><th>Item</th><th>Notes</th></tr></thead>
         <tbody>
         {% for r in data.recent %}

@@ -21,6 +21,7 @@ SECTIONS = [
         "key": "today", "label": "Today", "icon": "today", "href": "/",
         "pages": [
             {"label": "Today", "href": "/", "src": "today:today"},
+            {"label": "Week", "href": "/week", "src": "today:week"},
         ],
     },
     {
