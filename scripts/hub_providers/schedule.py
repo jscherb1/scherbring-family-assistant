@@ -34,10 +34,10 @@ def collect(conn, today):
     next_meals = [e for e in events if e["day"] > t and (e["source"] or "").lower().startswith("meal")]
     attention = []
     for x in overdue:
-        attention.append({"key": _tkey("task", x), "href": "/me", "level": "urgent", "group": "Tasks",
+        attention.append({"key": _tkey("task", x), "href": "/", "level": "urgent", "group": "Tasks",
                           "text": f"Overdue: {x['title']} (due {x['day']})"})
     for x in due_today:
-        attention.append({"key": _tkey("task-today", x), "href": "/me",
+        attention.append({"key": _tkey("task-today", x), "href": "/",
                           "level": "warn" if (x["priority"] or 4) <= 2 else "info", "group": "Tasks", "text": f"Due today: {x['title']}"})
     synced = {k: conn.execute("SELECT MAX(synced_at) FROM hub_items WHERE kind=?", (k,)).fetchone()[0]
               for k in ("event", "task")}
@@ -45,7 +45,7 @@ def collect(conn, today):
         at = synced[kind]
         stale = at is None or datetime.now() - datetime.fromisoformat(at) > timedelta(hours=STALE_HOURS)
         if stale:
-            attention.append({"key": f"hub-stale:{kind}:{today}", "href": "/me", "level": "info",
+            attention.append({"key": f"hub-stale:{kind}:{today}", "href": "/", "level": "info",
                               "text": f"{label} on this page is {'not synced yet' if at is None else 'out of date'}"})
     return {"card": {"today": cal_today, "upcoming": upcoming, "dinner": meal[0] if meal else None,
                      "next_dinners": next_meals[:3],

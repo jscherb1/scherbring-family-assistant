@@ -1926,3 +1926,76 @@ textarea {
     padding-bottom: calc(88px + env(safe-area-inset-bottom));
   }
 }
+
+/* ---- System status board ---- */
+
+.status-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.status-list a,
+.status-list li > span {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.status-list li:last-child a {
+  border-bottom: 0;
+}
+
+.status-list a:hover {
+  background: var(--muted-bg);
+}
+
+.status-list em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.lamp {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  align-self: center;
+}
+
+.st-ok .lamp { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.st-warn .lamp { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.st-bad .lamp { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.st-bad em, .st-warn em { color: var(--text); }
+
+.mini-h {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 16px 0 6px;
+}
+
+@media (max-width: 760px) {
+  .status-cols { grid-template-columns: 1fr; }
+  .status-list em { max-width: 150px; }
+}

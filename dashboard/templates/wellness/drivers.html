@@ -53,7 +53,7 @@
   <section class="card card-wide">
     <h2>Journal impact</h2>
     {% if impact.error %}<div class="error-state">{{ impact.error }}</div>{% else %}
-    <p class="wnote">Average on “yes” days vs “no” days, last {{ impact.days }} days. HRV, sleep and resting HR are the night after (they're filed on the morning you wake). Each needs {{ impact.min_each }} yes and {{ impact.min_each }} no days; until then you'll see the count. Answer in the <a href="/wellness/journal">nightly check-in</a>.</p>
+    <p class="wnote">Average on “yes” days vs “no” days, last {{ impact.days }} days. HRV, sleep and resting HR are the night after (they're filed on the morning you wake). Each needs {{ impact.min_each }} yes and {{ impact.min_each }} no days; until then you'll see the count. Answer in the <a href="/checkin">nightly check-in</a>.</p>
     <div class="wimpact-wrap">
     <table class="wimpact">
       <thead><tr><th>Question</th>{% for t in impact.targets %}<th>{{ t.label }}</th>{% endfor %}</tr></thead>

@@ -80,9 +80,9 @@
       {% if m.today_state == 'later' %}
         <div class="wplaceholder" title="Today's rating is given in the evening, so it isn't missing yet">Today: rate tonight · nudge at {{ m.nudge_label }}</div>
       {% elif m.today_state == 'due' %}
-        <a class="wplaceholder due" href="/rating">Today isn't rated yet. Rate it now</a>
+        <a class="wplaceholder due" href="/checkin">Today isn't rated yet. Rate it now</a>
       {% endif %}
-      {% if m.yesterday_unrated %}<a class="wplaceholder due" href="/rating">Yesterday has no rating. Add it</a>{% endif %}
+      {% if m.yesterday_unrated %}<a class="wplaceholder due" href="/checkin?date=yesterday">Yesterday has no rating. Add it</a>{% endif %}
       <dl class="wfacts">
         <div><dt>7-day avg</dt><dd>{{ m.avg_7 if m.avg_7 is not none else '—' }}</dd></div>
         <div><dt>30-day avg</dt><dd>{{ m.avg_30 if m.avg_30 is not none else '—' }}</dd></div>

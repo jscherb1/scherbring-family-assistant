@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+from jinja2 import TemplateNotFound
 
 APP_NAME = "Scherbring Family Assistant"
 HERE = Path(__file__).resolve().parent
@@ -19,8 +20,7 @@ SECTIONS = [
     {
         "key": "today", "label": "Today", "icon": "today", "href": "/",
         "pages": [
-            {"label": "Overview", "href": "/", "src": "summary:overview"},
-            {"label": "My Hub", "href": "/me", "src": "myhub:hub"},
+            {"label": "Today", "href": "/", "src": "today:today"},
         ],
     },
     {
@@ -29,8 +29,8 @@ SECTIONS = [
             {"group": "Wellness", "label": "Today", "href": "/wellness", "src": "wellness:today"},
             {"label": "Trends", "href": "/wellness/trends", "src": "wellness:trends"},
             {"label": "Drivers", "href": "/wellness/drivers", "src": "wellness:drivers"},
-            {"group": "Log", "label": "Journal", "href": "/wellness/journal", "src": "wellness:journal"},
-            {"label": "Day rating", "href": "/rating", "src": "dayrating:today"},
+            {"group": "Log", "label": "Check-in", "href": "/checkin", "src": "checkin:today"},
+            {"label": "Journal", "href": "/wellness/journal", "src": "wellness:journal"},
             {"label": "Insights", "href": "/rating/insights", "src": "dayrating:insights"},
             {"group": "Habits", "label": "Streaks", "href": "/habits", "src": "habits:habits"},
             {"label": "Analysis", "href": "/habits/analysis", "src": "habits:analysis"},
@@ -222,7 +222,10 @@ ARCHIVE: ContextVar[bool] = ContextVar("dashboard_archive", default=False)
 class _Templates(Jinja2Templates):
     def get_template(self, name):
         if ARCHIVE.get() and not name.startswith("archive/"):
-            name = "archive/" + name
+            try:
+                return super().get_template("archive/" + name)
+            except TemplateNotFound:  # a page added after the redesign: show the current version
+                pass
         return super().get_template(name)
 
 

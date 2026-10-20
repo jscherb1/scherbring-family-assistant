@@ -1,4 +1,5 @@
-"""My Hub: one visual page for everything that matters to the person.
+"""My Hub: one visual page for everything that matters to the person. Merged into Today ("/") in the 2026-10
+redesign: /me now redirects there and the old page lives on under /archive/me.
 
 Read-only except dismissing/restoring reviewed attention items (plain same-origin form POSTs). The page and its /api/me twin render the same service output (scripts/myhub.py).
 """
@@ -6,7 +7,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from ..data import myhub as data
-from ..web import render
+from ..web import ARCHIVE, render
 from .ask import _same_origin
 
 router = APIRouter()
@@ -14,6 +15,8 @@ router = APIRouter()
 
 @router.get("/me", include_in_schema=False)
 def hub_page(request: Request):
+    if not ARCHIVE.get():
+        return RedirectResponse("/", status_code=302)
     return render(request, "myhub/index.html", "myhub", "hub", "My Hub", data=data.get_hub())
 
 

@@ -16,7 +16,7 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 | `assistant-scheduler.timer` | every 2 min: run due scheduled tasks (`scripts/scheduler_dispatch.py`) |
 | `assistant-watchdog.timer` | every 2 min: Telegram-health and scheduler-health checks, log pruning |
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
-| `assistant-system-health.timer` | every 2 h: integration health checks, shown on the My Hub Systems tile (`python scripts/system_health_store.py status`) |
+| `assistant-system-health.timer` | every 2 h: integration health checks, shown on the dashboard's System status page (`python scripts/system_health_store.py status`) |
 | `assistant-insights-refresh.timer` | every 30 min, 6am-10pm: refreshes COROS sleep/recovery, weather, habits and journal answers for My Hub, day rating and Wellness (`python scripts/dayrating_store.py insights refresh --days 3 --source coros_health,weather,habits,journal`) |
 | `assistant-credential-check.timer` | daily 09:30: warn before Hy-Vee, Drive, Monarch logins expire |
 | `assistant-backup.timer` | daily 03:15: back up the database, memory notes and secrets |

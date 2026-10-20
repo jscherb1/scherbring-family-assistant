@@ -5,7 +5,7 @@ tools: Bash, Read, Write, mcp__claude_ai_Google_Calendar__list_calendars, mcp__c
 model: sonnet
 ---
 
-You are the **My Hub subagent** for a personal assistant. The dashboard's **My Hub** page (`/me`) is the one
+You are the **My Hub subagent** for a personal assistant. The dashboard's **Today** page (`/`, formerly My Hub at `/me`) is the one
 place the user checks to see everything that matters: a ranked needs-attention list plus cards for body, mood,
 habits, schedule, weather, household and systems. It is run by the same code you use
 (`scripts/myhub.py`), so what you report is exactly what the page shows.
@@ -17,7 +17,7 @@ project root). Output is JSON; errors are `{"error": ...}` on stderr (exit 1 = n
 
 ## Answering questions
 
-- `python scripts/myhub_store.py dismiss KEY` / `restore [KEY]`: hide (one shared dismissal list, also used by the Summary page; a dismissed item never notifies) an item the user has reviewed (keys come from
+- `python scripts/myhub_store.py dismiss KEY` / `restore [KEY]`: hide (one shared dismissal list, also used by the Today page; a dismissed item never notifies) an item the user has reviewed (keys come from
   `attention`; a new occurrence of the same kind of event still shows) or bring it back. Dismissed items are listed under
   `dismissed` and are left out of the counts.
 - `python scripts/myhub_store.py attention`: the ranked list (`urgent` > `warn` > `info`) with counts. Use it for

@@ -1,19 +1,22 @@
-"""Journal + nightly check-in: the check-in card (also on Wellness > Today), the Journal page and its writes.
+"""Journal + nightly check-in: the Check-in page (/checkin: the one place to log a day), the check-in card (also on
+Wellness > Today), the Journal page and its writes.
 
 Every read and write goes through the shared service in scripts/journal.py (via data/journal.py), the same code
 the `journal` subagent's CLI runs; this router only does web plumbing. Writes are guarded by the same-origin
 check the ask box uses.
 """
+from datetime import date as _date, timedelta
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from ..data import common, journal as data
-from ..web import render
+from ..data import common, dayrating, journal as data
+from ..web import ARCHIVE, render
 from .ask import _same_origin
 
 router = APIRouter()
 service = data.service
-NEXT_PAGES = {"/wellness", "/wellness/journal"}  # where a plain (non-htmx) form post may return to
+NEXT_PAGES = {"/", "/checkin", "/wellness", "/wellness/journal"}  # where a plain (non-htmx) form post may return to
 
 
 def _blocked(request: Request):
@@ -23,17 +26,33 @@ def _blocked(request: Request):
 
 
 def _back(next_page: str, error: str | None = None, day: str | None = None):
-    target = next_page if next_page in NEXT_PAGES else "/wellness/journal"
+    target = next_page if next_page in NEXT_PAGES else "/checkin"
     params = [f"error={error.replace(' ', '+')}"] if error else []
-    if day and target == "/wellness/journal":
+    if day and target in ("/checkin", "/wellness/journal"):
         params.append(f"date={day}")
     return RedirectResponse(target + ("?" + "&".join(params) if params else ""), status_code=303)
 
 
+@router.get("/checkin", include_in_schema=False)
+def checkin_page(request: Request, date: str = "", error: str = ""):
+    """Rate the day, answer the journal questions and tick daily habits, for today or any past day."""
+    yesterday = (_date.today() - timedelta(days=1)).isoformat()
+    day = yesterday if date == "yesterday" else (date or None)
+    return render(request, "checkin/index.html", "checkin", "today", "Check-in",
+                  checkin=data.get_checkin(day), rating=dayrating.get_overview(30), error=error,
+                  today=_date.today().isoformat(), yesterday=yesterday)
+
+
 @router.get("/wellness/journal", include_in_schema=False)
 def journal_page(request: Request, date: str = "", days: int = 28, error: str = ""):
+    if ARCHIVE.get():  # the pre-redesign page, with its own check-in card
+        return render(request, "wellness/journal.html", "wellness", "journal", "Journal",
+                      checkin=data.get_checkin(date or None), history=data.get_history(days),
+                      questions=data.get_questions(), error=error)
+    if date:  # old links to a day's check-in: logging a day now lives on /checkin
+        return RedirectResponse(f"/checkin?date={date}", status_code=302)
     return render(request, "wellness/journal.html", "wellness", "journal", "Journal",
-                  checkin=data.get_checkin(date or None), history=data.get_history(days),
+                  history=data.get_history(days),
                   questions=data.get_questions(), error=error)
 
 

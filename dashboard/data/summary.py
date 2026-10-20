@@ -247,6 +247,7 @@ def get_summary():
         "status": "attention" if live else "ok",
         "attention_count": len(live),
         "attention": live[:MAX_ATTENTION],
+        "all_attention": live,
         "more": max(0, len(live) - MAX_ATTENTION),
         "dismissed": hidden,
         "active_keys": [a["key"] for a in attention],

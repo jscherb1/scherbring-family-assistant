@@ -8,7 +8,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from ..data import common, dayrating as data
-from ..web import render
+from ..web import ARCHIVE, render
 from .ask import _same_origin
 
 router = APIRouter()
@@ -17,6 +17,9 @@ service = data.service
 
 @router.get("/rating", include_in_schema=False)
 def rating_page(request: Request, error: str = ""):
+    """Rating moved into the Check-in page (/checkin); the old page lives on under /archive/rating."""
+    if not ARCHIVE.get():
+        return RedirectResponse("/checkin" + (f"?error={error.replace(' ', '+')}" if error else ""), status_code=302)
     return render(request, "dayrating/index.html", "dayrating", "today", "Day rating",
                   data=data.get_overview(), error=error)
 
