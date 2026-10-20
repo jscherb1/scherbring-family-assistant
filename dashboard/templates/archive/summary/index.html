@@ -1,0 +1,78 @@
+{% extends "archive/base.html" %}
+
+{% block page_header %}
+  <h1>Summary</h1>
+  <p class="subtitle">The family assistant at a glance.</p>
+{% endblock %}
+
+{% block content %}
+  <section class="card ask-card" aria-labelledby="ask-h">
+    <h2 id="ask-h">Ask or tell the assistant</h2>
+    <form method="post" action="/ask" class="ask-form"
+          hx-post="/ask" hx-target="#ask-result" hx-swap="innerHTML"
+          hx-on::after-request="if (event.detail.successful) this.reset()">
+      <label class="sr-only" for="ask-text">Message</label>
+      <textarea id="ask-text" name="text" rows="2" maxlength="2000" required
+                placeholder="Add milk to the list, what's for dinner, turn off the porch light…"></textarea>
+      <button class="button" type="submit">Send</button>
+    </form>
+    <div id="ask-result" aria-live="polite">
+      {% if sent %}<p class="ask-note ok" role="status">Sent. The reply will arrive in Telegram.</p>{% endif %}
+      {% if ask_error %}<p class="ask-note err" role="status">{{ ask_error }}</p>{% endif %}
+    </div>
+    <p class="footnote">One-shot: replies come back in Telegram, not here.</p>
+  </section>
+
+  <div class="status-banner {{ 'ok' if data.status == 'ok' else 'warn' }}">
+    {% if data.status == 'ok' %}
+      <span class="dot"></span> All good. Nothing needs your attention.
+    {% else %}
+      <span class="dot"></span> {{ data.attention_count }} thing{{ '' if data.attention_count == 1 else 's' }} need{{ 's' if data.attention_count == 1 }} attention
+    {% endif %}
+  </div>
+
+  {% if data.attention %}
+  <ul class="attention card">
+    {% for a in data.attention %}
+      <li>
+        <a href="{{ a.href }}">{{ a.text }}</a>
+        <form method="post" action="/attention/dismiss">
+          <input type="hidden" name="key" value="{{ a.key }}">
+          <button class="dismiss" type="submit" aria-label="Dismiss: {{ a.text }}" title="Dismiss">✕</button>
+        </form>
+      </li>
+    {% endfor %}
+    {% if data.more %}<li class="more">+ {{ data.more }} more</li>{% endif %}
+  </ul>
+  {% endif %}
+
+  {% if data.dismissed %}
+  <details class="dismissed">
+    <summary>{{ data.dismissed|length }} dismissed</summary>
+    <ul>
+      {% for a in data.dismissed %}
+      <li>
+        <span>{{ a.text }}</span>
+        <form method="post" action="/attention/restore">
+          <input type="hidden" name="key" value="{{ a.key }}">
+          <button class="link-button" type="submit">Restore</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" action="/attention/restore">
+      <button class="link-button" type="submit">Restore all</button>
+    </form>
+  </details>
+  {% endif %}
+
+  <div class="tiles">
+    {% for t in data.tiles %}
+      <a class="tile card {{ t.state }}" href="{{ t.href }}">
+        <h2>{{ t.title }}</h2>
+        <div class="tile-headline {{ 'small' if t.small }}">{{ t.headline }}</div>
+        <div class="metric-sub">{{ t.sub }}</div>
+      </a>
+    {% endfor %}
+  </div>
+{% endblock %}

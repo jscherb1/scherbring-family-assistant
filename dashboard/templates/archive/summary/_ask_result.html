@@ -1,0 +1,2 @@
+<p class="ask-note {{ 'ok' if ok else 'err' }}" role="status">{{ message }}</p>
+{% if not ok and text %}<script>document.getElementById("ask-text").value = {{ text|tojson }};</script>{% endif %}

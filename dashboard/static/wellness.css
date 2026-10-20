@@ -1,70 +1,37 @@
-/* Wellness pages: chart tokens (light + dark), layout, and the SVG chart classes from dashboard/charts.py. */
+/* Wellness pages: chart tokens (dark HUD theme), layout, and the SVG chart classes from dashboard/charts.py. */
 
 :root {
-  --w-good: #16a34a;
-  --w-mid: #d97706;
-  --w-bad: #dc2626;
-  --w-sleep: #6366f1;
-  --w-deep: #3730a3;
-  --w-rem: #8b5cf6;
-  --w-light: #a5b4fc;
-  --w-awake: #f0b45a;
-  --w-hrv: #0d9488;
-  --w-rhr: #e11d48;
-  --w-sleephr: #fb7185;
-  --w-load: #0ea5e9;
-  --w-ati: #f97316;
-  --w-cti: #1d4ed8;
-  --w-rating: #db2777;
-  --w-steps: #059669;
-  --w-exercise: #65a30d;
-  --w-avg: #1d1d1f;
-  --w-grid: rgba(0, 0, 0, 0.07);
-  --w-axis: #8a8a8f;
-  --w-band-op: 0.14;
-  --w-heat-0: rgba(0, 0, 0, 0.05);
-  --w-heat-1: #c7d2fe;
-  --w-heat-2: #a5b4fc;
-  --w-heat-3: #818cf8;
-  --w-heat-4: #6366f1;
-  --w-heat-5: #4338ca;
-  --w-tip-bg: rgba(29, 29, 31, 0.94);
-  --w-tip-text: #f5f5f7;
+  --w-good: #4ade80;
+  --w-mid: #fbbf24;
+  --w-bad: #f87171;
+  --w-sleep: #818cf8;
+  --w-deep: #6366f1;
+  --w-rem: #c4b5fd;
+  --w-light: #3f4a8a;
+  --w-awake: #f5c26b;
+  --w-hrv: #2dd4bf;
+  --w-rhr: #fb7185;
+  --w-sleephr: #fda4af;
+  --w-load: #38bdf8;
+  --w-ati: #fb923c;
+  --w-cti: #93c5fd;
+  --w-rating: #f472b6;
+  --w-steps: #34d399;
+  --w-exercise: #a3e635;
+  --w-avg: var(--text);
+  --w-grid: rgba(255, 255, 255, 0.08);
+  --w-axis: #8e8e93;
+  --w-band-op: 0.2;
+  --w-heat-0: rgba(255, 255, 255, 0.06);
+  --w-heat-1: #312e81;
+  --w-heat-2: #3f3cbb;
+  --w-heat-3: #5b5bd6;
+  --w-heat-4: #818cf8;
+  --w-heat-5: #c7d2fe;
+  --w-tip-bg: rgba(245, 245, 247, 0.96);
+  --w-tip-text: #1d1d1f;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --w-good: #4ade80;
-    --w-mid: #fbbf24;
-    --w-bad: #f87171;
-    --w-sleep: #818cf8;
-    --w-deep: #6366f1;
-    --w-rem: #c4b5fd;
-    --w-light: #3f4a8a;
-    --w-awake: #f5c26b;
-    --w-hrv: #2dd4bf;
-    --w-rhr: #fb7185;
-    --w-sleephr: #fda4af;
-    --w-load: #38bdf8;
-    --w-ati: #fb923c;
-    --w-cti: #93c5fd;
-    --w-rating: #f472b6;
-    --w-steps: #34d399;
-    --w-exercise: #a3e635;
-    --w-avg: #f5f5f7;
-    --w-grid: rgba(255, 255, 255, 0.08);
-    --w-axis: #8e8e93;
-    --w-band-op: 0.2;
-    --w-heat-0: rgba(255, 255, 255, 0.06);
-    --w-heat-1: #312e81;
-    --w-heat-2: #3f3cbb;
-    --w-heat-3: #5b5bd6;
-    --w-heat-4: #818cf8;
-    --w-heat-5: #c7d2fe;
-    --w-tip-bg: rgba(245, 245, 247, 0.96);
-    --w-tip-text: #1d1d1f;
-  }
-}
 
 /* ---- layout ---- */
 .wellness { display: flex; flex-direction: column; gap: 16px; }
@@ -75,7 +42,7 @@
 
 .wrange { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .wrange a { padding: 6px 12px; border-radius: 999px; background: var(--muted-bg); color: var(--text); text-decoration: none; font-size: 14px; }
-.wrange a.active { background: var(--accent); color: #fff; }
+.wrange a.active { background: var(--accent); color: var(--on-accent); }
 .wrange-dates { margin-left: auto; color: var(--text-muted); font-size: 13px; }
 
 /* ---- readiness rings ---- */
@@ -271,8 +238,7 @@
 }
 
 /* ---- nightly check-in + journal ---- */
-:root { --w-yes: #16a34a; --w-no: #94a3b8; }
-@media (prefers-color-scheme: dark) { :root { --w-yes: #4ade80; --w-no: #64748b; } }
+:root { --w-yes: #4ade80; --w-no: #64748b; }
 .wcheckin details > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .wcheckin details > summary::-webkit-details-marker { display: none; }
 .wcheckin summary h2 { margin: 0; }
@@ -290,7 +256,7 @@
 .wseg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
 .wseg-score input:checked + span { background: var(--w-rating); color: #fff; }
 .wseg-yn span { min-width: 48px; padding: 6px 10px; font-size: 13px; }
-.wseg-yn label:first-child input:checked + span { background: var(--w-yes); color: #fff; }
+.wseg-yn label:first-child input:checked + span { background: var(--w-yes); color: var(--on-accent); }
 .wseg-yn label:last-child input:checked + span { background: var(--w-no); color: #fff; }
 .wck-note { width: 100%; margin-top: 8px; font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--muted-bg); color: var(--text); }
 .wck-qs { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; }
@@ -301,7 +267,7 @@
 .wck-habits label.done { opacity: .6; }
 .wck-rest { margin-top: 10px; font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; }
 .wck-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; font-size: 12.5px; }
-.wck-save { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+.wck-save { font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 10px; border: 0; background: var(--accent); color: var(--on-accent); cursor: pointer; }
 .wck-date input { font: inherit; color: var(--text); background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; }
 
 .wjgrid-wrap, .wimpact-wrap { overflow-x: auto; }

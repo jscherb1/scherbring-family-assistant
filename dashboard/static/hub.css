@@ -1,11 +1,7 @@
-/* My Hub: dark "HUD" theme, scoped to .hub so the rest of the dashboard keeps its look. */
+/* My Hub layout. The colors are the site-wide HUD theme (style.css); the page sits on it directly. */
 .hub {
   --bg: #05080d; --panel: rgba(14, 24, 36, .72); --line: rgba(80, 200, 255, .18);
   --cy: #4fd8ff; --green: #5cf2b0; --amber: #ffb547; --red: #ff5c6c; --txt: #e6f4ff; --dim: #7f95a8;
-  background: radial-gradient(1200px 500px at 10% -10%, rgba(40, 120, 180, .22), transparent 60%), var(--bg);
-  background-image: linear-gradient(rgba(80, 200, 255, .045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(80, 200, 255, .045) 1px, transparent 1px);
-  background-size: 32px 32px; border: 1px solid var(--line); border-radius: 18px; padding: 16px;
   color: var(--txt); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .hub * { box-sizing: border-box; }

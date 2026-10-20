@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Archive</h1>
+  <p class="subtitle">The dashboard as it was before the redesign. These pages show live data and still save changes; they will be removed once the new pages have settled in.</p>
+{% endblock %}
+
+{% block content %}
+  <div class="grid">
+    {% for s in sections_old %}
+      <section class="card">
+        <h2>{{ s.label }}</h2>
+        <ul class="link-list">
+          {% for p in s.pages %}<li><a href="/archive{{ p.href }}">{{ p.label }}</a></li>{% endfor %}
+          {% if s.key == 'chores' %}<li><a href="/archive/kids">Kid chart</a></li>{% endif %}
+        </ul>
+      </section>
+    {% endfor %}
+  </div>
+{% endblock %}

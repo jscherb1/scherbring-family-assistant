@@ -1,0 +1,50 @@
+{% extends "archive/base.html" %}
+
+{% block page_header %}
+  <h1>Reconnect</h1>
+  <p class="subtitle">Refresh an expired login. Drive works from any device; Hy-Vee uses the desktop shortcut.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<p class="ask-note err reauth-banner" role="alert">{{ error }}</p>{% endif %}
+  {% if ok %}<p class="ask-note ok reauth-banner" role="status">{{ ok }}</p>{% endif %}
+
+  <div class="grid stats">
+    {% for s in data.systems %}
+    <section class="card"><h2>{{ s.label }}</h2>
+      <div class="metric metric-sm">{{ s.status }}</div><div class="metric-sub">{{ s.detail }}</div></section>
+    {% endfor %}
+  </div>
+
+  <div class="reauth-stack">
+  <section class="card">
+    <h2>Google Drive</h2>
+    {% if drive %}
+      <ol>
+        <li><a href="{{ drive.url }}" target="_blank" rel="noopener">Open the Google sign-in link</a> and approve. If Google warns the app is unverified, tap Advanced, then Go to the app.</li>
+        <li>Your browser then goes to a <code>localhost/callback</code> page that fails to load. That is expected.</li>
+        <li>Copy the full address from the address bar and paste it here (it expires in {{ drive.expires_minutes }} minutes):</li>
+      </ol>
+      <form method="post" action="/reconnect/drive/complete" class="habit-form">
+        <label class="field"><span>Pasted address</span><input name="pasted" required autocomplete="off" placeholder="http://localhost/callback?code=..."></label>
+        <button class="button" type="submit">Finish</button>
+      </form>
+    {% else %}
+      <form method="post" action="/reconnect/drive/start"><button class="button" type="submit">Reconnect Google Drive</button></form>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Hy-Vee</h2>
+    <p>Hy-Vee signs in one way: the <strong>Hy-Vee Login</strong> shortcut on the Windows desktop. Remote in, double-click it,
+    solve the CAPTCHA in the window that opens (you have 5 minutes), and it saves the session and re-checks the connection by itself.
+    The status above updates when it finishes.</p>
+    <p class="metric-sub">Checked every 2 hours by one test (order history readable with the saved session). Each passing check also keeps the saved session fresh.
+    {% if data.hyvee_login_age_days is not none %}Last sign-in: {{ data.hyvee_login_age_days }} days ago.{% endif %}</p>
+  </section>
+  </div>
+{% endif %}
+{% endblock %}
