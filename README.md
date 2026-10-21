@@ -713,9 +713,10 @@ built**. Four scoped subagents share a common working-state store (`scripts/fina
 and the Monte Carlo retirement model. Full plan/history:
 `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md`.
 
-Monarch's **official** MCP (`mcp__claude_ai_Monarch_Money__*`) is currently paused by
-Monarch. Until it's restored, these agents talk to Monarch through a **local, vendored MCP
-server** instead: `vendor/monarch-mcp-server/` (the community
+These agents talk to Monarch through a **local, vendored MCP server**. Monarch's **official**
+connector (`mcp__claude_ai_Monarch_Money__*`) is authorized too, but only as the `finance` agent's
+fallback when the local login expires: it can't see Finicity-connected accounts (Fidelity, Alliance
+Bernstein), and the Core plan caps weekly usage (see `docs/OPERATIONS.md`). The local server is `vendor/monarch-mcp-server/` (the community
 [`robcerda/monarch-mcp-server`](https://github.com/robcerda/monarch-mcp-server), built on
 the actively-maintained `MonarchMoneyCommunity` fork), registered as `monarch` in
 `.mcp.json`. `scripts/setup_wsl.sh` clones and installs it at a pinned commit. Credentials never

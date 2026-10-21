@@ -191,8 +191,12 @@ def test_record_context_note_helper(tmp_path, monkeypatch):
     record_context_note("1", "x", "scheduler", db="/nonexistent-dir/x/i.db")  # never raises
 
 
-def test_snapshot_ignores_unused_claude_ai_connectors():
+def test_snapshot_ignores_unused_claude_ai_connectors(monkeypatch):
     import json
+
+    import bridge_store
     s = make()
-    s.kv_set("mcp_down", json.dumps(["claude.ai Monarch Money", "todoist"]))
-    assert s.health_snapshot()["mcp_down"] == ["todoist"]
+    s.kv_set("mcp_down", json.dumps(["claude.ai Unused", "claude.ai Monarch Money", "todoist"]))
+    monkeypatch.setattr(bridge_store, "IGNORED_MCP", {"claude.ai Unused"})
+    # The official Monarch connector is the finance agent's fallback, so its outages are reported.
+    assert s.health_snapshot()["mcp_down"] == ["claude.ai Monarch Money", "todoist"]
