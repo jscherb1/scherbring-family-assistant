@@ -63,7 +63,8 @@ SECTIONS = [
     {
         "key": "money", "label": "Money", "icon": "money", "href": "/finance",
         "pages": [
-            {"label": "Tagging", "href": "/finance", "src": "finance:tagging"},
+            {"label": "Overview", "href": "/finance", "src": "finance:home"},
+            {"label": "Tagging", "href": "/finance/tagging", "src": "finance:tagging"},
             {"label": "Reports & planning", "href": "/finance/reports", "src": "finance:reports"},
         ],
     },
@@ -142,7 +143,7 @@ LEGACY_SECTIONS = [
         "label": "Finance",
         "href": "/finance",
         "pages": [
-            {"key": "tagging", "label": "Tagging", "href": "/finance"},
+            {"key": "tagging", "label": "Tagging", "href": "/finance/tagging"},
             {"key": "reports", "label": "Reports & Planning", "href": "/finance/reports"},
         ],
     },
@@ -304,6 +305,15 @@ def fmt_bytes(n):
         n /= 1024
 
 
+def money(value, empty="—", cents=False):
+    """'$1,234' (or '−$1,234.56' with cents=True); None shows `empty`."""
+    if value is None:
+        return empty
+    v = float(value)
+    body = f"{abs(v):,.2f}" if cents else f"{abs(round(v)):,.0f}"
+    return f"{'−' if v < 0 and (cents or round(v)) else ''}${body}"
+
+
 def stars(rating):
     rating = max(0, min(5, int(rating or 0)))
     return "★" * rating + "☆" * (5 - rating)
@@ -311,7 +321,7 @@ def stars(rating):
 
 templates.env.filters.update(
     fmt_dt=fmt_dt, fmt_date=fmt_date, fmt_duration=fmt_duration, fmt_minutes=fmt_minutes,
-    status_pill=status_pill, stars=stars, fmt_bytes=fmt_bytes,
+    status_pill=status_pill, stars=stars, fmt_bytes=fmt_bytes, money=money,
 )
 templates.env.globals["APP_NAME"] = APP_NAME
 

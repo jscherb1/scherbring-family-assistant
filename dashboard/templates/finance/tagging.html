@@ -2,18 +2,41 @@
 
 {% block page_header %}
   <h1>Transaction Tagging</h1>
-  <p class="subtitle">How the WHO tagging is going. Amounts, balances and merchants on individual transactions aren't shown here.</p>
+  <p class="subtitle">What's waiting in Monarch right now, and how the agent's WHO tagging is going.
+    {% if queue and queue.sync and queue.sync.has_data %}Live counts synced {{ queue.sync.last_ok_at|fmt_dt }}.{% endif %}</p>
 {% endblock %}
 
 {% block content %}
 {% if data.error %}
   <div class="card"><div class="error-state">{{ data.error }}</div></div>
 {% else %}
+  {% if queue and not queue.error and queue.sync.has_data %}
+  <div class="grid money-lists">
+    <section class="card card-table">
+      <h2>Waiting for review in Monarch: {{ queue.needs_review }}{% if queue.needs_review_pending %} <span class="muted">(+{{ queue.needs_review_pending }} pending)</span>{% endif %}</h2>
+      {% if queue.needs_review_oldest %}
+      <table class="tbl"><thead><tr><th>Date</th><th>Merchant</th><th class="num">Amount</th></tr></thead>
+        <tbody>{% for t in queue.needs_review_oldest %}<tr><td>{{ t.date|fmt_date }}</td><td>{{ t.merchant or '—' }}</td><td class="num">{{ t.amount|money(cents=True) }}</td></tr>{% endfor %}</tbody></table>
+      {% else %}<div class="empty-state">Nothing posted is waiting for review.</div>{% endif %}
+    </section>
+    <section class="card card-table">
+      <h2>No WHO tag since {{ queue.no_who_since|fmt_date }}: {{ queue.no_who }}</h2>
+      {% if queue.no_who_oldest %}
+      <table class="tbl"><thead><tr><th>Date</th><th>Merchant</th><th class="num">Amount</th></tr></thead>
+        <tbody>{% for t in queue.no_who_oldest %}<tr><td>{{ t.date|fmt_date }}</td><td>{{ t.merchant or '—' }}</td><td class="num">{{ t.amount|money(cents=True) }}</td></tr>{% endfor %}</tbody></table>
+        {% if queue.no_who > queue.no_who_oldest|length %}<div class="metric-sub">Oldest {{ queue.no_who_oldest|length }} shown.</div>{% endif %}
+      {% else %}<div class="empty-state">Every posted transaction has a WHO tag.</div>{% endif %}
+    </section>
+  </div>
+  {% endif %}
+
+  <h2 class="section-title">Agent tagging history</h2>
   {% set a = data.actions %}
   <div class="grid stats">
     <section class="card"><h2>Transactions handled</h2><div class="metric">{{ data.total }}</div>
       <div class="metric-sub">{{ a.get('tagged_auto', 0) }} auto · {{ a.get('tagged_confirmed', 0) }} confirmed · {{ a.get('skipped_ambiguous', 0) }} skipped</div></section>
-    <section class="card"><h2>Awaiting decision</h2><div class="metric">{{ data.decisions.get('pending', 0) }}</div><div class="metric-sub">no user decision recorded</div></section>
+    <section class="card"><h2>Awaiting decision</h2><div class="metric">{{ data.awaiting }}</div><div class="metric-sub">transactions the agent skipped or tagged that you haven't settled
+      {% if data.decisions.get('resolved_in_monarch') %}· {{ data.decisions.get('resolved_in_monarch') }} settled directly in Monarch{% endif %}</div></section>
     <section class="card"><h2>Corrected</h2><div class="metric">{{ (data.correction_rate ~ '%') if data.correction_rate is not none else '—' }}</div><div class="metric-sub">of decided suggestions</div></section>
     <section class="card"><h2>Rule proposals</h2><div class="metric {{ 'fail-count' if data.proposals_pending }}">{{ data.proposals_pending }}</div><div class="metric-sub">awaiting approval</div></section>
   </div>
