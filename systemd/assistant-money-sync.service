@@ -1,0 +1,9 @@
+[Unit]
+Description=Sync Monarch budget, transactions, balances and net worth into the local money snapshot
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+ExecStart=@REPO_ROOT@/vendor/monarch-mcp-server/.venv/bin/python @REPO_ROOT@/scripts/money_sync.py --mode auto
+TimeoutStartSec=180

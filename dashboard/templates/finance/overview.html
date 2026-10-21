@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% macro chip(status, text="") -%}
+  <span class="rag rag-{{ status }}" title="{{ status }}"><span class="rag-dot"></span>{{ text }}</span>
+{%- endmacro %}
+
+{% block page_header %}
+  <h1>Money</h1>
+  <p class="subtitle">
+    {% if data.sync and data.sync.has_data %}
+      From Monarch, synced {{ data.sync.last_ok_at|fmt_dt }}{% if data.sync.stale %} <span class="pill pill-warn">stale</span>{% endif %}.
+    {% else %}Not synced from Monarch yet.{% endif %}
+    {% if refreshing %}<span class="pill pill-muted">refreshing… reload in a few seconds</span>{% endif %}
+  </p>
+  <form method="post" action="/finance/refresh" class="inline-form"><button class="link-button" type="submit">Refresh now</button></form>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% elif not data.sync.has_data %}
+  <div class="card"><div class="empty-state">No Monarch data yet. The sync runs every 30 minutes from 6am to 11pm, or press Refresh now.
+    {% if data.sync.last_run and data.sync.last_run.error %}<br>Last attempt: {{ data.sync.last_run.status }} ({{ data.sync.last_run.error }}){% endif %}</div></div>
+{% else %}
+  {% set r = data.review %}
+  <h2 class="section-title">This month <span class="muted">({{ data.month_elapsed_pct }}% of the month gone)</span></h2>
+  <div class="grid stats money-grid">
+    {% for b in data.budget %}
+    <section class="card money-card">
+      <h2>{{ b.label }} {% if b.status != 'neutral' %}{{ chip(b.status) }}{% endif %}</h2>
+      <div class="metric">{{ b.actual|money }}</div>
+      <div class="metric-sub">of {{ b.planned|money }} {{ 'planned' if b.kind != 'income' else 'expected' }}
+        · {% if b.left >= 0 %}{{ b.left|money }} {{ 'left' if b.kind != 'income' else 'to come' }}{% else %}{{ (-b.left)|money }} over{% endif %}</div>
+      {% if b.pct is not none %}
+      <div class="bar"><div class="bar-fill rag-bg-{{ b.status }}" style="width: {{ [b.pct, 100]|min }}%"></div>
+        {% if b.pace %}<div class="bar-pace" style="left: {{ data.month_elapsed_pct }}%" title="where spending should be today"></div>{% endif %}</div>
+      {% endif %}
+      {% if b.note %}<div class="metric-sub">{{ b.note }}</div>{% endif %}
+    </section>
+    {% endfor %}
+    {% if data.projection %}{% set p = data.projection %}
+    <section class="card money-card">
+      <h2>Projected month end {{ chip(p.status) }}</h2>
+      <div class="metric">{{ p.projected|money }}</div>
+      <div class="metric-sub">vs {{ p.planned|money }} budget ({{ p.pct }}%): fixed bills, plus flexible at today's pace</div>
+    </section>
+    {% endif %}
+  </div>
+
+  <h2 class="section-title">Spending and saving</h2>
+  <div class="grid stats money-grid">
+    {% set s = data.spending %}
+    <section class="card money-card">
+      <h2>Spent so far {{ chip(s.status) }}</h2>
+      <div class="metric">{{ s.mtd|money }}</div>
+      <div class="metric-sub">Last month by this day: {{ s.last_month_same_day|money }}{% if s.vs_last_pct is not none %} ({{ s.vs_last_pct }}%){% endif %}</div>
+      <div class="metric-sub">Normal (3-month average): {{ s.normal_same_day|money }}{% if s.vs_normal_pct is not none %} ({{ s.vs_normal_pct }}%){% endif %}</div>
+    </section>
+    {% set sv = data.savings %}
+    <section class="card money-card">
+      <h2>Cash-flow savings rate {{ chip(sv.status) }}</h2>
+      <div class="metric">{{ sv.rate_3mo if sv.rate_3mo is not none else '—' }}{{ '%' if sv.rate_3mo is not none }}</div>
+      <div class="metric-sub">Last 3 months: {{ sv.income_3mo|money }} in, {{ sv.spend_3mo|money }} out ({{ sv.net_3mo|money }} net)</div>
+      <div class="metric-sub">Take-home pay minus spending; 401k/403b payroll contributions aren't counted.</div>
+    </section>
+    {% set a = data.accounts %}
+    <section class="card money-card">
+      <h2>Emergency fund {{ chip(a.runway_status) }}</h2>
+      <div class="metric">{{ a.runway_months if a.runway_months is not none else '—' }} months</div>
+      <div class="metric-sub">{{ a.cash|money }} in cash accounts vs {{ a.monthly_spend|money }}/month spending</div>
+    </section>
+    <section class="card money-card">
+      <h2>Credit cards</h2>
+      <div class="metric">{{ a.card_balance|money }}</div>
+      <div class="metric-sub">current balance across cards</div>
+    </section>
+    {% if data.networth %}{% set n = data.networth %}
+    <section class="card money-card">
+      <h2>Net worth</h2>
+      <div class="metric">{{ n.value|money }}</div>
+      <div class="metric-sub">{% if n.change_30d is not none %}{{ '+' if n.change_30d >= 0 }}{{ n.change_30d|money }} in 30 days{% endif %}
+        {% if n.change_ytd is not none %} · {{ '+' if n.change_ytd >= 0 }}{{ n.change_ytd|money }} this year{% endif %}</div>
+      {% if n.spark %}<svg class="spark" viewBox="0 0 240 48" preserveAspectRatio="none" aria-label="Net worth, last 90 days"><polyline points="{{ n.spark }}"/></svg>{% endif %}
+    </section>
+    {% endif %}
+    {% if data.retirement %}{% set rt = data.retirement %}
+    <section class="card money-card">
+      <h2>Retirement plan {{ chip(rt.status) }}</h2>
+      <div class="metric">{{ rt.success_pct }}%</div>
+      <div class="metric-sub">chance of success in the last model run ({{ rt.as_of|fmt_date }})</div>
+    </section>
+    {% endif %}
+  </div>
+
+  <h2 class="section-title">Keeping up</h2>
+  <div class="grid stats money-grid">
+    <a class="card money-card card-link" href="/finance/tagging">
+      <h2>Waiting for review {{ chip(r.needs_review_status) }}</h2>
+      <div class="metric">{{ r.needs_review }}</div>
+      <div class="metric-sub">posted transactions marked "needs review" in Monarch{% if r.needs_review_pending %} (+{{ r.needs_review_pending }} still pending){% endif %}</div>
+    </a>
+    <a class="card money-card card-link" href="/finance/tagging">
+      <h2>No WHO tag {{ chip(r.no_who_status) }}</h2>
+      <div class="metric">{{ r.no_who }}</div>
+      <div class="metric-sub">posted transactions since {{ r.no_who_since|fmt_date }}</div>
+    </a>
+    <section class="card money-card">
+      <h2>Bank connections {{ chip(a.sync_status) }}</h2>
+      <div class="metric">{{ a.needs_relink|length + a.stale|length }}</div>
+      <div class="metric-sub">{% if a.needs_relink %}Need re-linking in Monarch: {{ a.needs_relink|join(', ') }}{% endif %}
+        {% if a.stale %}{% if a.needs_relink %}<br>{% endif %}No new data lately: {{ a.stale|join(', ') }}{% endif %}
+        {% if not a.needs_relink and not a.stale %}All linked accounts are updating.{% endif %}</div>
+    </section>
+  </div>
+
+  <div class="grid money-lists">
+    <section class="card card-table">
+      <h2>Over budget this month</h2>
+      {% if data.over_budget %}
+      <table class="tbl"><thead><tr><th>Category</th><th class="num">Spent</th><th class="num">Budget</th><th class="num">Over</th></tr></thead>
+        <tbody>{% for o in data.over_budget %}<tr><td>{{ o.name }}</td><td class="num">{{ o.actual|money }}</td><td class="num">{{ o.planned|money }}</td><td class="num">{{ chip('red', o.over|money) }}</td></tr>{% endfor %}</tbody></table>
+      {% else %}<div class="empty-state">Every category is within budget.</div>{% endif %}
+    </section>
+    <section class="card card-table">
+      <h2>Bills in the next 2 weeks <span class="muted">({{ data.bills.total|money }})</span></h2>
+      {% if data.bills["items"] %}
+      <table class="tbl"><thead><tr><th>Due</th><th>What</th><th class="num">Amount</th></tr></thead>
+        <tbody>{% for b in data.bills["items"] %}<tr><td>{{ b.due_date|fmt_date }}</td><td>{{ b.merchant }}</td><td class="num">{{ (-b.amount)|money }}</td></tr>{% endfor %}</tbody></table>
+      {% else %}<div class="empty-state">No recurring bills due.</div>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

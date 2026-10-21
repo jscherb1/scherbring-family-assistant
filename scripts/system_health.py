@@ -33,6 +33,7 @@ SYSTEMS = {
     "open_meteo": ("Open-Meteo weather", "script"),
     "drive": ("Google Drive", "script"),
     "monarch": ("Monarch", "script"),
+    "money_sync": ("Monarch snapshot sync", "script"),
     "hyvee": ("Hy-Vee", "script"),
     "todoist": ("Todoist", "agent"),
     "calendar": ("Google Calendar", "agent"),
@@ -163,6 +164,21 @@ def check_monarch():
     return _from_probe(cc.probe_monarch)
 
 
+def check_money_sync():
+    import money
+    st = money.sync_status()
+    last = st["last_run"] or {}
+    if not st["has_data"]:
+        return "warn", "no successful sync yet" + (f" (last: {last.get('status')})" if last else "")
+    if last.get("status") == "auth_failed":
+        # "warn", not "down": the Monarch check already alerts on an expired login.
+        return "warn", "Monarch login expired; the money pages show the last good snapshot"
+    hour = datetime.now().hour
+    if st["stale"] and 7 <= hour <= 23:  # syncs run 6am-11pm; overnight age is expected
+        return "warn", f"last good sync {st['age_minutes']} min ago" + (f" ({last.get('status')}: {last.get('error')})"[:160] if last.get("error") else "")
+    return "ok", f"synced {st['age_minutes']} min ago"
+
+
 def check_hyvee():
     # The one Hy-Vee check lives in scripts/hyvee/hyvee_connection.py (also keeps the saved session fresh).
     sys.path.insert(0, str(REPO_ROOT / "scripts" / "hyvee"))
@@ -171,7 +187,7 @@ def check_hyvee():
 
 
 SCRIPT_CHECKS = {"coros_mcp": check_coros_mcp, "coros_web": check_coros_web, "open_meteo": check_open_meteo,
-                 "drive": check_drive, "monarch": check_monarch, "hyvee": check_hyvee}
+                 "drive": check_drive, "monarch": check_monarch, "money_sync": check_money_sync, "hyvee": check_hyvee}
 
 
 def run_checks(keys=None, *, db_path=None, notify=None) -> list[dict]:

@@ -251,7 +251,8 @@ def client(state):
     "/health/system", "/api/system",
     "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
-    "/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports",
+    "/finance", "/finance/tagging", "/finance/reports", "/api/finance/overview", "/api/finance/tagging",
+    "/api/finance/reports",
     "/habits", "/habits?owner=Justin", "/api/habits", "/habits/analysis", "/api/habits/analysis",
     "/rating", "/rating/insights", "/api/rating", "/api/rating/insights",
     "/wellness", "/wellness/trends", "/wellness/trends?range=30&heat=hrv", "/wellness/trends?range=180",
@@ -384,7 +385,7 @@ def test_read_only_except_allowlisted_write_routes(client):
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
                "/chores/payout", "/chores/backfill", "/chores/undo",
                "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo",
-               "/reconnect/drive/start", "/reconnect/drive/complete"}
+               "/reconnect/drive/start", "/reconnect/drive/complete", "/finance/refresh"}
     writes = {r.path for r in app.routes
               if getattr(r, "methods", None) and r.methods & {"POST", "PUT", "PATCH", "DELETE"}}
     assert writes <= allowed, f"unexpected write routes: {writes - allowed}"
@@ -606,7 +607,7 @@ def test_shopping_fitness_escaped_and_missing(client, tmp_path, monkeypatch):
 
 def test_tagging_summary(state):
     data = finance.get_tagging()
-    assert data["total"] == 3 and data["decisions"]["pending"] == 1
+    assert data["total"] == 3 and data["decisions"]["pending"] == 1 and data["awaiting"] == 1
     assert data["correction_rate"] == 50
     assert data["who_map_total"] == 2 and data["who_map_low"] == 1 and data["proposals_pending"] == 1
 
@@ -618,14 +619,78 @@ def test_reports_summary(state):
     assert set(data["last_by_period"]) == {"weekly", "monthly"} and "retirement" in data["last_run"]
 
 
-def test_finance_pages_never_leak_sensitive_values(client):
-    for path in ("/finance", "/finance/reports", "/api/finance/tagging", "/api/finance/reports"):
+def test_finance_pages_hide_report_text_and_profile_values(client):
+    """Money pages show live amounts (decided 2026-10-21; the dashboard is localhost/Tailscale only), but report
+    briefs, advisor/retirement profile values and the agent's per-transaction log details stay hidden."""
+    for path in ("/finance", "/finance/tagging", "/finance/reports", "/api/finance/overview",
+                 "/api/finance/tagging", "/api/finance/reports"):
         body = client.get(path).text
         for secret in ("SECRET", "9876", "987654", "1,234"):
             assert secret not in body, (path, secret)
     page = client.get("/finance/reports").text
     assert "https://drive.example/x" in page and "javascript:alert" not in page
-    assert "<i>x</i>" not in client.get("/finance").text
+    assert "<i>x</i>" not in client.get("/finance/tagging").text
+
+
+def test_money_amounts_stay_on_money_pages(client, state):
+    seed_money(state)
+    assert "$4,321" in client.get("/finance").text
+    for path in ("/", "/week", "/home", "/family"):
+        assert "4,321" not in client.get(path).text, path
+
+
+def seed_money(state):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import money
+
+    today = datetime.now().date()
+    month = today.replace(day=1).isoformat()
+    db = state / "agent_results.db"
+    money.apply_snapshot({
+        "budget": {"month": month, "totals": [
+            {"kind": "flexible", "planned": 5000.0, "actual": 4321.0, "remaining": 679.0, "rollover": 0.0},
+            {"kind": "fixed", "planned": 3000.0, "actual": 1000.0, "remaining": 2000.0, "rollover": 0.0}], "lines": []},
+        "transactions": {"start": month, "end": today.isoformat(), "items": [
+            {"id": "m1", "date": today.isoformat(), "amount": -12.5, "merchant": "Corner Cafe <b>", "group_type": "expense",
+             "needs_review": True, "tags": []}]},
+        "needs_review": {"since": "2025-06-01", "ids": ["m1"]},
+    }, db_path=db)
+    run = money.start_sync("quick", db_path=db)
+    money.finish_sync(run, "ok", db_path=db)
+
+
+def test_money_overview_page_and_api_match_the_cli(client, state, capsys):
+    seed_money(state)
+    page = client.get("/finance").text
+    assert "Flexible" in page and "rag-" in page and "Corner Cafe" not in page
+    api = client.get("/api/finance/overview").json()
+    import money_store
+
+    money_store.money.DB_PATH = state / "agent_results.db"
+    try:
+        assert money_store.main(["overview"]) == 0
+    finally:
+        money_store.money.DB_PATH = ROOT / "state" / "agent_results.db"
+    cli = json.loads(capsys.readouterr().out)
+    for key in ("budget", "spending", "review", "projection"):
+        assert api[key] == cli[key], key
+    tagging = client.get("/finance/tagging").text
+    assert "Corner Cafe &lt;b&gt;" in tagging and "−$12.50" in tagging
+
+
+def test_money_overview_before_first_sync(client):
+    assert "No Monarch data yet" in client.get("/finance").text
+    assert "Not synced" in client.get("/").text
+
+
+def test_finance_refresh_is_same_origin_only(client, monkeypatch):
+    from dashboard.data import money as money_data
+
+    started = []
+    monkeypatch.setattr(money_data, "start_refresh", lambda: started.append(1) or True)
+    assert client.post("/finance/refresh", headers={"origin": "https://evil.example"}).status_code == 403
+    r = client.post("/finance/refresh", headers={"origin": "http://testserver"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/finance?refreshing=1" and started == [1]
 
 
 def test_finance_missing_db(tmp_path, monkeypatch):

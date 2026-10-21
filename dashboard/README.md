@@ -19,7 +19,7 @@ nav never touches a router. Page URLs did not change.
 | Me | Wellness Today/Trends/Drivers, Check-in, Journal, Insights, Habits Streaks/Analysis, Fitness |
 | Family | Chores Today/Chores & kids/Money, Kid chart (`/kids`), Profile, Kids memories |
 | Home | Menu, Recipes, Groceries (`/hyvee`), Maintenance, Lawn & garden, Weather alerts |
-| Money | Tagging, Reports & planning |
+| Money | Overview, Tagging, Reports & planning |
 | System (gear) | Status (`/health`), Scheduled tasks, Restarts, Logins & backups, Reconnect, Agent Live, Usage, Activity, Archive |
 
 There is one dark "HUD" theme, taken from the old My Hub page. All colors are tokens in `:root` in `static/style.css`
@@ -82,7 +82,8 @@ other family members.
 | | Weather Alerts | `/home/weather` | Alerts sent (7/30 days, by type), thresholds (coordinates hidden) |
 | People & Family | Profile | `/family` | Upcoming birthdays, directory, facts on file by key, what's missing. **Fact values are not shown** |
 | | Kids Memories | `/family/memories` | Counts per child/month/tag, Drive sync health. **Memory text is not shown** |
-| Finance | Tagging | `/finance` | WHO-tagging activity, learned mapping, rule proposals. **No amounts or per-transaction merchants** |
+| Finance | Overview | `/finance` | Budget vs plan (fixed / flexible / non-monthly / total) with red/yellow/green, projected month end, spending vs last month and normal, savings rate, emergency-fund runway, card balances, net worth, bills due, over-budget categories, retirement verdict, review/no-WHO counts, bank connections. From the Monarch snapshot (`scripts/money.py`); **Refresh now** (`POST /finance/refresh`) starts a quick sync. Shows dollar amounts |
+| | Tagging | `/finance/tagging` | Live needs-review and no-WHO-tag counts with the oldest few (merchant, amount), then the agent's WHO-tagging history, learned mapping and rule proposals |
 | | Reports & Planning | `/finance/reports` | Report history with Drive links, advisor-profile completeness, non-monetary retirement settings |
 | Hy-Vee | Overview | `/hyvee` | Purchase history, most-bought items, learned preferences, cart builds |
 | Fitness | Overview | `/fitness` | This week's plan, COROS push status, library. Planned workouts only (no completion tracking) |
@@ -103,8 +104,9 @@ other family members.
 | (kids) | One kid's chart | `/kids/<name>` | Same page as `/kids` filtered to a single kid (e.g. `/kids/ruth`), for that kid's tablet bookmark. Hides the other kid's chart but is not access control (no login) |
 | Activity | Agent Activity | `/activity` | Latest agent results and last run per agent; sensitive agents' summaries are hidden |
 
-Everything is view-only except the Habits page (see Notes). Because there is no login, sensitive areas (finance, kids memories, profile)
-show summaries only.
+Everything is view-only except the Habits page (see Notes). Because there is no login, sensitive areas (kids memories, profile,
+finance report text and advisor/retirement profile values) show summaries only. The Money overview and the live review lists do
+show dollar amounts and merchants (decided 2026-10-21: the dashboard is only reachable on localhost/Tailscale).
 
 JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/restarts`, `/api/system`,
 `/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/wellness*`, `/api/journal/*`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.

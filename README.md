@@ -42,13 +42,16 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/finance-reporter.md` | Finance-reporter subagent (Phases 2 & 4) — weekly/monthly/annual spending-summary HTML reports to Drive + Telegram brief |
 | `.claude/agents/retirement.md` | Retirement subagent (Phase 3) — Monte Carlo projection + editable `.xlsx` modeling workbook to Drive; owns "can we afford X" what-ifs |
 | `.claude/agents/finance-advisor.md` | Finance-advisor subagent (Phase 5) — on-demand, read-only proactive recommendations engine (idle cash, debt, tax-advantaged, tax-loss, insurance/estate + directional ideas) |
+| `scripts/money.py` | Shared Money service over the local Monarch snapshot (budget vs plan with red/yellow/green, spending vs normal, savings rate, runway, net worth, review queue, reconciling the tagging log). Used by `money_store.py` and the `/finance` dashboard pages |
+| `scripts/money_store.py` | Zero-dep CLI over `money.py` for the `finance` agent (`overview`, `budget`, `spending`, `review`, `sync-status`, `config`) |
+| `scripts/money_sync.py` | Pulls Monarch into the snapshot tables (runs with the vendored Monarch venv; `assistant-money-sync.timer`) |
 | `scripts/finance_store.py` | Zero-dep CLI for finance working-state (who-map / tagging log / rule proposals / report log / config sub-commands) |
 | `scripts/finance_report.py` | Renders self-contained HTML spending reports (`--period weekly|monthly|annual`) |
 | `scripts/retirement_model.py` | Monte Carlo retirement engine (numpy) — success probability, percentile bands, base + what-if scenarios |
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -509,7 +512,7 @@ Summary tiles plus agent and login-expiry items).
   What was told is remembered in `hub_notified`. **Dismissals are one shared list** (`hub_dismissed`) used by the Today
   page, the archived Summary and My Hub pages, the agent and the notifier, so dismissing an item anywhere hides it everywhere and stops it
   notifying; the old `state/dashboard_dismissed.json` is imported once and renamed.
-- Not on the hub yet: finance items waiting on a decision (Monarch is live-only) and Hy-Vee cart state; see `docs/TODO.md`.
+- Not on the hub yet: Hy-Vee cart state; see `docs/TODO.md`. (Money now has its own Today tile from the Monarch snapshot.)
 
 Register once (calendar and tasks need the agent, so every 2 hours 7am-9pm):
 ```
@@ -789,6 +792,25 @@ from data, be transparent about assumptions/gaps, never hand-wave a number" disc
   liquidity target, risk tolerance) live in a stored `advisor_profile` (`finance_config`) —
   asked once, persisted, never invented silently. **Follow-up not yet built:** fold an
   advisor section into the annual review report.
+
+### Money home page and the Monarch snapshot
+
+The dashboard's **Money** tab opens on an overview: this month's fixed / flexible / non-monthly / total
+budget against plan (red, yellow or green; flexible is judged against the month's pace), projected
+month-end spending, spending so far vs last month and the 3-month normal, cash-flow savings rate,
+emergency-fund runway, card balances, net worth (30-day and year-to-date change), bills due in the next
+two weeks, over-budget categories, the retirement model's last verdict, and the "keeping up" counts:
+transactions waiting for review in Monarch (posted only) and transactions since 2025-06-01 without a WHO
+tag. Tagging and Reports & planning are its sub-pages.
+
+The numbers come from a local copy of Monarch (`money_*` tables), refreshed by
+`scripts/money_sync.py` every 30 minutes from 6am to 11pm (`assistant-money-sync.timer`; a full
+pull since 2025-06-01 once a day, the last 120 days otherwise) and by the page's **Refresh now**
+button. Each sync also settles the finance agent's tagging log against what you did in Monarch
+directly, so "awaiting decision" stops counting transactions you already tagged there. The service
+is `scripts/money.py`; the `finance` agent reads the same numbers with `scripts/money_store.py`, and
+thresholds are adjustable with `money_store.py config set`. Install the timer:
+`scripts/install_systemd.sh assistant-money-sync.timer`.
 
 Backed by `finance_who_map` / `finance_tag_log` / `finance_rule_proposals` /
 `finance_report_log` / `finance_config` and `scripts/finance_store.py`. No setup beyond the

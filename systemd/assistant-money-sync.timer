@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync Monarch into the money snapshot every 30 minutes, 6am to 11pm
+
+[Timer]
+OnCalendar=*-*-* 06..22:00,30:00
+OnCalendar=*-*-* 23:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target
