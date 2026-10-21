@@ -262,7 +262,8 @@ def main(argv: list[str] | None = None) -> int:
     command = argv[0]
     # The bridge worker's SDK sessions load the same project hooks, but the bridge's
     # durable inbox/outbox replaces this log there; stay out of the plugin-era log.
-    if command.startswith("hook-") and os.environ.get("BRIDGE_WORKER") == "1":
+    # Headless scheduled runs (ASSISTANT_HEADLESS) aren't a conversation either.
+    if command.startswith("hook-") and "1" in (os.environ.get("BRIDGE_WORKER"), os.environ.get("ASSISTANT_HEADLESS")):
         return 0
     dispatch = {
         "hook-post-reply": cmd_hook_post_reply,

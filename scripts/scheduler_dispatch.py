@@ -28,14 +28,11 @@ import json
 import os
 import subprocess
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from bridge_store import record_context_note  # noqa: E402
-from paths import REPO_ROOT, alert_chat_id, find_claude, get_env, telegram_env_path  # noqa: E402
+import notify  # noqa: E402
+from paths import REPO_ROOT, find_claude  # noqa: E402
 
 LOOP_STATE_FILE = REPO_ROOT / "state" / "scheduler_loop_state.json"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -72,47 +69,16 @@ def _resolve_claude() -> str:
 CLAUDE_EXE = _resolve_claude()
 
 
-TELEGRAM_ENV_FILE = telegram_env_path()
-
-
-def _read_telegram_creds() -> tuple[str, str] | tuple[None, None]:
-    """Return (bot_token, chat_id) from env file + config, or (None, None) if unavailable."""
-    try:
-        token = get_env("TELEGRAM_BOT_TOKEN", (TELEGRAM_ENV_FILE,))
-        if not token:
-            return None, None
-        chat_id = alert_chat_id()
-        if not chat_id:
-            return None, None
-        return token, chat_id
-    except Exception:  # noqa: BLE001
-        return None, None
-
-
-def _telegram_send_raw(token: str, chat_id: str, text: str) -> None:
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=data,
-        method="POST",
-    )
-    urllib.request.urlopen(req, timeout=10)  # noqa: S310
-
-
 def send_failure_alert(task_name: str, run_at: str, reason: str) -> None:
     """Send a direct Telegram alert when a task fails — no Claude involved."""
-    token, chat_id = _read_telegram_creds()
-    if not token:
-        return
     text = (
         f"\u26a0\ufe0f Scheduled task failed: {task_name}\n"
         f"Due: {run_at}\n"
         f"Reason: {reason[:300]}"
     )
-    try:
-        _telegram_send_raw(token, chat_id, text)
-    except Exception as exc:  # noqa: BLE001
-        print(f"scheduler_dispatch: failed to send failure alert: {exc}", flush=True)
+    res = notify.send(text, source=f"scheduled:{task_name}", kind="alert")
+    if not res.delivered and res.error:
+        print(f"scheduler_dispatch: failed to send failure alert: {res.error}", flush=True)
 
 
 # Markers the dispatched subagent is instructed to wrap its intended Telegram
@@ -124,7 +90,6 @@ def send_failure_alert(task_name: str, run_at: str, reason: str) -> None:
 # memory: scheduler_dispatch_false_ok_gap.
 TELEGRAM_SEND_START = "<<<TELEGRAM_SEND>>>"
 TELEGRAM_SEND_END = "<<<TELEGRAM_SEND_END>>>"
-TELEGRAM_MAX_CHARS = 4000
 
 
 def extract_telegram_message(output: str):
@@ -136,22 +101,13 @@ def extract_telegram_message(output: str):
     return output[start + len(TELEGRAM_SEND_START):end].strip()
 
 
-def deliver_telegram_message(chat_id: str, text: str) -> bool:
-    """Send `text` to `chat_id` directly via the Bot API, chunked if long.
-
-    Returns True only if every chunk was accepted by the API.
-    """
-    token, _ = _read_telegram_creds()
-    if not token or not text:
-        return False
-    chunks = [text[i:i + TELEGRAM_MAX_CHARS] for i in range(0, len(text), TELEGRAM_MAX_CHARS)] or [text]
-    try:
-        for chunk in chunks:
-            _telegram_send_raw(token, chat_id, chunk)
-        return True
-    except Exception as exc:  # noqa: BLE001
-        print(f"scheduler_dispatch: failed to deliver telegram message: {exc}", flush=True)
-        return False
+def deliver_telegram_message(chat_id: str, text: str, task_name: str = "") -> bool:
+    """Send `text` to `chat_id` via notify (chunked, and recorded so the conversation knows about it,
+    including any chunks that landed before a failure). True only if every chunk was accepted."""
+    res = notify.send(text, source=f"scheduled:{task_name or 'task'}", kind="scheduled", chat_id=chat_id)
+    if not res.delivered:
+        print(f"scheduler_dispatch: failed to deliver telegram message: {res.error}", flush=True)
+    return res.delivered
 
 
 def count_permission_denials(debug_log: Path) -> int:
@@ -317,6 +273,9 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         env = os.environ.copy()
         env["MCP_TIMEOUT_MS"] = MCP_TIMEOUT_MS
         env["MCP_CONNECT_TIMEOUT_MS"] = MCP_TIMEOUT_MS
+        # Headless run: keep the plugin-era conversation hooks out (they tell the session to reply
+        # via the Telegram tool, which is wrong here; delivery is the markers above).
+        env["ASSISTANT_HEADLESS"] = "1"
 
         DISPATCH_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         safe_run_at = run_at.replace(":", "-") or "unknown"
@@ -335,10 +294,7 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
 
         message = extract_telegram_message(output) if (process_ok and chat_id) else None
         if message:
-            delivered = deliver_telegram_message(chat_id, message)
-            if delivered:
-                # So the main session knows what the user was just told and can discuss it.
-                record_context_note(chat_id, f"Scheduled task '{name}' ran and sent you: {message}", "scheduler")
+            delivered = deliver_telegram_message(chat_id, message, name)
             success = process_ok and delivered
             summary = message[:500] if delivered else f"telegram delivery failed; message was: {message[:400]}"
         else:

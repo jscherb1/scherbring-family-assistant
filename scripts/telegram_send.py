@@ -14,8 +14,11 @@ to detect and heal a stale binding by restarting the orchestrator — without
 this, the staleness can sit silently until a real reply attempt happens to
 produce the matching log error, which may never occur.
 
+Every send goes through notify.py, so it is also recorded for the conversation
+(a context note plus the Telegram message ids for reply-to lookups).
+
 Usage:
-    python scripts/telegram_send.py "message text" [--chat-id 123456]
+    python scripts/telegram_send.py "message text" [--chat-id 123456] [--source agent]
 """
 
 from __future__ import annotations
@@ -23,16 +26,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime
 
+import notify
 from paths import REPO_ROOT, alert_chat_id, get_env, secrets_dir, telegram_env_path
 
 TELEGRAM_ENV_FILE = telegram_env_path()
 FALLBACK_STATE_FILE = REPO_ROOT / "state" / "telegram_fallback_used.json"
-MAX_CHARS = 4000
 
 
 def _read_token() -> str | None:
@@ -45,14 +45,6 @@ def _default_chat_id() -> str | None:
     return alert_chat_id()
 
 
-def _send_raw(token: str, chat_id: str, text: str) -> None:
-    data = urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode()
-    req = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        data=data,
-        method="POST",
-    )
-    urllib.request.urlopen(req, timeout=10)  # noqa: S310
 
 
 def _record_fallback_used(reason: str) -> None:
@@ -67,6 +59,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("text", help="Message text to send")
     parser.add_argument("--chat-id", default=None, help="Telegram chat id (defaults to TELEGRAM_ALERT_CHAT_ID)")
+    parser.add_argument("--source", default="agent", help="Who is sending (recorded with the message)")
     parser.add_argument("--reason", default="mcp reply tool unavailable", help="Why the fallback was used (recorded for the watchdog)")
     args = parser.parse_args()
 
@@ -88,12 +81,9 @@ def main() -> int:
     # the send itself fails (both are worth the watchdog knowing about).
     _record_fallback_used(args.reason)
 
-    chunks = [args.text[i:i + MAX_CHARS] for i in range(0, len(args.text), MAX_CHARS)] or [args.text]
-    try:
-        for chunk in chunks:
-            _send_raw(token, chat_id, chunk)
-    except Exception as exc:  # noqa: BLE001
-        print(f"telegram_send: failed to deliver message: {exc}", file=sys.stderr)
+    res = notify.send(args.text, source=args.source, kind="agent", chat_id=chat_id, token=token)
+    if not res.delivered:
+        print(f"telegram_send: failed to deliver message: {res.error}", file=sys.stderr)
         return 1
 
     print("telegram_send: delivered")

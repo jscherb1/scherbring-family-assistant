@@ -55,7 +55,8 @@ You are running behind a message bridge, not the Telegram plugin. Overrides to a
 - Your final assistant message is delivered to the user automatically on the channel the message came from. Do NOT call any Telegram reply/react/edit tool and do NOT run scripts/telegram_send.py for normal replies.
 - Acknowledgements (reaction, typing, a "working on it" notice for slow turns) are sent by the bridge automatically. Do not send your own.
 - Never use AskUserQuestion; if you need an answer, just ask in your final message and the user's reply will arrive as the next message.
-- Messages arrive wrapped in a <channel ...> tag with chat/user/time metadata; "[Earlier notes]" blocks are context (e.g. results of scheduled tasks already delivered to the user), not requests.
+- Messages arrive wrapped in a <channel ...> tag with chat/user/time metadata; "[Earlier notes]" blocks are context (e.g. results of scheduled tasks and alerts already delivered to the user), not requests.
+- A <replying_to ...> block means the user used Telegram's reply on an earlier message; it holds that message's text and who sent it (e.g. source="scheduled:finance-transaction-review" or "credential-check"). Read the user's message as being about that one.
 - A message with via="web" was typed into the family dashboard's ask box instead of Telegram. Treat it like any other message: your reply still lands in the Telegram chat.
 - A message with via="ios" was sent from the user's iPhone Shortcut. Same handling: your reply lands in Telegram, where it will likely be read on a phone, so keep it concise.
 - If a message is marked as a retry, a previous attempt may have partially executed: check current state before repeating any side effect.
@@ -85,6 +86,8 @@ def format_turn_prompt(row: dict) -> str:
         for n in row["notes"]:
             when = datetime.fromtimestamp(n["received_at"]).strftime("%Y-%m-%d %H:%M")
             lines.append(f"- [{when}] {n['text']}")
+        if row.get("notes_hidden"):
+            lines.insert(0, f"- (+{row['notes_hidden']} older notes not shown)")
         parts.append("[Earlier notes]\n" + "\n".join(lines) + "\n[/Earlier notes]")
     if row["attempts"] > 1:
         parts.append(f"[Retry #{row['attempts']}: a previous attempt at this message did not finish; it may have partially executed.]")
@@ -95,8 +98,29 @@ def format_turn_prompt(row: dict) -> str:
     for att in p.get("attachments", []):
         if att.get("path"):
             body += f"\n[attachment {att['kind']}: {att['path']}]"
+    rt = p.get("reply_to")
+    if rt:
+        if rt.get("source"):
+            src = rt["source"]
+        else:
+            src = "assistant" if rt.get("from_bot") else "user"
+        sent = f' sent="{datetime.fromtimestamp(rt["at"]).isoformat(timespec="seconds")}"' if rt.get("at") else ""
+        parts.append(f'<replying_to source="{src}"{sent}>\n{rt.get("text", "")}\n</replying_to>')
     parts.append(f"<channel {attrs}>\n{body}\n</channel>")
     return "\n\n".join(parts)
+
+
+def resolve_reply_to(store: BridgeStore, row: dict) -> None:
+    """Swap Telegram's quoted copy of a replied-to message for our record of it (full text, sender)."""
+    rt = row["payload"].get("reply_to")
+    if not rt or rt.get("message_id") is None:
+        return
+    try:
+        hit = store.find_sent(row["chat_ref"], rt["message_id"])
+    except Exception:  # noqa: BLE001
+        hit = None
+    if hit:
+        rt.update(text=hit["text"], source=hit["source"] or "assistant", at=hit["at"])
 
 
 def format_seed(rows: list[dict]) -> str:
@@ -105,7 +129,7 @@ def format_seed(rows: list[dict]) -> str:
         return ""
     lines = []
     for r in rows:
-        who = "User" if r["dir"] == "in" else "Assistant"
+        who = {"in": "User", "out": "Assistant", "note": "Sent outside this chat"}.get(r["dir"], "Assistant")
         when = datetime.fromtimestamp(r["at"]).strftime("%Y-%m-%d %H:%M")
         lines.append(f"[{when}] {who}: {r['text']}")
     return ("[Conversation history restored from the message log because the previous session could not be "
@@ -312,8 +336,9 @@ class Worker:
             self.sessions[key] = self.session_factory(key)
         return self.sessions[key]
 
-    def _reply(self, row: dict, text: str) -> None:
-        self.store.enqueue_outbound(row["channel"], row["chat_ref"], text, in_reply_to=row["id"])
+    def _reply(self, row: dict, text: str, *, kind: str = "reply", note: bool = False) -> None:
+        source = None if kind == "reply" else "worker"
+        self.store.enqueue_outbound(row["channel"], row["chat_ref"], text, in_reply_to=row["id"], source=source, kind=kind, note=note)
 
     async def process_one(self) -> bool:
         row = self.store.claim_next()
@@ -321,10 +346,11 @@ class Worker:
             return False
         if row["attempts"] > MAX_ATTEMPTS:
             self.store.fail(row["id"])
-            self._reply(row, "⚠️ I couldn't process that message after several attempts. Please resend it or rephrase.")
+            self._reply(row, "⚠️ I couldn't process that message after several attempts. Please resend it or rephrase.", kind="notice", note=True)
             return True
         if row["channel"] == "telegram":
             _export_legacy("in", row["chat_ref"], row["text"])
+        resolve_reply_to(self.store, row)
         session = self._session(row["session_key"])
         should_rotate = getattr(session, "should_rotate", None)
         if should_rotate and should_rotate():
@@ -347,7 +373,7 @@ class Worker:
             await session.close()
             self.sessions.pop(row["session_key"], None)
             self.store.complete(row["id"])
-            self._reply(row, "⚠️ That took too long and I had to stop. Try again or break it into smaller steps.")
+            self._reply(row, "⚠️ That took too long and I had to stop. Try again or break it into smaller steps.", kind="notice", note=True)
             _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_timeout"})
             return True
         except Exception as e:  # noqa: BLE001
@@ -420,12 +446,12 @@ class Worker:
 
     async def _slow_ack(self, row: dict) -> None:
         await asyncio.sleep(self.slow_ack_after)
-        self._reply(row, "⏳ On it. This is taking a bit; I'll send the result when it's ready.")
+        self._reply(row, "⏳ On it. This is taking a bit; I'll send the result when it's ready.", kind="notice")
 
     def _alert(self, text: str) -> None:
         chat = os.environ.get("TELEGRAM_ALERT_CHAT_ID") or (os.environ.get("BRIDGE_ALLOWED_CHAT_IDS", "").split(",")[0].strip())
         if chat:
-            self.store.enqueue_outbound("telegram", chat, text)
+            self.store.enqueue_outbound("telegram", chat, text, source="worker", kind="alert", note=True)
 
     def _record_canary(self, kind: str, ok: bool, detail: str = "") -> None:
         self.store.kv_set("last_canary", json.dumps({"t": time.time(), "kind": kind, "ok": ok, "detail": detail[:300]}))
