@@ -63,11 +63,26 @@ CREATE TABLE IF NOT EXISTS outbox (
 );
 CREATE INDEX IF NOT EXISTS outbox_status ON outbox(status, next_attempt_at);
 
+-- Telegram message ids of every delivered chunk, so a reply-to can be traced to what was sent.
+CREATE TABLE IF NOT EXISTS sent_ids (
+    chat_ref       TEXT NOT NULL,
+    tg_message_id  INTEGER NOT NULL,
+    outbox_id      INTEGER NOT NULL,
+    PRIMARY KEY (chat_ref, tg_message_id)
+);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
+
+# Columns added after the first release; created on open for older databases.
+OUTBOX_MIGRATIONS = {
+    "source": "TEXT",                         # who sent it: worker, bridge, scheduled:<task>, credential-check...
+    "kind": "TEXT NOT NULL DEFAULT 'reply'",  # reply | notice | alert | scheduled
+    "noted": "INTEGER NOT NULL DEFAULT 0",    # 1 = also recorded as a context note (the seed shows the note instead)
+}
 
 MAX_OUTBOX_ATTEMPTS = 8
 MAX_FOLDED_NOTES = 20
@@ -87,6 +102,10 @@ def session_key_for(chat_ref: str) -> str:
     except ValueError:
         mapping = {}
     return mapping.get(str(chat_ref), str(chat_ref))
+
+
+def _note_text(source: str | None, text: str) -> str:
+    return f"[{source or 'system'}] sent you: {text}"[:4000]
 
 
 def record_context_note(chat_ref: str, text: str, source: str, *, db: Path | str = DEFAULT_DB) -> None:
@@ -121,11 +140,22 @@ class BridgeStore:
                 self._conn.execute("PRAGMA journal_mode=WAL")
                 self._conn.execute("PRAGMA synchronous=FULL")  # durability over speed
                 self._conn.executescript(SCHEMA)
+                self._migrate()
                 break
             except sqlite3.OperationalError as e:
                 if "locked" not in str(e) or attempt == 49:
                     raise
                 time.sleep(0.1)
+
+    def _migrate(self) -> None:
+        have = {r["name"] for r in self._conn.execute("PRAGMA table_info(outbox)")}
+        for col, decl in OUTBOX_MIGRATIONS.items():
+            if col not in have:
+                try:
+                    self._conn.execute(f"ALTER TABLE outbox ADD COLUMN {col} {decl}")
+                except sqlite3.OperationalError as e:  # another connection added it first
+                    if "duplicate column" not in str(e):
+                        raise
 
     def close(self) -> None:
         self._conn.close()
@@ -220,15 +250,17 @@ class BridgeStore:
                 " AND session_key=? AND id<?",
                 (row["id"], row["session_key"], row["id"]),
             )
-            note_rows = c.execute(
+            all_notes = c.execute(
                 "SELECT text, received_at FROM inbox WHERE status='folded' AND kind='context_note' AND picked_at=?"
                 " ORDER BY id",
                 (row["id"],),
-            ).fetchall()[-MAX_FOLDED_NOTES:]  # older ones stay folded (and are closed on complete) but aren't shown
+            ).fetchall()
+        note_rows = all_notes[-MAX_FOLDED_NOTES:]  # older ones stay folded (and are closed on complete) but aren't shown
         out = dict(row)
         out["attempts"] += 1
         out["payload"] = json.loads(out["payload"])
         out["notes"] = [{"text": n["text"], "received_at": n["received_at"]} for n in note_rows]
+        out["notes_hidden"] = len(all_notes) - len(note_rows)
         return out
 
     def complete(self, inbox_id: int, now: float | None = None) -> None:
@@ -255,15 +287,55 @@ class BridgeStore:
         *,
         files: list[str] | None = None,
         in_reply_to: int | None = None,
+        source: str | None = None,
+        kind: str = "reply",
+        note: bool = False,
         now: float | None = None,
     ) -> int:
+        """Queue a message for the bridge to send. `note=True` also records it as a context note, for
+        messages the live session didn't write itself (alerts, notices), so it can discuss them later."""
         ts = now if now is not None else time.time()
         cur = self._conn.execute(
-            "INSERT INTO outbox(channel,chat_ref,text,files,in_reply_to,created_at,next_attempt_at)"
-            " VALUES(?,?,?,?,?,?,?)",
-            (channel, str(chat_ref), text, json.dumps(files or []), in_reply_to, ts, ts),
+            "INSERT INTO outbox(channel,chat_ref,text,files,in_reply_to,created_at,next_attempt_at,source,kind,noted)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (channel, str(chat_ref), text, json.dumps(files or []), in_reply_to, ts, ts, source, kind, int(note)),
         )
+        if note:
+            self.add_inbound(source or channel, str(chat_ref), _note_text(source, text), kind="context_note",
+                             session_key=session_key_for(str(chat_ref)), now=ts)
         return cur.lastrowid
+
+    def record_sent(self, channel: str, chat_ref: str, text: str, tg_message_ids: list[int], *,
+                    source: str, kind: str = "alert", note: bool = True, now: float | None = None) -> int:
+        """Log a message something else already delivered (direct Bot API send) as a sent outbox row,
+        with its Telegram ids, plus a context note so the conversation knows about it."""
+        ts = now if now is not None else time.time()
+        cur = self._conn.execute(
+            "INSERT INTO outbox(channel,chat_ref,text,created_at,next_attempt_at,status,sent_at,attempts,source,kind,noted)"
+            " VALUES(?,?,?,?,?,'sent',?,1,?,?,?)",
+            (channel, str(chat_ref), text, ts, ts, ts, source, kind, int(note)),
+        )
+        self.add_sent_ids(cur.lastrowid, str(chat_ref), tg_message_ids)
+        if note:
+            self.add_inbound(source, str(chat_ref), _note_text(source, text), kind="context_note",
+                             session_key=session_key_for(str(chat_ref)), now=ts)
+        return cur.lastrowid
+
+    def add_sent_ids(self, outbox_id: int, chat_ref: str, tg_message_ids: list[int]) -> None:
+        for mid in tg_message_ids:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO sent_ids(chat_ref,tg_message_id,outbox_id) VALUES(?,?,?)",
+                (str(chat_ref), int(mid), outbox_id),
+            )
+
+    def find_sent(self, chat_ref: str, tg_message_id: int) -> dict | None:
+        """The outbox row a Telegram message id belongs to (for "replying to" context), or None."""
+        row = self._conn.execute(
+            "SELECT o.id, o.text, o.source, o.kind, COALESCE(o.sent_at, o.created_at) AS at FROM sent_ids s"
+            " JOIN outbox o ON o.id = s.outbox_id WHERE s.chat_ref=? AND s.tg_message_id=?",
+            (str(chat_ref), int(tg_message_id)),
+        ).fetchone()
+        return dict(row) if row else None
 
     def next_outbound(self, channel: str | None = None, now: float | None = None) -> dict | None:
         ts = now if now is not None else time.time()
@@ -279,11 +351,15 @@ class BridgeStore:
         out["files"] = json.loads(out["files"])
         return out
 
-    def mark_sent(self, outbox_id: int, now: float | None = None) -> None:
+    def mark_sent(self, outbox_id: int, now: float | None = None, tg_message_ids: list[int] | None = None) -> None:
         self._conn.execute(
             "UPDATE outbox SET status='sent', sent_at=?, error=NULL WHERE id=?",
             (now if now is not None else time.time(), outbox_id),
         )
+        if tg_message_ids:
+            row = self._conn.execute("SELECT chat_ref FROM outbox WHERE id=?", (outbox_id,)).fetchone()
+            if row:
+                self.add_sent_ids(outbox_id, row["chat_ref"], tg_message_ids)
 
     def mark_send_abandoned(self, outbox_id: int, error: str) -> str:
         """Give up on a send without retrying (a timed-out send may already have been delivered)."""
@@ -358,13 +434,15 @@ class BridgeStore:
         ts = now if now is not None else time.time()
         rows: list[dict] = []
         for r in self._conn.execute(
-            "SELECT 'in' dir, received_at at, text FROM inbox WHERE session_key=? AND kind IN ('message','context_note')",
+            "SELECT CASE kind WHEN 'context_note' THEN 'note' ELSE 'in' END dir, received_at at, text FROM inbox"
+            " WHERE session_key=? AND kind IN ('message','context_note')",
             (session_key,),
         ):
             rows.append(dict(r))
         chat_refs = {r["chat_ref"] for r in self._conn.execute("SELECT DISTINCT chat_ref FROM inbox WHERE session_key=?", (session_key,))}
         for ref in chat_refs:
-            for r in self._conn.execute("SELECT 'out' dir, created_at at, text FROM outbox WHERE chat_ref=?", (ref,)):
+            # Rows that were also recorded as a note appear once, as the note.
+            for r in self._conn.execute("SELECT 'out' dir, created_at at, text FROM outbox WHERE chat_ref=? AND noted=0", (ref,)):
                 rows.append(dict(r))
         rows.sort(key=lambda r: r["at"])
         keep_from = len(rows)

@@ -653,3 +653,105 @@ CREATE TABLE IF NOT EXISTS journal_answers (
     updated_at   TEXT NOT NULL,
     UNIQUE (question_id, answer_date)
 );
+
+-- Money: a local snapshot of Monarch data, refreshed by scripts/money_sync.py (every 30 min, 6am-11pm,
+-- plus the dashboard's Refresh button). Shared service: scripts/money.py (the finance agent's
+-- money_store.py CLI and the /finance dashboard pages). Monarch stays the source of truth; these rows are
+-- replaced on each sync. Ids are Monarch's own.
+CREATE TABLE IF NOT EXISTS money_sync_runs (
+    id           TEXT PRIMARY KEY,        -- uuid4 hex
+    started_at   TEXT NOT NULL,           -- local ISO
+    finished_at  TEXT,
+    mode         TEXT NOT NULL,           -- 'quick' | 'window' | 'full'
+    status       TEXT NOT NULL,           -- 'running' | 'ok' | 'error' | 'auth_failed'
+    error        TEXT,
+    counts_json  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_money_sync_runs_started ON money_sync_runs (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS money_accounts (
+    id                    TEXT PRIMARY KEY,
+    name                  TEXT NOT NULL,
+    type                  TEXT,           -- depository | credit | brokerage | loan | real_estate | vehicle ...
+    subtype               TEXT,
+    institution           TEXT,
+    data_provider         TEXT,           -- PLAID | MX | FINICITY | MANUAL ...
+    balance               REAL,
+    is_asset              INTEGER NOT NULL DEFAULT 1,
+    include_in_net_worth  INTEGER NOT NULL DEFAULT 1,
+    hidden                INTEGER NOT NULL DEFAULT 0,
+    update_required       INTEGER NOT NULL DEFAULT 0,  -- the connection needs the user to re-link it
+    disconnected_at       TEXT,
+    last_updated_at       TEXT,           -- when Monarch last got data for it
+    synced_at             TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS money_transactions (
+    id                 TEXT PRIMARY KEY,
+    date               TEXT NOT NULL,     -- YYYY-MM-DD
+    amount             REAL NOT NULL,     -- negative = money out
+    merchant           TEXT,
+    category_id        TEXT,
+    category           TEXT,
+    category_group     TEXT,
+    group_type         TEXT,              -- expense | income | transfer
+    account_id         TEXT,
+    account            TEXT,
+    pending            INTEGER NOT NULL DEFAULT 0,
+    needs_review       INTEGER NOT NULL DEFAULT 0,
+    hide_from_reports  INTEGER NOT NULL DEFAULT 0,
+    tags_json          TEXT NOT NULL DEFAULT '[]',
+    has_who_tag        INTEGER NOT NULL DEFAULT 0,
+    updated_at         TEXT,              -- Monarch's
+    synced_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_money_transactions_date ON money_transactions (date);
+CREATE INDEX IF NOT EXISTS idx_money_transactions_review ON money_transactions (needs_review, pending);
+
+CREATE TABLE IF NOT EXISTS money_budget_totals (
+    month      TEXT NOT NULL,             -- YYYY-MM-01
+    kind       TEXT NOT NULL,             -- income | expenses | fixed | flexible | non_monthly
+    planned    REAL,
+    actual     REAL,
+    remaining  REAL,                      -- Monarch's, includes rollover
+    rollover   REAL,                      -- carried in from earlier months
+    PRIMARY KEY (month, kind)
+);
+
+CREATE TABLE IF NOT EXISTS money_budget_lines (
+    month        TEXT NOT NULL,
+    line_id      TEXT NOT NULL,           -- category id, or group id when the group is budgeted as a whole
+    name         TEXT NOT NULL,
+    group_name   TEXT,
+    group_type   TEXT,                    -- expense | income
+    level        TEXT NOT NULL,           -- 'category' | 'group'
+    variability  TEXT,                    -- fixed | flexible | non_monthly (null = Monarch default)
+    planned      REAL,
+    actual       REAL,
+    remaining    REAL,
+    rollover     REAL,
+    PRIMARY KEY (month, line_id)
+);
+
+CREATE TABLE IF NOT EXISTS money_networth_history (
+    date   TEXT PRIMARY KEY,
+    value  REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS money_recurring (
+    id              TEXT PRIMARY KEY,     -- stream id + ':' + due date
+    due_date        TEXT NOT NULL,
+    merchant        TEXT,
+    amount          REAL,
+    category        TEXT,
+    account         TEXT,
+    frequency       TEXT,
+    is_past         INTEGER NOT NULL DEFAULT 0,
+    transaction_id  TEXT                  -- set once the charge has posted
+);
+
+-- Thresholds and settings for the money metrics (see money.CONFIG_DEFAULTS).
+CREATE TABLE IF NOT EXISTS money_config (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+);

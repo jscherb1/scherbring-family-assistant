@@ -217,11 +217,11 @@ def init_key() -> list[str]:
 
 def _alert(message: str) -> None:
     try:
-        import telegram_send as ts
+        import notify
 
-        token, chat_id = ts._read_token(), ts._default_chat_id()
-        if token and chat_id:
-            ts._send_raw(token, chat_id, message)
+        res = notify.send(message, source="backup", kind="alert")
+        if not res.delivered:
+            print(f"backup: could not send Telegram alert: {res.error}", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001 - alerting must not mask the real error
         print(f"backup: could not send Telegram alert: {exc}", file=sys.stderr)
 

@@ -93,8 +93,8 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
     - Every dashboard page is view-only (insights for home, family, finance, Hy-Vee, fitness, meals, activity
       added 2026-10-06). Recipes can now be added, edited and
       deleted (2026-10-12); the other sections are still view-only (habits and chores aside).
-    - Sensitive areas (kids memory text, profile fact values, finance amounts) are deliberately hidden until
-      auth exists; revisit what to reveal once there is a login.
+    - Sensitive areas (kids memory text, profile fact values, finance report text/profile values) are deliberately
+      hidden until auth exists. Money amounts were opened up on 2026-10-21 (Tailscale-only); revisit with a login.
     - Fitness shows planned workouts only: `completion_status` is never set by any automation.
     - The meal menu is read from `agent_results.detail_json`; a dedicated meal-plan table would be sturdier.
     - The dashboard has no login; it relies on the bind address (localhost or Tailscale). The Summary
@@ -226,6 +226,20 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - [ ] Not yet exercised live: the fallback path (needs the vendored login down, or a test with the user present).
 - [ ] Revisit a full switch (retire the vendored server and cookie logins) once Monarch serves Finicity data
       through MCP, and check the Core weekly cap in Monarch → Settings → MCP Connector after a normal week.
+
+## Money home page + Monarch snapshot (built 2026-10-21)
+
+- [ ] Install and watch the timer: `scripts/install_systemd.sh assistant-money-sync.timer`, then check
+      `python scripts/money_store.py sync-status` after a few runs (the first auto run is a full pull, ~20 s).
+- [ ] Look at `/finance` on the phone; tune the red/yellow/green thresholds after a month of use
+      (`money_store.py config get|set`).
+- [ ] Transactions older than 120 days that get a WHO tag in Monarch show up in the no-WHO count until the next
+      daily full pull. Fine for now; run `money_sync.py --mode full` by hand if it matters.
+- [ ] The savings rate is cash flow (take-home pay minus spending): payroll 401k/403b contributions aren't in
+      Monarch's income, so it understates real saving.
+- [ ] Seasonal tiles (e.g. a "Christmas 2026" tag total): deliberately left out; add a tile builder in `money.py`
+      when wanted (the snapshot already stores tags).
+- [ ] 7 visible accounts show "update required" in Monarch (bank connections tile); re-link them in Monarch.
 
 ## Not started (ideas, from README "Backlog")
 

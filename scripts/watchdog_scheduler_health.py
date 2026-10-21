@@ -98,11 +98,11 @@ def restart_timer() -> None:
 
 def send_alert(text: str) -> None:
     try:
-        import telegram_send as ts
+        import notify
 
-        token, chat_id = ts._read_token(), ts._default_chat_id()
-        if token and chat_id:
-            ts._send_raw(token, chat_id, text)
+        res = notify.send(text, source="scheduler-watchdog", kind="alert")
+        if not res.delivered:
+            print(f"watchdog: failed to send direct Telegram alert: {res.error}")
     except Exception as exc:  # noqa: BLE001
         print(f"watchdog: failed to send direct Telegram alert: {exc}")
 

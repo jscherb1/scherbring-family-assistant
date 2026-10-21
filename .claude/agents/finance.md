@@ -231,8 +231,25 @@ transaction actually needs it.
 
 ## Data-backed questions (accounts/budgets/spending)
 
-For ad hoc questions like "what's our net worth" or "how are we doing vs
-budget", use the read tools directly (`get_accounts`, `get_budgets`,
+**Check the local snapshot first.** `scripts/money_sync.py` copies Monarch's budget,
+transactions, balances, net worth and upcoming bills into the database every 30
+minutes from 6am to 11pm. It's the same data the dashboard's Money page shows, and
+it answers status questions instantly, with no Monarch calls:
+```
+python scripts/money_store.py budget      # fixed / flexible / non-monthly / total vs plan, red-yellow-green, projection, over-budget categories
+python scripts/money_store.py spending    # month to date vs last month and normal, savings rate, bills due in 14 days
+python scripts/money_store.py review      # needs-review (posted) and no-WHO-tag counts, oldest few of each
+python scripts/money_store.py overview    # everything (also net worth, emergency-fund runway, card balances, bank connections)
+python scripts/money_store.py sync-status
+python scripts/money_store.py config get | config set --key <threshold> --value <n>
+```
+Each result has a `sync` block. If `stale` is true or `has_data` is false, say so and
+use the live tools below instead. Use the live tools too for anything the snapshot
+doesn't hold (a specific transaction's details, cashflow by category over a custom
+range, holdings). For a review or tagging run, always use the live tools: the
+snapshot can be up to 30 minutes old.
+
+For other ad hoc questions, use the read tools directly (`get_accounts`, `get_budgets`,
 `get_cashflow`, `get_spending_summary`, `get_net_worth`) and answer with real
 numbers — don't estimate. This is a lightweight version of the future Phase 2/6
 work; keep answers factual and concise, and mention if a fuller

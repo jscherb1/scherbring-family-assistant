@@ -2293,3 +2293,43 @@ kbd {
     display: none;
   }
 }
+
+/* ---- Money overview: red / yellow / green status chips, budget bars, net-worth sparkline ---- */
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 8px 0 10px;
+  font-family: var(--mono);
+}
+.money-grid { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.money-card h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.money-card .metric { font-family: var(--mono); font-size: 26px; }
+.card-link { color: inherit; text-decoration: none; }
+.card-link:hover { border-color: var(--border-strong); }
+.rag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.rag-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--text-muted); }
+.rag-green .rag-dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.rag-yellow .rag-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.rag-red .rag-dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.rag-green { color: var(--ok); }
+.rag-yellow { color: var(--amber); }
+.rag-red { color: var(--warn); }
+.bar { position: relative; height: 6px; border-radius: 3px; background: var(--muted-bg); margin: 10px 0 4px; }
+.bar-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.rag-bg-green { background: var(--ok); }
+.rag-bg-yellow { background: var(--amber); }
+.rag-bg-red { background: var(--warn); }
+.bar-pace { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--text); opacity: 0.7; }
+.spark { width: 100%; height: 48px; margin-top: 8px; }
+.spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.money-lists { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-top: 4px; }
+@media (max-width: 520px) {
+  .money-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .money-card { padding: 14px; }
+  .money-card .metric { font-size: 20px; }
+  .money-card h2 { font-size: 11px; }
+  .money-lists { grid-template-columns: 1fr; }
+}

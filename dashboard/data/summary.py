@@ -5,7 +5,7 @@ already safe to show (no finance amounts, no memory text).
 """
 from datetime import timedelta
 
-from . import (activity, agent, chores, common, family, finance, habits, health, home, ops, schedule, shopping_fitness,
+from . import (activity, agent, chores, common, family, habits, health, home, money, ops, schedule, shopping_fitness,
                wellness)
 from .. import dismissals
 from ..web import fmt_dt
@@ -174,12 +174,24 @@ def _meals_tile():
 
 
 def _finance_tile():
-    t = finance.get_tagging()
-    if not _ok(t):
-        return {"title": "Finance", "href": "/finance", "headline": "Unknown", "sub": "", "state": "warn"}
-    daily = t.get("daily") or []
-    week = sum(d["n"] for d in daily[:7])
-    return {"title": "Finance", "href": "/finance", "headline": f"{week} tagged", "sub": "transactions this week", "state": "ok"}
+    o = money.get_overview()
+    if not _ok(o):
+        return {"title": "Money", "href": "/finance", "headline": "Unknown", "sub": "", "state": "warn"}
+    if not o["sync"]["has_data"]:
+        return {"title": "Money", "href": "/finance", "headline": "Not synced", "sub": "waiting for the first Monarch sync",
+                "state": "warn"}
+    flex = next((b for b in o["budget"] if b["kind"] == "flexible"), None)
+    if flex:
+        left = flex["left"]
+        headline = f"${abs(round(left)):,} {'left' if left >= 0 else 'over'}"
+        sub = "flexible budget"
+    else:
+        headline, sub = f"${round(o['spending']['mtd']):,}", "spent this month"
+    r = o["review"]
+    if r["needs_review"] or r["no_who"]:
+        sub += f" · {r['needs_review']} to review, {r['no_who']} no WHO"
+    red = (flex and flex["status"] == "red") or r["needs_review_status"] == "red" or o["sync"]["stale"]
+    return {"title": "Money", "href": "/finance", "headline": headline, "sub": sub, "state": "warn" if red else "ok"}
 
 
 def _fitness_tile():

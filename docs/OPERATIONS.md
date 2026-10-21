@@ -18,6 +18,7 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
 | `assistant-system-health.timer` | every 2 h: integration health checks, shown on the dashboard's System status page (`python scripts/system_health_store.py status`) |
 | `assistant-insights-refresh.timer` | every 30 min, 6am-10pm: refreshes COROS sleep/recovery, weather, habits and journal answers for My Hub, day rating and Wellness (`python scripts/dayrating_store.py insights refresh --days 3 --source coros_health,weather,habits,journal`) |
+| `assistant-money-sync.timer` | every 30 min, 6am-11pm: copies Monarch budget, transactions, balances, net worth and bills into the `money_*` tables for the Money page and the `finance` agent (`vendor/monarch-mcp-server/.venv/bin/python scripts/money_sync.py --mode auto`). Status: `python scripts/money_store.py sync-status` |
 | `assistant-credential-check.timer` | daily 09:30: warn before Hy-Vee, Drive, Monarch logins expire |
 | `assistant-backup.timer` | daily 03:15: back up the database, memory notes and secrets |
 | `assistant-dashboard.service` | optional web dashboard (`dashboard/README.md`): five tabs (Today, Me, Family, Home, Money) plus System behind the gear; old pre-redesign pages under `/archive` until removed (`docs/TODO.md`). Writes go through the shared services (habits, chores, check-in, recipes, dismissals) and the Today page's one-shot "ask" box queues a message for the agent, answered in Telegram; the iOS Shortcut posts to `POST /api/ask` (`text` field, tagged `via="ios"`); `DASHBOARD_ASK_CHAT_ID` overrides the chat, default is the first `BRIDGE_ALLOWED_CHAT_IDS`. Binds `DASHBOARD_HOST` (127.0.0.1 unless a drop-in overrides it). Restart after dashboard changes: `systemctl --user restart assistant-dashboard` |
@@ -104,8 +105,14 @@ reachable"); the worker pings its agent process every 30 s (no tokens) and makes
 call every 30 min; failures alert via Telegram once and send a recovery notice. systemd restarts a
 killed bridge in ~1 s, a killed worker in ~2 s, and a wedged worker within 30 s.
 
-Context hygiene (worker): scheduled-task results are stored as context notes and shown to the agent
-on the user's next message; sessions rotate above 150k context tokens or after 7 days (rebuilt from
+Context hygiene (worker): every message sent outside a turn (scheduled-task results, credential,
+system-health, task-failure, scheduler-watchdog and backup alerts, `telegram_send.py`) goes through
+`scripts/notify.py`, which sends via the Bot API and records it in `inbox.db`: a sent `outbox` row
+(`source`, `kind`), its Telegram message ids (`sent_ids`), and a context note shown to the agent on
+the user's next message. When the user replies to a message in Telegram, the bridge keeps
+`reply_to_message` and the worker looks it up in `sent_ids`, so the turn carries a
+`<replying_to source=...>` block with the full original text. Scheduled runs set
+`ASSISTANT_HEADLESS=1` so the plugin-era conversation hooks stay out of them; sessions rotate above 150k context tokens or after 7 days (rebuilt from
 the last 48 h / 40 messages); a quiet-hours (03:xx) `/compact` runs if context > 40k tokens. Set
 `BRIDGE_DAILY_COST_ALERT_USD` in `.env` for a once-a-day usage alert. Per-turn usage is in
 `state/usage.jsonl`.

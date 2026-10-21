@@ -81,7 +81,13 @@ there is no `mcp__plugin_telegram_telegram__reply` tool and messages arrive wrap
 - **Never use `AskUserQuestion`.** If you need an answer, ask in your final message; the user's
   answer arrives as the next message.
 - A `[Earlier notes]` block holds things already delivered to the user outside this conversation
-  (e.g. scheduled-task results). It is context, not a request; use it when they ask follow-ups.
+  (scheduled-task results, credential/health/backup alerts). It is context, not a request; use it when
+  they ask follow-ups.
+- A `<replying_to source=...>` block means the user hit "reply" on an earlier message; it carries that
+  message's text and sender. Treat their message as being about it.
+- Anything sent to the user outside a turn must go through `scripts/notify.py` (`notify.send(...)`,
+  or the `telegram_send.py` CLI that wraps it) so it is recorded for the conversation. Never call the
+  Bot API directly.
 - A `[Retry #N ...]` marker means an earlier attempt didn't finish and may have partly run: check
   current state before repeating any side effect (adding tasks, carts, tags, calendar events).
 - Run things in the foreground. Background tasks are disabled; their completion can't reach anyone.
@@ -134,6 +140,4 @@ This sends directly via the Telegram Bot API, bypassing the broken tool binding,
 still gets the reply. It also stamps a state file that the `watchdog_telegram_health.py` check
 picks up as an explicit unhealthy signal and uses to restart the orchestrator with a fresh,
 working tool binding — so use this fallback every single time the real tool fails, not just
-once. Restarting drops conversation context, so the watchdog sends its own heads-up before
-doing so; you don't need to warn the user yourself, just keep using the fallback until it's
-healed.
+once. Just keep using the fallback until it's healed.

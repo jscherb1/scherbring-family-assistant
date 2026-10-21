@@ -1,5 +1,6 @@
-"""Finance readers (read-only). Summaries only: no dollar amounts, balances, merchants on
-tagged transactions, report text or profile values. Monarch itself is not queried."""
+"""Finance readers (read-only): the finance agent's tagging history and the reports/planning status.
+Report text and advisor/retirement profile values stay hidden. Live Monarch numbers (budget, review
+queue) come from the snapshot via data/money.py, not from here."""
 from . import common
 
 ADVISOR_FIELDS = ["filing_status", "marginal_tax_bracket", "hsa_eligible_hdhp",
@@ -23,6 +24,9 @@ def get_tagging():
         actions = common.rows(conn, "SELECT action, COUNT(*) AS n FROM finance_tag_log GROUP BY action")
         decisions = common.rows(conn, "SELECT COALESCE(user_decision, 'pending') AS d, COUNT(*) AS n "
                                       "FROM finance_tag_log GROUP BY d")
+        # The daily review logs the same skipped transaction again each run, so count transactions.
+        awaiting = conn.execute("SELECT COUNT(DISTINCT transaction_id) FROM finance_tag_log "
+                                "WHERE user_decision IS NULL AND action != 'marked_reviewed'").fetchone()[0]
         by_tag = common.rows(conn, "SELECT proposed_who_tag AS tag, COUNT(*) AS n FROM finance_tag_log "
                                    "WHERE proposed_who_tag IS NOT NULL GROUP BY tag ORDER BY n DESC")
         recent = common.rows(conn, "SELECT substr(ts, 1, 10) AS day, COUNT(*) AS n FROM finance_tag_log "
@@ -38,7 +42,8 @@ def get_tagging():
     d = {r["d"]: r["n"] for r in decisions}
     judged = d.get("confirmed", 0) + d.get("corrected", 0) + d.get("rejected", 0)
     return {
-        "total": sum(a.values()), "actions": a, "decisions": d, "by_tag": by_tag, "daily": recent,
+        "total": sum(a.values()), "actions": a, "decisions": d, "awaiting": awaiting,
+        "by_tag": by_tag, "daily": recent,
         "correction_rate": round(100 * (d.get("corrected", 0) + d.get("rejected", 0)) / judged) if judged else None,
         "who_map": wmap, "who_map_total": sum(r["n"] for r in wmap),
         "who_map_low": sum(r["low"] or 0 for r in wmap), "low_threshold": LOW_CONFIDENCE,
