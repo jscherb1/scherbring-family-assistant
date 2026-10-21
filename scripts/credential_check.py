@@ -217,17 +217,15 @@ def evaluate(
 
 def send_telegram(text: str) -> bool:
     try:
-        import telegram_send as ts
+        import notify
 
-        token, chat_id = ts._read_token(), ts._default_chat_id()
-        if not token or not chat_id:
-            print("credential_check: no Telegram token/chat id configured", file=sys.stderr)
-            return False
-        ts._send_raw(token, chat_id, text)
-        return True
+        res = notify.send(text, source="credential-check", kind="alert")
     except Exception as exc:  # noqa: BLE001
         print(f"credential_check: Telegram send failed: {exc}", file=sys.stderr)
         return False
+    if not res.delivered:
+        print(f"credential_check: Telegram send failed: {res.error}", file=sys.stderr)
+    return res.delivered
 
 
 def run(

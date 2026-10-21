@@ -65,11 +65,11 @@ def _now() -> datetime:
 
 
 def telegram_notify(message: str) -> None:
-    """Best-effort Telegram alert via the direct Bot API script; never raises (an alert failure must not hide a check)."""
-    import subprocess
+    """Best-effort Telegram alert, recorded for the conversation; never raises (an alert failure must not hide a check)."""
     try:
-        subprocess.run([sys.executable, str(REPO_ROOT / "scripts" / "telegram_send.py"), message],
-                       timeout=30, check=False, capture_output=True)
+        import notify
+
+        notify.send(message, source="system-health", kind="alert")
     except Exception:  # noqa: BLE001
         pass
 

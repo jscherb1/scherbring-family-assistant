@@ -104,8 +104,14 @@ reachable"); the worker pings its agent process every 30 s (no tokens) and makes
 call every 30 min; failures alert via Telegram once and send a recovery notice. systemd restarts a
 killed bridge in ~1 s, a killed worker in ~2 s, and a wedged worker within 30 s.
 
-Context hygiene (worker): scheduled-task results are stored as context notes and shown to the agent
-on the user's next message; sessions rotate above 150k context tokens or after 7 days (rebuilt from
+Context hygiene (worker): every message sent outside a turn (scheduled-task results, credential,
+system-health, task-failure, scheduler-watchdog and backup alerts, `telegram_send.py`) goes through
+`scripts/notify.py`, which sends via the Bot API and records it in `inbox.db`: a sent `outbox` row
+(`source`, `kind`), its Telegram message ids (`sent_ids`), and a context note shown to the agent on
+the user's next message. When the user replies to a message in Telegram, the bridge keeps
+`reply_to_message` and the worker looks it up in `sent_ids`, so the turn carries a
+`<replying_to source=...>` block with the full original text. Scheduled runs set
+`ASSISTANT_HEADLESS=1` so the plugin-era conversation hooks stay out of them; sessions rotate above 150k context tokens or after 7 days (rebuilt from
 the last 48 h / 40 messages); a quiet-hours (03:xx) `/compact` runs if context > 40k tokens. Set
 `BRIDGE_DAILY_COST_ALERT_USD` in `.env` for a once-a-day usage alert. Per-turn usage is in
 `state/usage.jsonl`.

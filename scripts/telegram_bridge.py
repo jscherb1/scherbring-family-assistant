@@ -113,6 +113,14 @@ def parse_update(update: dict) -> dict | None:
     for kind in ("document", "voice", "audio", "video"):
         if msg.get(kind):
             attachments.append({"kind": kind, "file_id": msg[kind]["file_id"], "name": msg[kind].get("file_name")})
+    reply_to = None
+    if msg.get("reply_to_message"):
+        r = msg["reply_to_message"]
+        reply_to = {
+            "message_id": r.get("message_id"),
+            "text": (r.get("text") or r.get("caption") or "")[:4000],
+            "from_bot": bool((r.get("from") or {}).get("is_bot")),
+        }
     return {
         "chat_id": str(msg["chat"]["id"]),
         "message_id": msg["message_id"],
@@ -122,6 +130,7 @@ def parse_update(update: dict) -> dict | None:
         "date": msg.get("date"),
         "edited": "edited_message" in update,
         "attachments": attachments,
+        "reply_to": reply_to,
     }
 
 
@@ -150,7 +159,14 @@ class Bridge:
             return
         text = parsed["text"].strip()
         if text.split("@")[0] == "/status":
-            self._safe(lambda: self.api.call("sendMessage", {"chat_id": chat, "text": self.status_text(store)}))
+            status = self.status_text(store)
+
+            def send_status() -> None:
+                sent = self.api.call("sendMessage", {"chat_id": chat, "text": status})
+                ids = [sent["message_id"]] if isinstance(sent, dict) and "message_id" in sent else []
+                store.record_sent(CHANNEL, chat, status, ids, source="bridge", kind="notice", note=False)
+
+            self._safe(send_status)
             return
         # Download attachments so the worker never needs the Bot API file endpoint.
         for att in parsed["attachments"]:
@@ -164,7 +180,7 @@ class Bridge:
             parsed["text"],
             external_id=str(update["update_id"]),
             session_key=self.session_map.get(chat, chat),
-            payload={k: parsed[k] for k in ("message_id", "user", "user_id", "date", "edited", "attachments")},
+            payload={k: parsed[k] for k in ("message_id", "user", "user_id", "date", "edited", "attachments", "reply_to")},
         )
         # Instant ack (best effort); the durable write above is what matters.
         self._safe(lambda: self.api.call("setMessageReaction", {"chat_id": chat, "message_id": parsed["message_id"], "reaction": [{"type": "emoji", "emoji": "👀"}]}))
@@ -188,9 +204,12 @@ class Bridge:
             if row is None:
                 return sent
             try:
+                ids = []
                 for part in chunk_text(row["text"]):
-                    self.api.call("sendMessage", {"chat_id": row["chat_ref"], "text": part})
-                store.mark_sent(row["id"])
+                    sent_msg = self.api.call("sendMessage", {"chat_id": row["chat_ref"], "text": part})
+                    if isinstance(sent_msg, dict) and sent_msg.get("message_id") is not None:
+                        ids.append(sent_msg["message_id"])
+                store.mark_sent(row["id"], tg_message_ids=ids)
                 sent += 1
             except TelegramError as e:
                 if row["id"] in self._send_once:
@@ -216,7 +235,7 @@ class Bridge:
             oldest = store._conn.execute("SELECT id, chat_ref FROM inbox WHERE status IN ('pending','processing') AND kind='message' AND channel=? ORDER BY id LIMIT 1", (CHANNEL,)).fetchone()
             if oldest and self._notified_for != oldest["id"]:
                 self._notified_for = oldest["id"]
-                store.enqueue_outbound(CHANNEL, oldest["chat_ref"], "⚠️ The agent is restarting. Your message is saved and will be answered as soon as it's back.")
+                store.enqueue_outbound(CHANNEL, oldest["chat_ref"], "⚠️ The agent is restarting. Your message is saved and will be answered as soon as it's back.", source="bridge", kind="notice")
 
     def status_text(self, store: BridgeStore) -> str:
         s = store.stats()
@@ -236,7 +255,7 @@ class Bridge:
         chat = sorted(self.allowed)[0] if self.allowed else None
         if error is None:
             if self._poll_alerted and chat:
-                self._send_once.add(store.enqueue_outbound(CHANNEL, chat, "✅ Telegram polling recovered; messages are being received again."))
+                self._send_once.add(store.enqueue_outbound(CHANNEL, chat, "✅ Telegram polling recovered; messages are being received again.", source="bridge", kind="alert", note=True))
             self._poll_fail_since, self._poll_alerted = None, False
             return
         if self._poll_fail_since is None:
@@ -247,7 +266,7 @@ class Bridge:
                 why = "another process is polling this bot (for example a Claude session with the Telegram plugin enabled)"
             else:
                 why = f"Telegram can't be reached ({error[:120]})"
-            self._send_once.add(store.enqueue_outbound(CHANNEL, chat, f"⚠️ I'm not receiving your messages right now: {why}. Anything you send may be delayed until this clears."))
+            self._send_once.add(store.enqueue_outbound(CHANNEL, chat, f"⚠️ I'm not receiving your messages right now: {why}. Anything you send may be delayed until this clears.", source="bridge", kind="alert", note=True))
 
     # ---- run loops ----
     @staticmethod
