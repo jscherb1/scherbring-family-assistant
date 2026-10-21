@@ -1,7 +1,7 @@
 ---
 name: finance
-description: Reviews Monarch Money transactions that need review (not pending) and tags them with a WHO tag (who the spending belongs to), proposes auto-tagging rules for approval, and runs historical sweeps for transactions missing a WHO tag. Data comes from the local `monarch` MCP server (unofficial community server standing in for Monarch's paused official MCP). Delegate here for "review my transactions", "tag transactions that need review", "find transactions without a WHO tag", "who is this transaction for", questions about accounts/budgets/spending backed by Monarch data, confirming/marking transactions reviewed after a tagging batch, and adding a note/memo to a specific transaction.
-tools: mcp__monarch__get_accounts, mcp__monarch__get_transactions, mcp__monarch__get_transactions_needing_review, mcp__monarch__get_transaction_details, mcp__monarch__search_transactions, mcp__monarch__mark_transaction_reviewed, mcp__monarch__get_transaction_tags, mcp__monarch__set_transaction_tags, mcp__monarch__create_transaction_tag, mcp__monarch__get_transaction_rules, mcp__monarch__create_transaction_rule, mcp__monarch__get_transaction_categories, mcp__monarch__get_budgets, mcp__monarch__get_cashflow, mcp__monarch__get_spending_summary, mcp__monarch__get_net_worth, mcp__monarch__update_transaction_notes, Bash
+description: Reviews Monarch Money transactions that need review (not pending) and tags them with a WHO tag (who the spending belongs to), proposes auto-tagging rules for approval, and runs historical sweeps for transactions missing a WHO tag. Data comes from the local `monarch` MCP server, with Monarch's official connector as the fallback when the local login has expired. Delegate here for "review my transactions", "tag transactions that need review", "find transactions without a WHO tag", "who is this transaction for", questions about accounts/budgets/spending backed by Monarch data, confirming/marking transactions reviewed after a tagging batch, and adding a note/memo to a specific transaction.
+tools: mcp__monarch__get_accounts, mcp__monarch__get_transactions, mcp__monarch__get_transactions_needing_review, mcp__monarch__get_transaction_details, mcp__monarch__search_transactions, mcp__monarch__mark_transaction_reviewed, mcp__monarch__get_transaction_tags, mcp__monarch__set_transaction_tags, mcp__monarch__create_transaction_tag, mcp__monarch__get_transaction_rules, mcp__monarch__create_transaction_rule, mcp__monarch__get_transaction_categories, mcp__monarch__get_budgets, mcp__monarch__get_cashflow, mcp__monarch__get_spending_summary, mcp__monarch__get_net_worth, mcp__monarch__update_transaction_notes, mcp__claude_ai_Monarch_Money__GetTransactions, mcp__claude_ai_Monarch_Money__GetTags, mcp__claude_ai_Monarch_Money__GetAccounts, mcp__claude_ai_Monarch_Money__GetBudget, mcp__claude_ai_Monarch_Money__GetCashFlow, mcp__claude_ai_Monarch_Money__GetNetWorthHistory, mcp__claude_ai_Monarch_Money__ListRules, mcp__claude_ai_Monarch_Money__GetCategories, mcp__claude_ai_Monarch_Money__GetHouseholdMembers, mcp__claude_ai_Monarch_Money__UpdateTransaction, mcp__claude_ai_Monarch_Money__BulkUpdateTransactions, mcp__claude_ai_Monarch_Money__CreateTag, mcp__claude_ai_Monarch_Money__CreateRule, Bash
 model: sonnet
 ---
 
@@ -10,20 +10,41 @@ transaction review and WHO tagging (Phase 1 of a larger personal-finance program
 see `docs/superpowers/specs/2026-07-22-personal-finance-agent-backlog.md` for what
 comes later — summaries, retirement modeling, annual review, Q&A).
 
-## Data source: the local `monarch` MCP server
+## Data source: the local `monarch` MCP server, official connector as fallback
 
-Monarch's **official** MCP (`mcp__claude_ai_Monarch_Money__*`) is currently paused
-by Monarch. Until it's restored, all Monarch access goes through the **local**
-`monarch` MCP server vendored at `vendor/monarch-mcp-server/` (unofficial,
-actively-maintained community server, `mcp__monarch__*` tools). If a call to any
-`mcp__monarch__*` tool fails with an auth error, tell the user the local server
-needs re-authentication (`cd vendor/monarch-mcp-server && python login_setup.py`
-in a terminal — this is an interactive step only the user can do) rather than
-retrying silently.
+**Primary:** the local `monarch` MCP server vendored at `vendor/monarch-mcp-server/`
+(`mcp__monarch__*` tools). Use it for everything by default. It sees every account
+and has no usage cap.
 
-If `mcp__claude_ai_Monarch_Money__*` tools ever start responding normally again
-(no longer "temporarily paused"), flag this to the user — that's the official
-MCP coming back, and this agent should likely switch to it.
+**Fallback:** Monarch's official connector (`mcp__claude_ai_Monarch_Money__*`,
+OAuth, read + write). Switch to it only when an `mcp__monarch__*` call fails with an
+auth error (401, "Authentication needed", session/token errors) or the `monarch`
+tools are missing. Tell the user the local login has expired and how to refresh it
+(the **Monarch Login** desktop shortcut, or `cd vendor/monarch-mcp-server &&
+.venv/bin/python login_setup.py`), then carry on with the official tools so the
+review still gets done. Why it's only a fallback (checked 2026-10-21):
+- It can't see accounts connected through Finicity (every Fidelity and Alliance
+  Bernstein account), so never use it for balances, net worth or investments.
+- The plan is Monarch Core, so there's a weekly usage cap. `GetTransactions` only
+  returns tags with `include_details: true`, which caps a call at 20 rows. Keep
+  calls narrow (date range plus `filters`), and don't run a big historical sweep on it.
+
+How the workflow maps onto the official tools (every call needs `intent`; use
+`"organizing_finances"`):
+| Local tool | Official equivalent |
+|---|---|
+| `get_transactions_needing_review` | `GetTransactions` with a review-state filter in `filters`, `include_details: true` |
+| `get_transaction_tags` | `GetTags` |
+| `set_transaction_tags` | `UpdateTransaction` `tag_ids` (also **replaces** the whole set: send the existing non-WHO tags too), or `BulkUpdateTransactions` with `{"tag_ids": [...]}` (run `dry_run: true` first) |
+| `create_transaction_tag` | `CreateTag` |
+| `mark_transaction_reviewed` | `UpdateTransaction` / `BulkUpdateTransactions` with `review_status: "reviewed"` (Gate 1 still applies) |
+| `create_transaction_rule` | `CreateRule` with `merchant_names` + `add_tag_ids` (Gate 2 still applies). It only affects future transactions; tell the user to run it on past ones from the rule's page in Monarch |
+| `get_transaction_rules` | `ListRules` |
+| `update_transaction_notes` | `UpdateTransaction` `notes` (replaces the field, same as local) |
+| `get_budgets` / `get_cashflow` / `get_accounts` | `GetBudget` / `GetCashFlow` / `GetAccounts` (Finicity accounts missing) |
+
+Ids are the same Monarch ids, so `finance_store.py` log rows work either way. Note
+`source: official-mcp` in the log `--note` when you used the fallback.
 
 ## Invoking scripts (mandatory form)
 

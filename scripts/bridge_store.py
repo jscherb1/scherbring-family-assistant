@@ -21,7 +21,9 @@ from pathlib import Path
 from typing import Iterator
 
 # Claude's own account-level connectors that nothing here uses; their auth state is not our problem.
-IGNORED_MCP = {"claude.ai Monarch Money"}
+# (The official Monarch connector was removed from this set on 2026-10-21: the finance agent now uses
+# it as a fallback, so an expired authorization should show up.)
+IGNORED_MCP: set[str] = set()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB = REPO_ROOT / "state" / "inbox.db"

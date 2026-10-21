@@ -169,7 +169,12 @@ Things that look like bugs but are not:
 - The Monarch tool `check_auth_status` says "not authenticated" even when the login works. Judge by
   a real read such as `get_accounts`.
 - COROS allows one web session per account. A fresh automated login signs you out of COROS elsewhere.
-- Monarch's official claude.ai connector is paused by Monarch; this setup uses the vendored server.
+- Monarch's official connector (`https://api.monarch.com/mcp`, claude.ai connector "Monarch Money", read +
+  write, authorized 2026-10-21) is only a **fallback for the `finance` agent** when the vendored login has
+  expired. It can't see Finicity-connected accounts (all Fidelity and Alliance Bernstein), and the Core plan
+  caps weekly usage. So reports, retirement, the advisor and the money snapshot stay on the vendored server.
+  Headless scheduled runs do load it. If its authorization lapses, the bridge health shows it under MCP down;
+  re-authorize in claude.ai → Settings → Connectors. Revisit a full switch when Monarch adds Finicity data.
 
 ## Scheduled tasks
 

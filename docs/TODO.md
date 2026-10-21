@@ -219,6 +219,14 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 - Migrate older features (home-maintenance, lawn-garden, ...) to the shared-service pattern in `CLAUDE.md`
   so their CLI and dashboard reader stop duplicating logic.
 
+## Official Monarch connector (evaluated 2026-10-21)
+
+- [x] Authorized (read + write); headless runs load it; tools cover every finance-agent write (tags, reviewed,
+      rules, notes). Wired in as the `finance` agent's fallback only.
+- [ ] Not yet exercised live: the fallback path (needs the vendored login down, or a test with the user present).
+- [ ] Revisit a full switch (retire the vendored server and cookie logins) once Monarch serves Finicity data
+      through MCP, and check the Core weekly cap in Monarch → Settings → MCP Connector after a normal week.
+
 ## Not started (ideas, from README "Backlog")
 
 See the Backlog section of `README.md`.
