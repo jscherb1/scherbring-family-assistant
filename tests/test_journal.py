@@ -125,11 +125,9 @@ def test_record_validates_before_writing(db):
     assert dayrating.get_rating(db_path=db, today=TODAY) is None
 
 
-def test_checkin_date_timing(db):
+def test_checkin_date_is_always_today(db):
     morning = datetime(2026, 10, 14, 9, 0)
-    assert journal.checkin_date(morning, db_path=db) == back(1)            # yesterday unfinished: catch up
-    journal.record(day=back(1), score=6, rest="no", db_path=db, today=TODAY)
-    assert journal.checkin_date(morning, db_path=db) == TODAY
+    assert journal.checkin_date(morning, db_path=db) == TODAY              # even with yesterday unfinished
     assert journal.checkin_date(datetime(2026, 10, 14, 18, 0), db_path=db) == TODAY
 
 

@@ -14,6 +14,8 @@
         {% endif %}
       </span>
     </summary>
+    {% if not c.is_today %}<p class="wck-saved"><a href="/checkin">Back to today</a></p>
+    {% elif c.previous_day_unrated %}<p class="wck-saved"><a href="/checkin?date=yesterday">Yesterday isn’t rated yet. Add it</a></p>{% endif %}
     {% if saved %}<p class="wck-saved" role="status">Saved.</p>{% endif %}
     {% if error %}<div class="error-state">{{ error }}</div>{% endif %}
     <form method="post" action="/wellness/checkin" hx-post="/wellness/checkin" hx-target="#checkin" hx-swap="outerHTML">

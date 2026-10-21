@@ -1358,3 +1358,12 @@ def test_nav_index_lists_pages_recipes_and_actions(client):
 def test_long_tables_are_marked_for_paging(client):
     assert 'data-filter="Filter items or products"' in client.get("/hyvee").text
     assert 'data-limit="20" data-filter="Filter activity"' in client.get("/activity").text
+
+
+def test_checkin_defaults_to_today_with_yesterday_unfinished(client, state):
+    from datetime import date
+    today = date.today().isoformat()
+    assert client.get("/api/journal/checkin").json()["date"] == today
+    page = client.get("/checkin").text
+    assert f'name="date" value="{today}"' in page
+    assert 'class="chip active"' in page and "/checkin?date=yesterday" in page

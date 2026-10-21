@@ -45,7 +45,7 @@ DEFAULT_QUESTIONS = [
     ("sex", "Sex?", "social"),
     ("date_night", "Date night?", "social"),
 ]
-CHECKIN_FROM_HOUR = 17      # from 5 PM the check-in is about today; before that, yesterday if it's unfinished
+CHECKIN_FROM_HOUR = 17      # from 5 PM the dashboard check-in card opens expanded
 MIN_EACH = 5                # yes days AND no days needed before a question's impact is shown (Whoop uses 5)
 # Impact targets: (key, insight metric or None for the day rating, label, unit, lag days, higher is better).
 # Overnight metrics are filed on the wake-up date, so a behaviour on day D shows in the night ending D+1.
@@ -306,14 +306,9 @@ def import_from_habit(habit_ref: str, question_ref: str, *, pause_habit: bool = 
 
 
 def checkin_date(now: datetime | None = None, *, db_path=None) -> date:
-    """Which day the check-in is about: today from CHECKIN_FROM_HOUR on; before that, yesterday if it still
-    has something missing (a morning catch-up), else today."""
-    now = now or datetime.now()
-    today = now.date()
-    if now.hour >= CHECKIN_FROM_HOUR:
-        return today
-    yday = today - timedelta(days=1)
-    return yday if not pending(yday, today=today, db_path=db_path)["complete"] else today
+    """Which day the check-in is about: always today. An unfinished yesterday is surfaced separately
+    (pending()["previous_day_unrated"]) rather than taking over the default."""
+    return (now or datetime.now()).date()
 
 
 def _daily_habits(day: date, today: date, db_path) -> list[dict]:
