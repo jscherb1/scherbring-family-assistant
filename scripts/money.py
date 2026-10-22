@@ -359,7 +359,7 @@ def _with_url(row) -> dict:
 
 def review_queue(db_path=None, *, limit: int = 8) -> dict:
     """Live counts from the snapshot: transactions waiting for review in Monarch (posted only), and
-    transactions since the WHO start date without a WHO tag. Each comes with its oldest few."""
+    reviewed transactions since the WHO start date without a WHO tag (so the two counts never overlap). Each comes with its oldest few."""
     cfg = get_config(db_path)
     since = cfg["who_start_date"]
     conn = connect(db_path)
@@ -368,7 +368,7 @@ def review_queue(db_path=None, *, limit: int = 8) -> dict:
         needs = conn.execute(f"SELECT {cols} FROM money_transactions WHERE needs_review = 1 AND pending = 0 "
                              "ORDER BY date").fetchall()
         no_who = conn.execute(f"SELECT {cols} FROM money_transactions WHERE has_who_tag = 0 AND pending = 0 "
-                              "AND date >= ? ORDER BY date", (since,)).fetchall()
+                              "AND needs_review = 0 AND date >= ? ORDER BY date", (since,)).fetchall()
         pending_review = conn.execute("SELECT COUNT(*) FROM money_transactions WHERE needs_review = 1 "
                                       "AND pending = 1").fetchone()[0]
     finally:
