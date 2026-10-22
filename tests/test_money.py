@@ -77,6 +77,7 @@ def test_review_queue_counts_posted_only(db):
         txn("ok", "2026-10-03", -1, tags=["Family"])]}}, db_path=db)
     q = money.review_queue(db_path=db)
     assert q["needs_review"] == 1 and q["needs_review_pending"] == 1
+    assert q["no_who_oldest"][0]["url"] == "https://app.monarch.com/transactions/n1"
     assert q["no_who"] == 1 and [t["id"] for t in q["no_who_oldest"]] == ["n1"]  # pending r2 and pre-June n0 excluded
 
 

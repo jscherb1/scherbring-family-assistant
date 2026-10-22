@@ -82,7 +82,7 @@ other family members.
 | | Weather Alerts | `/home/weather` | Alerts sent (7/30 days, by type), thresholds (coordinates hidden) |
 | People & Family | Profile | `/family` | Upcoming birthdays, directory, facts on file by key, what's missing. **Fact values are not shown** |
 | | Kids Memories | `/family/memories` | Counts per child/month/tag, Drive sync health. **Memory text is not shown** |
-| Finance | Overview | `/finance` | Budget vs plan (fixed / flexible / non-monthly / total) with red/yellow/green, projected month end, spending vs last month and normal, savings rate, emergency-fund runway, card balances, net worth, bills due, over-budget categories, retirement verdict, review/no-WHO counts, bank connections. From the Monarch snapshot (`scripts/money.py`); **Refresh now** (`POST /finance/refresh`) starts a quick sync. Shows dollar amounts |
+| Finance | Overview | `/finance` | Budget vs plan (fixed / flexible / non-monthly / total) with red/yellow/green, projected month end, spending vs last month and normal, savings rate, emergency-fund runway, card balances, net worth, over-budget categories, retirement verdict, review/no-WHO counts, bank connections. From the Monarch snapshot (`scripts/money.py`); **Refresh now** (`POST /finance/refresh`) starts a quick sync. Shows dollar amounts |
 | | Tagging | `/finance/tagging` | Live needs-review and no-WHO-tag counts with the oldest few (merchant, amount), then the agent's WHO-tagging history, learned mapping and rule proposals |
 | | Reports & Planning | `/finance/reports` | Report history with Drive links, advisor-profile completeness, non-monetary retirement settings |
 | Hy-Vee | Overview | `/hyvee` | Purchase history, most-bought items, learned preferences, cart builds |
