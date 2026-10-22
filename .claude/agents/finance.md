@@ -238,7 +238,7 @@ it answers status questions instantly, with no Monarch calls:
 ```
 python scripts/money_store.py budget      # fixed / flexible / non-monthly / total vs plan, red-yellow-green, projection, over-budget categories
 python scripts/money_store.py spending    # month to date vs last month and normal, savings rate, bills due in 14 days
-python scripts/money_store.py review      # needs-review (posted) and no-WHO-tag counts, oldest few of each
+python scripts/money_store.py review      # needs-review (posted) and no-WHO-tag counts (no-WHO excludes those still needing review), oldest few of each
 python scripts/money_store.py overview    # everything (also net worth, emergency-fund runway, card balances, bank connections)
 python scripts/money_store.py sync-status
 python scripts/money_store.py config get | config set --key <threshold> --value <n>

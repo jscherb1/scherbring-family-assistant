@@ -102,7 +102,7 @@
     <a class="card money-card card-link" href="/finance/tagging">
       <h2>No WHO tag {{ chip(r.no_who_status) }}</h2>
       <div class="metric">{{ r.no_who }}</div>
-      <div class="metric-sub">posted transactions since {{ r.no_who_since|fmt_date }}</div>
+      <div class="metric-sub">reviewed transactions since {{ r.no_who_since|fmt_date }} (not counted in waiting for review)</div>
     </a>
     <section class="card money-card">
       <h2>Bank connections {{ chip(a.sync_status) }}</h2>
