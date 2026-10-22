@@ -121,13 +121,6 @@
         <tbody>{% for o in data.over_budget %}<tr><td>{{ o.name }}</td><td class="num">{{ o.actual|money }}</td><td class="num">{{ o.planned|money }}</td><td class="num">{{ chip('red', o.over|money) }}</td></tr>{% endfor %}</tbody></table>
       {% else %}<div class="empty-state">Every category is within budget.</div>{% endif %}
     </section>
-    <section class="card card-table">
-      <h2>Bills in the next 2 weeks <span class="muted">({{ data.bills.total|money }})</span></h2>
-      {% if data.bills["items"] %}
-      <table class="tbl"><thead><tr><th>Due</th><th>What</th><th class="num">Amount</th></tr></thead>
-        <tbody>{% for b in data.bills["items"] %}<tr><td>{{ b.due_date|fmt_date }}</td><td>{{ b.merchant }}</td><td class="num">{{ (-b.amount)|money }}</td></tr>{% endfor %}</tbody></table>
-      {% else %}<div class="empty-state">No recurring bills due.</div>{% endif %}
-    </section>
   </div>
 {% endif %}
 {% endblock %}

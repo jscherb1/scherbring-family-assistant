@@ -799,8 +799,8 @@ from data, be transparent about assumptions/gaps, never hand-wave a number" disc
 The dashboard's **Money** tab opens on an overview: this month's fixed / flexible / non-monthly / total
 budget against plan (red, yellow or green; flexible is judged against the month's pace), projected
 month-end spending, spending so far vs last month and the 3-month normal, cash-flow savings rate,
-emergency-fund runway, card balances, net worth (30-day and year-to-date change), bills due in the next
-two weeks, over-budget categories, the retirement model's last verdict, and the "keeping up" counts:
+emergency-fund runway, card balances, net worth (30-day and year-to-date change),
+over-budget categories, the retirement model's last verdict, and the "keeping up" counts:
 transactions waiting for review in Monarch (posted only) and transactions since 2025-06-01 without a WHO
 tag. Tagging and Reports & planning are its sub-pages.
 

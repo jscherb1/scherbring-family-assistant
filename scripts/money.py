@@ -348,6 +348,15 @@ def _reconcile_tag_log(conn: sqlite3.Connection) -> dict:
 # ---------------------------------------------------------------------------
 
 
+MONARCH_TXN_URL = "https://app.monarch.com/transactions/{}"
+
+
+def _with_url(row) -> dict:
+    d = dict(row)
+    d["url"] = MONARCH_TXN_URL.format(d["id"])
+    return d
+
+
 def review_queue(db_path=None, *, limit: int = 8) -> dict:
     """Live counts from the snapshot: transactions waiting for review in Monarch (posted only), and
     transactions since the WHO start date without a WHO tag. Each comes with its oldest few."""
@@ -366,8 +375,8 @@ def review_queue(db_path=None, *, limit: int = 8) -> dict:
         conn.close()
     return {
         "needs_review": len(needs), "needs_review_pending": pending_review,
-        "needs_review_oldest": [dict(r) for r in needs[:limit]],
-        "no_who": len(no_who), "no_who_since": since, "no_who_oldest": [dict(r) for r in no_who[:limit]],
+        "needs_review_oldest": [_with_url(r) for r in needs[:limit]],
+        "no_who": len(no_who), "no_who_since": since, "no_who_oldest": [_with_url(r) for r in no_who[:limit]],
     }
 
 

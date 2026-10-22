@@ -15,15 +15,15 @@
     <section class="card card-table">
       <h2>Waiting for review in Monarch: {{ queue.needs_review }}{% if queue.needs_review_pending %} <span class="muted">(+{{ queue.needs_review_pending }} pending)</span>{% endif %}</h2>
       {% if queue.needs_review_oldest %}
-      <table class="tbl"><thead><tr><th>Date</th><th>Merchant</th><th class="num">Amount</th></tr></thead>
-        <tbody>{% for t in queue.needs_review_oldest %}<tr><td>{{ t.date|fmt_date }}</td><td>{{ t.merchant or '—' }}</td><td class="num">{{ t.amount|money(cents=True) }}</td></tr>{% endfor %}</tbody></table>
+      <table class="tbl"><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="num">Amount</th><th></th></tr></thead>
+        <tbody>{% for t in queue.needs_review_oldest %}<tr><td>{{ t.date|fmt_date }}</td><td><a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.merchant or '—' }}</a></td><td>{{ t.category or '—' }}</td><td class="num">{{ t.amount|money(cents=True) }}</td><td><a href="{{ t.url }}" target="_blank" rel="noopener" title="Open in Monarch">Open ↗</a></td></tr>{% endfor %}</tbody></table>
       {% else %}<div class="empty-state">Nothing posted is waiting for review.</div>{% endif %}
     </section>
     <section class="card card-table">
       <h2>No WHO tag since {{ queue.no_who_since|fmt_date }}: {{ queue.no_who }}</h2>
       {% if queue.no_who_oldest %}
-      <table class="tbl"><thead><tr><th>Date</th><th>Merchant</th><th class="num">Amount</th></tr></thead>
-        <tbody>{% for t in queue.no_who_oldest %}<tr><td>{{ t.date|fmt_date }}</td><td>{{ t.merchant or '—' }}</td><td class="num">{{ t.amount|money(cents=True) }}</td></tr>{% endfor %}</tbody></table>
+      <table class="tbl"><thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="num">Amount</th><th></th></tr></thead>
+        <tbody>{% for t in queue.no_who_oldest %}<tr><td>{{ t.date|fmt_date }}</td><td><a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.merchant or '—' }}</a></td><td>{{ t.category or '—' }}</td><td class="num">{{ t.amount|money(cents=True) }}</td><td><a href="{{ t.url }}" target="_blank" rel="noopener" title="Open in Monarch">Open ↗</a></td></tr>{% endfor %}</tbody></table>
         {% if queue.no_who > queue.no_who_oldest|length %}<div class="metric-sub">Oldest {{ queue.no_who_oldest|length }} shown.</div>{% endif %}
       {% else %}<div class="empty-state">Every posted transaction has a WHO tag.</div>{% endif %}
     </section>
