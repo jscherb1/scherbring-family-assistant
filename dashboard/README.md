@@ -80,6 +80,8 @@ other family members.
 | Home & Yard | Maintenance | `/home` | Overdue / due soon / on-track items, last done, recent completions |
 | | Lawn & Garden | `/home/lawn` | 6-step program progress, treatments, issues, products on hand, plants |
 | | Weather Alerts | `/home/weather` | Alerts sent (7/30 days, by type), thresholds (coordinates hidden) |
+| Home Assistant | Family Board | `/home/ha`, `/api/ha/board` | Live Scherbring Family HA dashboard in five tabs (Home, Climate, Media & lights, Security, Calendar; last tab remembered) under a chip strip (alarm, weather, garage, kid door alerts switch, who's home, low batteries and updates linking to HA health). Thermostats are ring gauges (current temp filled, dot at the setpoint, +/- and mode buttons). Writes (`POST /home/ha/act`, same-origin guarded) are limited to the allow-list in `scripts/ha.py`; alarm, garage doors and locks are view-only |
+| | HA Health | `/home/ha/health`, `/api/ha/health` | Needs-attention list (notifications, unavailable devices by integration, low batteries, open doors, pending updates, stale automations, backups), recommendations, update list, recent automation runs, trend. Each item has a ✕ (dismiss) and a Dismissed list with Restore, stored in the shared `hub_dismissed` table under `ha:` keys (`POST /home/ha/dismiss`, `/home/ha/restore`); reference lists (unavailable, updates, batteries, automations, trend) are collapsed. Same `scripts/ha.py` service as the `ha-overview` agent |
 | People & Family | Profile | `/family` | Upcoming birthdays, directory, facts on file by key, what's missing. **Fact values are not shown** |
 | | Kids Memories | `/family/memories` | Counts per child/month/tag, Drive sync health. **Memory text is not shown** |
 | Finance | Overview | `/finance` | Budget vs plan (fixed / flexible / non-monthly / total) with red/yellow/green, projected month end, spending vs last month and normal, savings rate, emergency-fund runway, card balances, net worth, over-budget categories, retirement verdict, review/no-WHO counts, bank connections. From the Monarch snapshot (`scripts/money.py`); **Refresh now** (`POST /finance/refresh`) starts a quick sync. Shows dollar amounts |
@@ -109,7 +111,7 @@ finance report text and advisor/retirement profile values) show summaries only. 
 show dollar amounts and merchants (decided 2026-10-21: the dashboard is only reachable on localhost/Tailscale).
 
 JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/restarts`, `/api/system`,
-`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/wellness*`, `/api/journal/*`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.
+`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/ha/*`, `/api/wellness*`, `/api/journal/*`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.
 
 ## Run it
 
@@ -154,7 +156,7 @@ a page entry (with `src` = the router's `"section:page"`) under the right tab in
 - New features follow the **"New feature standard"** in the repo `CLAUDE.md`: the data module and write
   routes call one shared service in `scripts/` (as `routers/habits.py` does), never their own copy of the rules.
 - Read-only except `POST /ask`, the habits write routes (`POST /habits...`), the day-rating write route (`POST /rating`) and the chore-chart write routes
-  (`POST /chores...`, `POST /kids/...`), all same-origin guarded and going through `scripts/habits.py` /
+  (`POST /chores...`, `POST /kids/...`) and the Home Assistant routes (`POST /home/ha/act`, `/dismiss`, `/restore`), all same-origin guarded and going through `scripts/habits.py` /
   `scripts/chores.py`: the app opens `state/agent_results.db` in SQLite read-only mode
   and only reads files under `state/`; the ask box is the sole write (one row in `state/inbox.db`).
 - Mobile: below 760px the tabs move to a bottom tab bar, the sub-nav scrolls

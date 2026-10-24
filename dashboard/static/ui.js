@@ -156,4 +156,29 @@
 
   enhanceTables();
   document.addEventListener("htmx:afterSwap", function (e) { enhanceTables(e.target); });
+
+  // Home Assistant board: tabs (the last one is remembered; without JS every panel shows).
+  (function () {
+    var tabs = document.querySelector(".ha-tabs");
+    if (!tabs) return;
+    var main = tabs.parentNode, panels = main.querySelectorAll(".ha-panel"), KEY = "ha-board-tab";
+    var names = Array.prototype.map.call(panels, function (p) { return p.getAttribute("data-panel"); });
+    function show(name) {
+      if (names.indexOf(name) < 0) name = names[0];
+      Array.prototype.forEach.call(panels, function (p) { p.hidden = p.getAttribute("data-panel") !== name; });
+      Array.prototype.forEach.call(tabs.querySelectorAll("button"), function (b) {
+        b.setAttribute("aria-selected", b.getAttribute("data-tab") === name ? "true" : "false");
+      });
+      try { localStorage.setItem(KEY, name); } catch (e) {}
+      if (location.hash.slice(1) !== name) history.replaceState(null, "", "#" + name);
+    }
+    var start = location.hash.slice(1);
+    if (!start) { try { start = localStorage.getItem(KEY) || ""; } catch (e) {} }
+    document.documentElement.classList.add("ha-js");
+    tabs.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-tab]");
+      if (b) show(b.getAttribute("data-tab"));
+    });
+    show(start);
+  })();
 })();

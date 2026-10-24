@@ -1,0 +1,68 @@
+{# One small POST form per control; the router redirects back to the board. #}
+{% macro act(entity_id, action, label, value='', cls='button button-quiet') %}
+<form method="post" action="/home/ha/act" class="ha-inline">
+  <input type="hidden" name="entity_id" value="{{ entity_id }}">
+  <input type="hidden" name="action" value="{{ action }}">
+  <input type="hidden" name="value" value="{{ value }}">
+  <button type="submit" class="{{ cls }}">{{ label|safe }}</button>
+</form>
+{% endmacro %}
+
+{# An on/off switch; read-only entities just show their state. #}
+{% macro switch(t) %}
+  {% if 'turn_on' in t.writable and t.available %}
+  <form method="post" action="/home/ha/act" class="ha-inline">
+    <input type="hidden" name="entity_id" value="{{ t.entity_id }}">
+    <input type="hidden" name="action" value="{{ 'turn_off' if t.state == 'on' else 'turn_on' }}">
+    <button type="submit" class="ha-switch{{ ' on' if t.state == 'on' }}" role="switch" aria-checked="{{ 'true' if t.state == 'on' else 'false' }}" aria-label="{{ t.name }}"><i></i></button>
+  </form>
+  {% else %}<span class="pill {{ 'pill-ok' if t.state == 'on' else 'pill-muted' }}">{{ t.display }}</span>{% endif %}
+{% endmacro %}
+
+{% macro state_pill(t) %}
+  <span class="pill {{ 'pill-muted' if not t.available else ('pill-warn' if t.open else ('pill-ok' if t.state in ('on', 'home', 'playing', 'heat') else 'pill-muted')) }}">{{ t.display }}</span>
+{% endmacro %}
+
+{# A ring gauge: filled to the current temperature, dot at the setpoint, +/- inside. #}
+{% macro dial(t) %}
+<section class="card ha-dial{{ ' heating' if t.heating }}{{ ' off' if t.state == 'off' }}">
+  <h3>{{ t.name }}</h3>
+  {% if not t.available %}<div class="empty-state">Unavailable</div>{% else %}
+  <div class="ha-ring">
+    {% if t.dial %}
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="trk" cx="60" cy="60" r="50" transform="rotate(135 60 60)" stroke-dasharray="{{ t.dial.track }} {{ t.dial.circ }}"/>
+      <circle class="fil" cx="60" cy="60" r="50" transform="rotate(135 60 60)" stroke-dasharray="{{ t.dial.fill }} {{ t.dial.circ }}"/>
+      {% if t.dial.marker %}<circle class="set" cx="{{ t.dial.marker.x }}" cy="{{ t.dial.marker.y }}" r="5.5"/>{% endif %}
+    </svg>{% endif %}
+    <div class="ha-ring-mid">
+      <div class="ha-now">{{ t.current|round|int if t.current is not none else '–' }}°</div>
+      <div class="ha-sub">{% if t.target is not none %}set {{ t.target|round|int }}°{% else %}{{ t.display }}{% endif %}</div>
+    </div>
+  </div>
+  {% if t.target is not none and 'set_temperature' in t.writable %}
+  <div class="ha-step">{{ act(t.entity_id, 'set_temperature', '−', t.target - t.step, 'ha-step-btn') }}{{ act(t.entity_id, 'set_temperature', '+', t.target + t.step, 'ha-step-btn') }}</div>
+  {% endif %}
+  {% if 'set_hvac_mode' in t.writable %}
+  <div class="ha-modes">{% for m in t.hvac_modes %}{{ act(t.entity_id, 'set_hvac_mode', m|replace('_', '/'), m, 'ha-mode' ~ (' on' if m == t.state else '')) }}{% endfor %}</div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endmacro %}
+
+{% macro events_by_day(events, empty) %}
+  {% if events %}
+  {% for day, items in events|groupby('day') %}
+  <div class="ha-day"><div class="ha-day-h">{{ day|fmt_date }}</div>
+    {% for e in items %}<div class="ha-ev"><span class="ha-ev-t">{{ 'all day' if e.all_day else e.start[11:16] }}</span>{{ e.title }}</div>{% endfor %}
+  </div>
+  {% endfor %}
+  {% else %}<div class="empty-state">{{ empty }}</div>{% endif %}
+{% endmacro %}
+
+{% macro dismiss_form(a) %}
+<form method="post" action="/home/ha/dismiss" class="ha-inline">
+  <input type="hidden" name="key" value="{{ a.key }}"><input type="hidden" name="text" value="{{ a.title }}">
+  <button class="ha-x" type="submit" aria-label="Dismiss: {{ a.title }}" title="Dismiss">✕</button>
+</form>
+{% endmacro %}

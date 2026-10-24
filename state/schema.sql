@@ -755,3 +755,10 @@ CREATE TABLE IF NOT EXISTS money_config (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
+
+-- Home Assistant health check history (scripts/ha.py): compact summary per check, throttled.
+CREATE TABLE IF NOT EXISTS ha_health_runs (
+    id            TEXT PRIMARY KEY,
+    checked_at    TEXT NOT NULL,
+    summary_json  TEXT NOT NULL
+);

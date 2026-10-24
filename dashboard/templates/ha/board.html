@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% from "ha/_macros.html" import act, switch, state_pill, dial, events_by_day %}
+
+{% block page_header %}
+  <h1>Family Board</h1>
+  <p class="subtitle">The Scherbring Family Home Assistant dashboard, live. Alarm, garage doors and locks are view-only here.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<div class="card"><div class="error-state">{{ error }}</div></div>{% endif %}
+  {% set s = data.strip %}
+  <div class="ha-strip">
+    {% if s.alarm %}<span class="ha-chip">🛡️ Alarm: {{ s.alarm.display|lower }}</span>{% endif %}
+    {% if s.weather %}<span class="ha-chip">{{ s.weather.icon }} {{ s.weather.temperature }}°</span>{% endif %}
+    {% set opened = s.garages|selectattr('open')|list %}
+    <span class="ha-chip{{ ' ha-chip-warn' if opened }}">🚗 {% if opened %}{{ opened|map(attribute='name')|join(', ') }} open{% else %}Garage closed{% endif %}</span>
+    {% if s.kid_door_alerts %}<span class="ha-chip">🔔 Kid alerts {{ switch(s.kid_door_alerts) }}</span>{% endif %}
+    {% for p in s.people %}<span class="ha-chip">{{ '🏠' if p.home else '📍' }} {{ p.name }}{% if not p.home %} · {{ p.display }}{% endif %}</span>{% endfor %}
+    {% if s.low_batteries %}<a class="ha-chip ha-chip-warn" href="/home/ha/health">🔋 {{ s.low_batteries }} low</a>{% endif %}
+    {% if s.updates %}<a class="ha-chip" href="/home/ha/health">⬆️ {{ s.updates }}</a>{% endif %}
+  </div>
+
+  <div class="ha-tabs" role="tablist">
+    <button type="button" role="tab" data-tab="home">Home</button>
+    <button type="button" role="tab" data-tab="climate">Climate</button>
+    <button type="button" role="tab" data-tab="media">Media & lights</button>
+    <button type="button" role="tab" data-tab="security">Security</button>
+    <button type="button" role="tab" data-tab="calendar">Calendar</button>
+  </div>
+
+  <div class="ha-panel" data-panel="home">
+    <div class="ha-dials">{% for t in data.overview.thermostats %}{{ dial(t) }}{% endfor %}</div>
+    <div class="grid">
+      <section class="card"><h2>Forecast</h2>
+        <div class="ha-forecast">
+          {% for d in data.overview.forecast %}
+          <div class="ha-fc"><div class="ha-fc-d">{{ d.date|fmt_date|replace(', 2026', '') }}</div><div class="ha-fc-i">{{ d.icon }}</div>
+            <div>{{ d.high }}°<span class="muted"> {{ d.low }}°</span></div>{% if d.rain_chance %}<div class="ha-fc-r">💧{{ d.rain_chance|int }}%</div>{% endif %}</div>
+          {% else %}<div class="empty-state">No forecast.</div>{% endfor %}
+        </div>
+      </section>
+      <section class="card"><h2>Up next</h2>
+        {% for e in data.overview.calendar[:4] %}<div class="ha-ev"><span class="ha-ev-t">{{ e.day|fmt_date|replace(', 2026', '') }}{% if not e.all_day %} {{ e.start[11:16] }}{% endif %}</span>{{ e.title }}</div>
+        {% else %}<div class="empty-state">Nothing coming up.</div>{% endfor %}
+        {% if data.overview.meals %}<div class="ha-meal">🍽️ {{ data.overview.meals[0].title }}</div>{% endif %}
+      </section>
+      {% if data.irrigation %}
+      <section class="card"><h2>Irrigation</h2>
+        <div class="ha-facts">
+          {% for t in data.irrigation if t.entity_id in ('counter.irrigation_days_since_watered', 'sensor.24_hour_rain_amount', 'input_number.pirate_weather_rain_chance_today', 'switch.tz3000_okaz9tjs_ts011f') %}
+          <div><div class="ha-fact-v">{{ t.display }}</div><div class="ha-fact-l">{{ t.name }}</div></div>{% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ha-panel" data-panel="climate">
+    <div class="ha-dials">{% for t in data.climate.thermostats %}{{ dial(t) }}{% endfor %}</div>
+    <div class="grid">
+      <section class="card"><h2>Room temperatures</h2>
+        <div class="ha-temps">
+          {% for t in data.climate.temperatures %}{% set v = t.state|float(0) %}
+          <div class="ha-temp {{ 'cool' if v < 66 else ('warm' if v > 76 else '') }}{{ ' na' if not t.available }}"><div class="ha-temp-v">{{ v|round|int if t.available else '–' }}°</div><div class="ha-temp-l">{{ t.name }}</div></div>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="card"><h2>Space heaters</h2>
+        {% for t in data.climate.heaters %}<div class="status-row"><span>{{ t.name }}</span>{{ state_pill(t) }}</div>{% endfor %}
+        {% for h in data.climate.heater_hours %}
+        <div class="ha-bar"><span>{{ h.name }}</span><div class="ha-bar-t"><i style="width: {{ [h.minutes_on * 100 // 1440, 100]|min }}%"></i></div><span class="muted">{{ h.minutes_on // 60 }}h {{ h.minutes_on % 60 }}m</span></div>
+        {% endfor %}
+      </section>
+    </div>
+  </div>
+
+  <div class="ha-panel" data-panel="media">
+    <div class="grid">
+      <section class="card"><h2>Media</h2>
+        {% for t in data.media %}
+        <div class="ha-media">
+          <div><strong>{{ t.name }}</strong><div class="muted">{{ t.title or t.display }}</div></div>
+          {% if t.available %}<div class="ha-row">
+            {% if 'volume_down' in t.writable and t.volume is not none %}{{ act(t.entity_id, 'volume_down', '🔉', '', 'ha-step-btn') }}<span class="muted">{{ t.volume }}%</span>{{ act(t.entity_id, 'volume_up', '🔊', '', 'ha-step-btn') }}{% endif %}
+            {% if 'media_play_pause' in t.writable %}{{ act(t.entity_id, 'media_play_pause', '⏯', '', 'ha-step-btn') }}{% endif %}
+          </div>{% endif %}
+        </div>
+        {% endfor %}
+      </section>
+      <section class="card"><h2>Lights & holiday</h2>
+        {% for t in data.holiday %}<div class="status-row"><span>{{ t.name }}</span>{{ switch(t) }}</div>{% endfor %}
+      </section>
+    </div>
+  </div>
+
+  <div class="ha-panel" data-panel="security">
+    <div class="ha-doors">
+      {% for t in data.security.doors %}
+      <div class="ha-door {{ 'open' if t.open else ('na' if not t.available else 'closed') }}"><div class="ha-door-s">{{ t.display }}</div><div class="ha-door-l">{{ t.name }}</div></div>
+      {% endfor %}
+    </div>
+    <div class="grid">
+      {% for c in data.security.cameras %}
+      <section class="card"><h2>{{ c.name }} camera</h2>
+        {% if c.available %}<img class="ha-cam" src="/home/ha/camera/{{ c.entity_id }}" alt="{{ c.name }} camera snapshot" loading="lazy">
+        {% else %}<div class="empty-state">Camera unavailable</div>{% endif %}
+      </section>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="ha-panel" data-panel="calendar">
+    <div class="grid">
+      <section class="card"><h2>Family & school</h2>{{ events_by_day(data.calendar.family, 'Nothing scheduled.') }}</section>
+      <section class="card"><h2>Meal plan</h2>{{ events_by_day(data.calendar.meals, 'No meals planned.') }}</section>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

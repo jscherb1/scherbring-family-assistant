@@ -209,6 +209,19 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       latest day, charges post late), chores/kids activity.
 - [ ] Later: optional second score (energy/stress), quick manual questions in the nightly nudge, tags from notes.
 
+## Home Assistant pages (built 2026-10-24, branch `feat/ha-section`)
+
+Home > Home Assistant has **Family board** (`/home/ha`) and **HA health** (`/home/ha/health`), both over
+`scripts/ha.py`; the `ha-overview` agent uses `scripts/ha_store.py`. Verified live against HA (reads);
+writes are covered by tests with HA stubbed.
+
+- [ ] Try a write from the app once and put it back: Kid Door Alerts toggle, one thermostat setpoint.
+- [ ] Camera snapshots show "unavailable" today because the `tapo_control` integration is failing in HA
+      (HA health lists it as the top recommendation). Re-check after fixing it.
+- [ ] Not built, only suggested on the health page: a scheduled "HA unreachable" / low-battery alert to
+      Telegram. If wanted, register `ha_store.py health --brief` with `scheduler_store.py add`.
+- [ ] Pre-existing, unrelated: `tests/test_journal.py::test_cli` fails on `main` too.
+
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 
 - `habits-daily-nudge` is registered (daily 7 PM) and live-tested 2026-10-12: silent path verified (nothing at risk).
