@@ -202,7 +202,7 @@ def web(fake_ha, tmp_path, monkeypatch):
 
 def test_pages_render_and_match_service(web, tmp_path):
     board = web.get("/home/ha")
-    assert board.status_code == 200 and "Claire&#39;s Room" in board.text and "Armed home" in board.text
+    assert board.status_code == 200 and "Claire&#39;s Room" in board.text and "Alarm: armed home" in board.text
     assert web.get("/api/ha/board").json()["batteries"] == ha.board()["batteries"]
     health = web.get("/home/ha/health")
     assert health.status_code == 200 and "Fix or remove the tapo_control integration" in health.text
@@ -245,3 +245,67 @@ def test_output_is_escaped(web):
 def test_camera_route(web):
     assert web.get("/home/ha/camera/camera.basement_hd_stream").content == b"IMG"
     assert web.get("/home/ha/camera/camera.nope").status_code == 404
+
+
+# ---- dismissing health items ----
+
+def test_dismiss_hides_item_and_restore_brings_it_back(fake_ha, tmp_path):
+    db = tmp_path / "d.db"
+    before = ha.health(db_path=db)
+    key = next(a["key"] for a in before["attention"] if a["category"] == "Battery")
+    assert key == "ha:battery:sensor.a_battery"
+    ha.dismiss(key, "Remote battery", db_path=db)
+    ha.dismiss("ha:rec:updates", "Apply updates", db_path=db)
+    ha.clear_cache()
+    after = ha.health(db_path=db)
+    assert key not in [a["key"] for a in after["attention"]]
+    assert "ha:rec:updates" not in [r["key"] for r in after["recommendations"]]
+    assert {d["key"] for d in after["dismissed"]} == {key, "ha:rec:updates"}
+    assert after["tiles"]["low_batteries"] == 0
+    assert after["tiles"]["attention"] == before["tiles"]["attention"] - 1
+    ha.restore(key, db_path=db)
+    ha.clear_cache()
+    assert key in [a["key"] for a in ha.health(db_path=db)["attention"]]
+    assert ha.restore(db_path=db) == {"restored": 1}
+
+
+def test_keys_are_stable_when_counts_change(fake_ha, tmp_path):
+    first = {a["key"] for a in ha.health(db_path=tmp_path / "k.db")["attention"]}
+    STATES.append(S("sensor.gone3", "unavailable", friendly_name="Gone 3"))
+    try:
+        ha.clear_cache()
+        second = {a["key"] for a in ha.health(db_path=tmp_path / "k.db")["attention"]}
+    finally:
+        STATES.pop()
+    assert first == second  # "N of M entities unavailable" keeps one key whatever N is
+
+
+def test_dismiss_only_touches_ha_keys(fake_ha, tmp_path):
+    with pytest.raises(ha.HAError):
+        ha.dismiss("hub:something", db_path=tmp_path / "x.db")
+    with pytest.raises(ha.HAError):
+        ha.restore("hub:something", db_path=tmp_path / "x.db")
+
+
+def test_dismiss_routes_via_ui(web, tmp_path):
+    key = "ha:battery:sensor.a_battery"
+    r = web.post("/home/ha/dismiss", data={"key": key, "text": "x"}, headers={"Origin": "http://evil.example"},
+                 follow_redirects=False)
+    assert r.status_code == 403
+    assert "Remote battery at 12%" in web.get("/home/ha/health").text
+    assert web.post("/home/ha/dismiss", data={"key": key}, follow_redirects=False).status_code == 303
+    ha.clear_cache()
+    page = web.get("/home/ha/health").text
+    assert "Dismissed (1)" in page and page.index("Dismissed (1)") < page.index("Remote battery")
+    assert web.post("/home/ha/dismiss", data={"key": "hub:x"}, follow_redirects=False).status_code == 400
+    web.post("/home/ha/restore", data={}, follow_redirects=False)
+    ha.clear_cache()
+    assert "Dismissed (" not in web.get("/home/ha/health").text
+
+
+def test_board_has_dials_tabs_and_chips(web):
+    page = web.get("/home/ha").text
+    for needle in ('data-tab="climate"', 'data-panel="security"', 'class="ha-ring"', 'stroke-dasharray', "1 low"):
+        assert needle in page, needle
+    t = ha.board()["overview"]["thermostats"][0]
+    assert t["dial"]["marker"] and t["dial"]["fill"] > 0 and t["dial"]["fill"] <= t["dial"]["track"]

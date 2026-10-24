@@ -2335,22 +2335,102 @@ kbd {
 }
 
 /* Home Assistant pages (templates/ha/) */
-.ha-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
-.ha-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
-  background: var(--muted-bg); border: 1px solid var(--border); font-size: 14px; }
-.ha-jump { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.ha-jump a { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; color: var(--text-muted); text-decoration: none; }
+.ha-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.ha-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; white-space: nowrap; border-radius: 999px;
+  background: var(--muted-bg); border: 1px solid var(--border); font-size: 13px; color: var(--text); text-decoration: none; }
+.ha-chip .pill { padding: 1px 8px; }
+.ha-chip-warn { border-color: var(--amber); color: var(--amber); }
 .ha-inline { display: inline; margin: 0; }
-.ha-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
-.status-row .ha-row { margin-top: 0; }
-.ha-thermo-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.ha-setpoint { display: flex; align-items: center; gap: 10px; }
-.ha-events { list-style: none; margin: 0; padding: 0; font-size: 14px; }
-.ha-events li { padding: 6px 0; border-bottom: 1px solid var(--border); }
-.ha-events li:last-child { border-bottom: none; }
-.ha-ev-when { color: var(--text-muted); margin-right: 6px; }
+.ha-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ha-grow { flex: 1; min-width: 0; }
+
+/* Tabs: with JS only the active panel shows; without it every panel stacks. */
+.ha-tabs { display: none; gap: 6px; overflow-x: auto; margin-bottom: 16px; padding-bottom: 2px; }
+.ha-js .ha-tabs { display: flex; }
+.ha-tabs button { flex: 0 0 auto; font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted); }
+.ha-tabs button[aria-selected="true"] { color: var(--on-accent); background: var(--accent); border-color: var(--accent); font-weight: 600; }
+.ha-js .ha-panel[hidden] { display: none; }
+.ha-panel { margin-bottom: 24px; }
+
+/* Thermostat ring gauges */
+.ha-dials { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ha-dial { padding: 14px 10px 12px; text-align: center; }
+.ha-dial h3 { margin: 0 0 4px; font-size: 13px; color: var(--text-muted); font-weight: 600; }
+.ha-ring { position: relative; width: 100%; max-width: 132px; margin: 0 auto; }
+.ha-dials > *, .grid > * { min-width: 0; }
+.ha-ring svg { width: 100%; display: block; }
+.ha-ring circle { fill: none; stroke-width: 9; stroke-linecap: round; }
+.ha-ring .trk { stroke: var(--muted-bg); }
+.ha-ring .fil { stroke: var(--accent); }
+.ha-ring .set { fill: var(--text); stroke: var(--card-solid); stroke-width: 2; }
+.ha-dial.heating .fil { stroke: var(--amber); }
+.ha-dial.off .fil { stroke: var(--text-muted); }
+.ha-ring-mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ha-now { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+.ha-sub { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.ha-step { display: flex; justify-content: center; gap: 14px; margin-top: 2px; }
+.ha-step-btn { font: inherit; font-size: 18px; line-height: 1; width: 40px; height: 36px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--muted-bg); color: var(--text); }
+.ha-modes { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.ha-mode { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 999px; cursor: pointer; text-transform: capitalize;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted); }
+.ha-mode.on { color: var(--accent); border-color: var(--accent); }
+
+/* Switch */
+.ha-switch { width: 44px; height: 26px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--muted-bg);
+  position: relative; cursor: pointer; padding: 0; vertical-align: middle; }
+.ha-switch i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--text-muted); transition: left .15s; }
+.ha-switch.on { background: var(--accent); border-color: var(--accent); }
+.ha-switch.on i { left: 21px; background: var(--on-accent); }
+.ha-chip .ha-switch { width: 38px; height: 22px; }
+.ha-chip .ha-switch i { width: 14px; height: 14px; }
+.ha-chip .ha-switch.on i { left: 19px; }
+
+.ha-forecast { display: flex; gap: 8px; justify-content: space-between; }
+.ha-fc { flex: 1; text-align: center; font-size: 13px; }
+.ha-fc-d { color: var(--text-muted); font-size: 12px; }
+.ha-fc-i { font-size: 22px; margin: 2px 0; }
+.ha-fc-r { font-size: 11px; color: var(--text-muted); }
+.ha-ev { font-size: 14px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.ha-ev:last-child { border-bottom: none; }
+.ha-ev-t { display: inline-block; min-width: 76px; color: var(--text-muted); font-size: 12px; margin-right: 6px; }
+.ha-meal { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 14px; }
+.ha-day-h { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 10px 0 2px; }
+.ha-facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.ha-fact-v { font-size: 20px; font-weight: 600; }
+.ha-fact-l { font-size: 12px; color: var(--text-muted); }
+
+.ha-temps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ha-temp { text-align: center; padding: 8px 4px; border-radius: 10px; background: rgba(79, 216, 255, 0.10); }
+.ha-temp.cool { background: rgba(90, 140, 255, 0.20); }
+.ha-temp.warm { background: var(--amber-bg); }
+.ha-temp.na { opacity: .45; }
+.ha-temp-v { font-size: 18px; font-weight: 600; }
+.ha-temp-l { font-size: 11px; color: var(--text-muted); }
+.ha-bar { display: grid; grid-template-columns: 70px 1fr 56px; gap: 8px; align-items: center; font-size: 13px; margin-top: 8px; }
+.ha-bar-t { height: 8px; border-radius: 4px; background: var(--muted-bg); overflow: hidden; }
+.ha-bar-t i { display: block; height: 100%; background: var(--amber); }
+.ha-media { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.ha-media:last-child { border-bottom: none; }
+
+.ha-doors { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.ha-door { padding: 10px 8px; border-radius: 12px; text-align: center; border: 1px solid var(--border); background: var(--ok-bg); }
+.ha-door.open { background: var(--warn-bg); border-color: var(--warn); }
+.ha-door.na { background: var(--muted-bg); opacity: .6; }
+.ha-door-s { font-weight: 600; font-size: 14px; }
+.ha-door-l { font-size: 12px; color: var(--text-muted); }
 .ha-cam { width: 100%; border-radius: 10px; display: block; }
+
 .ha-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
 .ha-item { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .ha-item:last-child { border-bottom: none; }
+.ha-x { background: transparent; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.ha-x:hover { color: var(--text); background: var(--muted-bg); }
+.ha-dismissed { margin: 14px 0; }
+.ha-dismissed summary { cursor: pointer; color: var(--text-muted); font-size: 14px; margin-bottom: 8px; }
 .card h2.ha-sub { margin-top: 16px; }
+@media (max-width: 520px) { .ha-step-btn { width: 32px; height: 32px; } .ha-dial { padding: 10px 6px; } .ha-mode { padding: 2px 7px; } .ha-temps { grid-template-columns: repeat(2, 1fr); } .ha-dials { grid-template-columns: repeat(3, 1fr); gap: 8px; } .ha-now { font-size: 24px; } }
+.ha-more { margin: 10px 0; }
+.ha-more summary { cursor: pointer; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 8px 0; }
+.ha-more[open] summary { margin-bottom: 8px; }

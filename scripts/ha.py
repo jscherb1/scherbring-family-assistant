@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import re
 import socket
@@ -32,6 +33,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import myhub
 import paths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -319,6 +321,26 @@ def _display(st: dict) -> str:
     return state.replace("_", " ").capitalize()
 
 
+DIAL_R = 50
+DIAL_SWEEP = 270
+
+
+def _dial(current, target, lo, hi) -> dict | None:
+    """Geometry for a 270-degree ring gauge (viewBox 0 0 120 120, centre 60,60): the arc is filled up to the
+    current temperature and a dot marks the setpoint."""
+    lo, hi = _num(lo), _num(hi)
+    if lo is None or hi is None or hi <= lo:
+        return None
+    circ = 2 * math.pi * DIAL_R
+    frac = lambda v: max(0.0, min(1.0, (float(v) - lo) / (hi - lo)))  # noqa: E731
+    out = {"circ": round(circ, 2), "track": round(circ * DIAL_SWEEP / 360, 2),
+           "fill": round(circ * DIAL_SWEEP / 360 * frac(current), 2) if _num(current) is not None else 0, "marker": None}
+    if _num(target) is not None:
+        angle = math.radians(135 + DIAL_SWEEP * frac(target))
+        out["marker"] = {"x": round(60 + DIAL_R * math.cos(angle), 1), "y": round(60 + DIAL_R * math.sin(angle), 1)}
+    return out
+
+
 def _tile(all_states: dict, entity_id: str, name: str | None = None) -> dict | None:
     st = all_states.get(entity_id)
     if st is None:
@@ -338,7 +360,9 @@ def _tile(all_states: dict, entity_id: str, name: str | None = None) -> dict | N
         tile.update(
             current=attrs.get("current_temperature"), target=attrs.get("temperature"),
             hvac_modes=attrs.get("hvac_modes", []), min_temp=attrs.get("min_temp"), max_temp=attrs.get("max_temp"),
-            step=attrs.get("target_temp_step") or 1, display=st["state"].replace("_", " ").capitalize())
+            step=attrs.get("target_temp_step") or 1, display=st["state"].replace("_", " ").capitalize(),
+            heating=attrs.get("hvac_action") == "heating" or st["state"] == "heat",
+            dial=_dial(attrs.get("current_temperature"), attrs.get("temperature"), attrs.get("min_temp"), attrs.get("max_temp")))
     elif domain == "media_player":
         vol = attrs.get("volume_level")
         tile.update(title=attrs.get("media_title") or "", volume=None if vol is None else round(vol * 100))
@@ -372,8 +396,9 @@ def _calendar_events(entity_id: str, days: int, limit: int = 12) -> list[dict]:
     events = []
     for e in raw:
         s = e.get("start", {})
+        start = s.get("dateTime") or s.get("date") or ""
         events.append({"title": e.get("summary", ""), "all_day": "date" in s and "dateTime" not in s,
-                       "start": s.get("dateTime") or s.get("date") or "", "calendar": entity_id})
+                       "start": start, "day": start[:10], "calendar": entity_id})
     events.sort(key=lambda e: e["start"])
     return events[:limit]
 
@@ -439,6 +464,9 @@ def board() -> dict:
         "strip": {
             "alarm": alarm, "weather": weather, "garages": _tiles(st, GARAGE_CHIPS),
             "kid_door_alerts": _tile(st, KID_DOOR_ALERTS, "Kid door alerts"),
+            "people": _tiles(st, PEOPLE),
+            "low_batteries": sum(1 for b in _batteries(st) if b["low"]),
+            "updates": sum(1 for e, x in st.items() if e.startswith("update.") and x["state"] == "on"),
         },
         "overview": {
             "forecast": _forecast(),
@@ -576,8 +604,14 @@ def _unavailable(all_states: dict, registry: list | None, device_registry: list 
     return {"count": len(items), "by_integration": top(by_integration, 8), "by_device": top(by_device, 8)}
 
 
-def _add(items: list, severity: str, category: str, title: str, detail: str = "") -> None:
-    items.append({"severity": severity, "category": category, "title": title, "detail": detail})
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60]
+
+
+def _add(items: list, severity: str, category: str, title: str, detail: str = "", key: str = "") -> None:
+    """key is stable across refreshes (counts and versions stay out of it) so a dismissal sticks."""
+    items.append({"severity": severity, "category": category, "title": title, "detail": detail,
+                  "key": "ha:" + (key or f"{_slug(category)}:{_slug(title)}")})
 
 
 def health(db_path: Path | str | None = None, now: datetime | None = None) -> dict:
@@ -597,29 +631,37 @@ def health(db_path: Path | str | None = None, now: datetime | None = None) -> di
     for n in notifications:
         text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", n.get("message", "")).replace("\n", " ").strip()
         sev = "medium" if "Login attempt" in n.get("title", "") else "high"
-        _add(attention, sev, "Notification", n.get("title", "HA notification"), text[:240])
+        _add(attention, sev, "Notification", n.get("title", "HA notification"), text[:240],
+             key=f"notification:{n.get('notification_id') or _slug(n.get('title', ''))}")
     for i in issues:
         _add(attention, "high" if i.get("severity") in ("error", "critical") else "medium", "Repair",
-             i.get("translation_key") or i.get("issue_id", "Repair"), i.get("domain", ""))
+             i.get("translation_key") or i.get("issue_id", "Repair"), i.get("domain", ""),
+             key=f"repair:{i.get('domain', '')}:{i.get('issue_id', '')}")
 
     unavailable = _unavailable(st, ent_reg, dev_reg)
     total_entities = len(st)
     if unavailable["count"]:
         top = ", ".join(f"{name} ({n})" for name, n in unavailable["by_device"][:4])
         _add(attention, "medium", "Unavailable", f"{unavailable['count']} of {total_entities} entities unavailable",
-             f"Biggest: {top}")
+             f"Biggest: {top}", key="unavailable")
 
     batteries = _batteries(st)
     for b in [b for b in batteries if b["low"]]:
-        _add(attention, "medium", "Battery", f"{b['name']} at {b['level']}%")
+        _add(attention, "medium", "Battery", f"{b['name']} at {b['level']}%", key=f"battery:{b['entity_id']}")
 
     alarm = st.get(ALARM)
     for eid, name in DOORS:
         s = st.get(eid)
         if s and s["state"] in ("on", "open") and "garage" in eid:
-            _add(attention, "high", "Door", f"{name} is open")
+            _add(attention, "high", "Door", f"{name} is open", key=f"door:{eid}")
     if alarm and alarm["state"] == "disarmed" and (now.hour >= 22 or now.hour < 6):
-        _add(attention, "high", "Alarm", "Alarm is disarmed overnight")
+        _add(attention, "high", "Alarm", "Alarm is disarmed overnight", key="alarm-overnight")
+
+    for eid, name in [(ALARM, "Alarm panel")] + GARAGE_CHIPS + THERMOSTATS:
+        x = st.get(eid)
+        if x and x["state"] == "unavailable":
+            _add(attention, "high", "Critical device", f"{name} is unavailable",
+                 "The app can't see or control it; check its integration or power.", key=f"critical:{eid}")
 
     updates = _updates(st)
     by_cat: dict[str, list] = {}
@@ -628,13 +670,14 @@ def health(db_path: Path | str | None = None, now: datetime | None = None) -> di
     for cat, rows in by_cat.items():
         sev = "medium" if cat in ("Core", "OS", "Supervisor") else "low"
         names = ", ".join(r["name"] for r in rows[:4]) + (f" +{len(rows) - 4} more" if len(rows) > 4 else "")
-        _add(attention, sev, "Updates", f"{len(rows)} {cat} update{'s' if len(rows) != 1 else ''} available", names)
+        _add(attention, sev, "Updates", f"{len(rows)} {cat} update{'s' if len(rows) != 1 else ''} available", names,
+             key=f"updates:{_slug(cat)}")
 
     stale = st.get("binary_sensor.backups_stale")
     if stale and stale["state"] == "on":
-        _add(attention, "high", "Backup", "Backups are stale", "Home Assistant reports no recent successful backup")
+        _add(attention, "high", "Backup", "Backups are stale", "Home Assistant reports no recent successful backup", key="backup")
     elif not stale:
-        _add(attention, "low", "Backup", "No backup status sensor found")
+        _add(attention, "low", "Backup", "No backup status sensor found", key="backup-sensor")
 
     automations = [(eid, s) for eid, s in st.items() if eid.startswith("automation.")]
     stale_autos = []
@@ -646,7 +689,7 @@ def health(db_path: Path | str | None = None, now: datetime | None = None) -> di
             stale_autos.append(s["attributes"].get("friendly_name", eid))
     if stale_autos:
         _add(attention, "low", "Automations", f"{len(stale_autos)} enabled automations haven't run in {STALE_AUTOMATION_DAYS}+ days",
-             ", ".join(stale_autos[:5]))
+             ", ".join(stale_autos[:5]), key="stale-automations")
 
     attention.sort(key=lambda a: SEVERITY_ORDER[a["severity"]])
 
@@ -655,39 +698,43 @@ def health(db_path: Path | str | None = None, now: datetime | None = None) -> di
         related = [x for x in notifications if name in x.get("message", "")]
         if related and name != "unknown":
             _add(recs, "high", "Cleanup", f"Fix or remove the {name} integration",
-                 f"{n} of its entities are unavailable and HA reports it failed to set up.")
+                 f"{n} of its entities are unavailable and HA reports it failed to set up.", key=f"rec:integration:{name}")
     if unavailable["count"] > 50:
         tops = ", ".join(f"{name} ({n})" for name, n in unavailable["by_integration"][:3])
         _add(recs, "medium", "Cleanup", f"Bulk-clean the {unavailable['count']} unavailable entities",
-             f"By integration: {tops}. Delete leftovers from old devices so real outages stand out.")
+             f"By integration: {tops}. Delete leftovers from old devices so real outages stand out.", key="rec:bulk-clean")
     for n in notifications:
         if "Login attempt" in n.get("title", ""):
             who = re.search(r"\(([\d.]+)\)", n.get("message", ""))
             _add(recs, "medium", "Security", "Find what is failing to log in",
                  f"Something{' at ' + who.group(1) if who else ''} is sending bad credentials to Home Assistant; "
-                 "usually an integration with a stale token.")
+                 "usually an integration with a stale token.", key="rec:login-failures")
     if updates:
         core = by_cat.get("Core")
         _add(recs, "medium" if core else "low", "Updates", f"Apply the {len(updates)} pending updates",
              ("Core is behind (" + f"{core[0]['installed']} → {core[0]['latest']}" + "). " if core else "")
-             + "Back up first, then update in batches: add-ons, then HACS cards, then Core.")
+             + "Back up first, then update in batches: add-ons, then HACS cards, then Core.", key="rec:updates")
     trackers = [(eid, s["attributes"].get("friendly_name", "")) for eid, s in st.items() if eid.startswith("device_tracker.")]
     seen: dict[str, int] = {}
     for _, name in trackers:
         seen[_norm_name(name)] = seen.get(_norm_name(name), 0) + 1
     dupes = [n for n, c in seen.items() if c > 1]
     if dupes:
-        _add(recs, "low", "Cleanup", "Duplicate device trackers", ", ".join(dupes) + " each appear more than once.")
+        _add(recs, "low", "Cleanup", "Duplicate device trackers", ", ".join(dupes) + " each appear more than once.", key="rec:duplicate-trackers")
     views = [v for v in (lovelace or {}).get("views", []) if not v.get("path")]
     if views:
         _add(recs, "low", "Dashboard", f"{len(views)} dashboard view(s) in the Scherbring Family dashboard have no path",
-             "They get fragile numeric URLs; give them a path in the dashboard editor.")
+             "They get fragile numeric URLs; give them a path in the dashboard editor.", key="rec:view-paths")
     if not any("battery" in s["attributes"].get("friendly_name", "").lower() for _, s in automations):
         _add(recs, "low", "Idea", "Add a low-battery notification automation",
-             f"{sum(1 for b in batteries if b['low'])} sensors are below {LOW_BATTERY}% today and nothing alerts you.")
+             f"{sum(1 for b in batteries if b['low'])} sensors are below {LOW_BATTERY}% today and nothing alerts you.", key="rec:battery-automation")
     _add(recs, "low", "Idea", "Add an 'HA unreachable' alert from the family app",
-         "This page can tell when HA stops answering; a scheduled check could message you.")
+         "This page can tell when HA stops answering; a scheduled check could message you.", key="rec:unreachable-alert")
     recs.sort(key=lambda a: SEVERITY_ORDER[a["severity"]])
+    gone = _dismissed(db_path)
+    dismissed = [x for x in attention + recs if x["key"] in gone]
+    attention = [x for x in attention if x["key"] not in gone]
+    recs = [x for x in recs if x["key"] not in gone]
 
     recent = sorted(((s["attributes"].get("friendly_name", eid), _parse_ts(s["attributes"].get("last_triggered")))
                      for eid, s in automations), key=lambda x: x[1] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
@@ -709,18 +756,50 @@ def health(db_path: Path | str | None = None, now: datetime | None = None) -> di
             "entities": total_entities, "unavailable": unavailable["count"],
             "automations_on": sum(1 for _, s in automations if s["state"] == "on"),
             "automations_off": sum(1 for _, s in automations if s["state"] != "on"),
-            "updates": len(updates), "low_batteries": sum(1 for b in batteries if b["low"]),
+            "updates": len(updates),
+            "low_batteries": sum(1 for b in batteries if b["low"] and f"ha:battery:{b['entity_id']}" not in gone),
             "attention": len(attention),
         },
         "attention": attention,
         "recommendations": recs,
+        "dismissed": dismissed,
         "unavailable": unavailable,
         "updates": updates,
+        "batteries": batteries,
         "activity": activity,
         "trend": [],
     }
     result["trend"] = record_run(result, db_path, now)
     return result
+
+
+# ---------------------------------------------------------------------------
+# dismissing reviewed items (shared hub_dismissed table: same service as the Today page)
+# ---------------------------------------------------------------------------
+
+
+def _dismissed(db_path) -> set[str]:
+    try:
+        return {k for k in myhub.dismissed_rows(db_path=db_path) if k.startswith("ha:")}
+    except sqlite3.Error:
+        return set()
+
+
+def dismiss(key: str, text: str = "", db_path: Path | str | None = None) -> dict:
+    if not key.startswith("ha:"):
+        raise HAError("not a Home Assistant item", 2)
+    myhub.dismiss_key(key, text, db_path=db_path)
+    return {"dismissed": key}
+
+
+def restore(key: str | None = None, db_path: Path | str | None = None) -> dict:
+    """Un-dismiss one item, or every Home Assistant item when key is None."""
+    if key is not None and not key.startswith("ha:"):
+        raise HAError("not a Home Assistant item", 2)
+    keys = [key] if key else sorted(_dismissed(db_path))
+    for k in keys:
+        myhub.restore(k, db_path=db_path)
+    return {"restored": len(keys)}
 
 
 # ---------------------------------------------------------------------------

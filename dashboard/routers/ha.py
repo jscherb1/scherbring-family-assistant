@@ -7,7 +7,7 @@ by the same-origin check the ask box uses; access control is the network (Tailsc
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
-from ..data import ha as data
+from ..data import common, ha as data
 from ..web import render
 from .ask import _same_origin
 
@@ -34,6 +34,28 @@ def act(request: Request, entity_id: str = Form(""), action: str = Form(""), val
     except service.HAError as exc:
         return RedirectResponse(f"/home/ha?error={exc.message.replace(' ', '+')}", status_code=303)
     return RedirectResponse("/home/ha", status_code=303)
+
+
+@router.post("/home/ha/dismiss", include_in_schema=False)
+def dismiss(request: Request, key: str = Form(""), text: str = Form("")):
+    if not _same_origin(request):
+        return JSONResponse({"error": "Blocked: the request didn't come from this site."}, status_code=403)
+    try:
+        service.dismiss(key, text, db_path=common.db_path())
+    except service.HAError as exc:
+        return JSONResponse({"error": exc.message}, status_code=400)
+    return RedirectResponse("/home/ha/health", status_code=303)
+
+
+@router.post("/home/ha/restore", include_in_schema=False)
+def restore(request: Request, key: str = Form("")):
+    if not _same_origin(request):
+        return JSONResponse({"error": "Blocked: the request didn't come from this site."}, status_code=403)
+    try:
+        service.restore(key or None, db_path=common.db_path())
+    except service.HAError as exc:
+        return JSONResponse({"error": exc.message}, status_code=400)
+    return RedirectResponse("/home/ha/health", status_code=303)
 
 
 @router.get("/home/ha/camera/{entity_id}", include_in_schema=False)
