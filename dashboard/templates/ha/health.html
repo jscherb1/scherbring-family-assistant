@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Home Assistant health</h1>
+  <p class="subtitle">What needs attention, why, and what to do about it.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% set b = data.banner %}{% set t = data.tiles %}
+  <section class="card ha-banner">
+    <span class="pill {{ 'pill-ok' if b.state == 'RUNNING' else 'pill-warn' }}">{{ b.state|title }}</span>
+    <span>{{ b.location }} · Core {{ b.versions.core }} · OS {{ b.versions.os or '?' }}</span>
+    {% if b.remote_ui is not none %}<span class="pill {{ 'pill-ok' if b.remote_ui else 'pill-warn' }}">Remote UI {{ 'on' if b.remote_ui else 'off' }}</span>{% endif %}
+    <span class="muted">checked {{ data.checked_at|fmt_dt }}</span>
+  </section>
+
+  <div class="grid stats">
+    <section class="card"><h2>Needs attention</h2><div class="metric">{{ t.attention }}</div><div class="metric-sub">items</div></section>
+    <section class="card"><h2>Unavailable</h2><div class="metric">{{ t.unavailable }}</div><div class="metric-sub">of {{ t.entities }} entities</div></section>
+    <section class="card"><h2>Updates</h2><div class="metric">{{ t.updates }}</div><div class="metric-sub">pending</div></section>
+    <section class="card"><h2>Automations</h2><div class="metric">{{ t.automations_on }}</div><div class="metric-sub">on · {{ t.automations_off }} off</div></section>
+    <section class="card"><h2>Low batteries</h2><div class="metric">{{ t.low_batteries }}</div><div class="metric-sub">below 20%</div></section>
+  </div>
+
+  <div class="stack">
+    <h2>Needs attention</h2>
+    <section class="card">
+      {% for a in data.attention %}
+      <div class="ha-item">
+        <span class="pill {{ 'pill-warn' if a.severity == 'high' else ('pill-muted' if a.severity == 'low' else 'pill-ok') }}">{{ a.severity }}</span>
+        <div><strong>{{ a.title }}</strong> <span class="muted">· {{ a.category }}</span>
+          {% if a.detail %}<div class="metric-sub">{{ a.detail }}</div>{% endif %}</div>
+      </div>
+      {% else %}<div class="empty-state">All clear.</div>{% endfor %}
+    </section>
+
+    <h2>Recommendations</h2>
+    <section class="card">
+      {% for r in data.recommendations %}
+      <div class="ha-item">
+        <span class="pill {{ 'pill-warn' if r.severity == 'high' else ('pill-muted' if r.severity == 'low' else 'pill-ok') }}">{{ r.category }}</span>
+        <div><strong>{{ r.title }}</strong>{% if r.detail %}<div class="metric-sub">{{ r.detail }}</div>{% endif %}</div>
+      </div>
+      {% else %}<div class="empty-state">Nothing to suggest.</div>{% endfor %}
+    </section>
+
+    <h2>Unavailable, by device</h2>
+    <section class="card">
+      {% for name, n in data.unavailable.by_device %}<div class="status-row"><span>{{ name }}</span><span>{{ n }}</span></div>
+      {% else %}<div class="empty-state">None.</div>{% endfor %}
+      {% if data.unavailable.by_integration %}<h2 class="ha-sub">By integration</h2>
+      {% for name, n in data.unavailable.by_integration %}<div class="status-row"><span>{{ name }}</span><span>{{ n }}</span></div>{% endfor %}{% endif %}
+    </section>
+
+    <h2>Pending updates</h2>
+    <section class="card card-table">
+      {% if data.updates %}
+      <table class="tbl" data-limit="10">
+        <thead><tr><th>Update</th><th>Type</th><th>Installed</th><th>Latest</th></tr></thead>
+        <tbody>{% for u in data.updates %}<tr><td>{{ u.name }}</td><td>{{ u.category }}</td><td>{{ u.installed }}</td><td>{{ u.latest }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="empty-state">Everything is up to date.</div>{% endif %}
+    </section>
+
+    <h2>Recently run automations</h2>
+    <section class="card">
+      {% for a in data.activity %}<div class="status-row"><span>{{ a.name }}</span><span class="muted">{{ a.at|fmt_dt }}</span></div>
+      {% else %}<div class="empty-state">No recent runs.</div>{% endfor %}
+    </section>
+
+    {% if data.trend|length > 1 %}
+    <h2>Trend</h2>
+    <section class="card card-table">
+      <table class="tbl"><thead><tr><th>Checked</th><th>Attention</th><th>Unavailable</th><th>Updates</th></tr></thead>
+        <tbody>{% for r in data.trend|reverse %}<tr><td>{{ r.checked_at|fmt_dt }}</td><td>{{ r.attention }}</td><td>{{ r.unavailable }}</td><td>{{ r.updates }}</td></tr>{% endfor %}</tbody></table>
+    </section>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

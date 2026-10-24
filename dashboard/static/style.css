@@ -2333,3 +2333,24 @@ kbd {
   .money-card h2 { font-size: 11px; }
   .money-lists { grid-template-columns: 1fr; }
 }
+
+/* Home Assistant pages (templates/ha/) */
+.ha-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.ha-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  background: var(--muted-bg); border: 1px solid var(--border); font-size: 14px; }
+.ha-jump { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.ha-jump a { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; color: var(--text-muted); text-decoration: none; }
+.ha-inline { display: inline; margin: 0; }
+.ha-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.status-row .ha-row { margin-top: 0; }
+.ha-thermo-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.ha-setpoint { display: flex; align-items: center; gap: 10px; }
+.ha-events { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.ha-events li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.ha-events li:last-child { border-bottom: none; }
+.ha-ev-when { color: var(--text-muted); margin-right: 6px; }
+.ha-cam { width: 100%; border-radius: 10px; display: block; }
+.ha-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.ha-item { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.ha-item:last-child { border-bottom: none; }
+.card h2.ha-sub { margin-top: 16px; }

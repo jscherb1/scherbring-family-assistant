@@ -1,0 +1,59 @@
+{# One small POST form per control; the router redirects back to the board. #}
+{% macro act(entity_id, action, label, value='', cls='button button-quiet') %}
+<form method="post" action="/home/ha/act" class="ha-inline">
+  <input type="hidden" name="entity_id" value="{{ entity_id }}">
+  <input type="hidden" name="action" value="{{ action }}">
+  <input type="hidden" name="value" value="{{ value }}">
+  <button type="submit" class="{{ cls }}">{{ label }}</button>
+</form>
+{% endmacro %}
+
+{% macro toggle(t) %}
+  {% if 'turn_on' in t.writable %}
+    {% if t.state == 'on' %}{{ act(t.entity_id, 'turn_off', 'Turn off') }}{% else %}{{ act(t.entity_id, 'turn_on', 'Turn on') }}{% endif %}
+  {% endif %}
+{% endmacro %}
+
+{% macro state_pill(t) %}
+  <span class="pill {{ 'pill-muted' if not t.available else ('pill-warn' if t.open else ('pill-ok' if t.state in ('on', 'home', 'playing', 'heat') else 'pill-muted')) }}">{{ t.display }}</span>
+{% endmacro %}
+
+{% macro thermostat(t) %}
+<section class="card ha-thermo">
+  <h2>{{ t.name }}</h2>
+  {% if not t.available %}<div class="empty-state">Unavailable</div>{% else %}
+  <div class="ha-thermo-row">
+    <div><div class="metric">{{ t.current if t.current is not none else '–' }}°</div><div class="metric-sub">now · {{ t.display }}</div></div>
+    <div class="ha-setpoint">
+      {% if t.target is not none %}
+        {% if 'set_temperature' in t.writable %}{{ act(t.entity_id, 'set_temperature', '−', t.target - t.step) }}{% endif %}
+        <div class="metric">{{ t.target|int }}°</div>
+        {% if 'set_temperature' in t.writable %}{{ act(t.entity_id, 'set_temperature', '+', t.target + t.step) }}{% endif %}
+      {% else %}<div class="metric-sub">no setpoint</div>{% endif %}
+    </div>
+  </div>
+  {% if 'set_hvac_mode' in t.writable %}
+  <div class="ha-row">
+    {% for m in t.hvac_modes %}{% if m != t.state %}{{ act(t.entity_id, 'set_hvac_mode', 'Set ' ~ m|replace('_', ' '), m) }}{% endif %}{% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endmacro %}
+
+{% macro event_list(events, empty) %}
+  {% if events %}
+  <ul class="ha-events">
+    {% for e in events %}
+    <li><span class="ha-ev-when">{{ e.start[:10]|fmt_date }}{% if not e.all_day %} · {{ e.start[11:16] }}{% endif %}</span> {{ e.title }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}<div class="empty-state">{{ empty }}</div>{% endif %}
+{% endmacro %}
+
+{% macro tile_rows(tiles, with_controls=False) %}
+  {% for t in tiles %}
+  <div class="status-row"><span>{{ t.name }}</span>
+    <span class="ha-row">{{ state_pill(t) }}{% if with_controls %}{{ toggle(t) }}{% endif %}</span></div>
+  {% else %}<div class="empty-state">Nothing to show.</div>{% endfor %}
+{% endmacro %}

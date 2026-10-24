@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% from "ha/_macros.html" import act, toggle, state_pill, thermostat, event_list, tile_rows %}
+
+{% block page_header %}
+  <h1>Family Board</h1>
+  <p class="subtitle">The Scherbring Family Home Assistant dashboard, live. Alarm, garage doors and locks are view-only here.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<div class="card"><div class="error-state">{{ error }}</div></div>{% endif %}
+  {% set s = data.strip %}
+  <div class="ha-strip">
+    {% if s.alarm %}<span class="ha-chip">🛡️ Alarm {{ state_pill(s.alarm) }}</span>{% endif %}
+    {% if s.weather %}<span class="ha-chip">{{ s.weather.icon }} {{ s.weather.temperature }}° {{ s.weather.display }}</span>{% endif %}
+    {% for g in s.garages %}<span class="ha-chip">🚗 {{ g.name }} {{ state_pill(g) }}</span>{% endfor %}
+    {% if s.kid_door_alerts %}<span class="ha-chip">🔔 {{ s.kid_door_alerts.name }} {{ state_pill(s.kid_door_alerts) }} {{ toggle(s.kid_door_alerts) }}</span>{% endif %}
+  </div>
+  <nav class="ha-jump">
+    <a href="#overview">Overview</a><a href="#climate">Climate</a><a href="#media">Media</a><a href="#security">Security</a>
+    <a href="#calendar">Calendar</a><a href="#batteries">Batteries</a><a href="#irrigation">Irrigation</a><a href="#holiday">Lights</a>
+  </nav>
+
+  <div class="stack" id="overview">
+    <h2>Overview</h2>
+    <div class="grid">
+      {% for t in data.overview.thermostats %}{{ thermostat(t) }}{% endfor %}
+    </div>
+    <div class="grid">
+      <section class="card"><h2>Forecast</h2>
+        {% for d in data.overview.forecast %}
+        <div class="status-row"><span>{{ d.date|fmt_date }}</span><span>{{ d.icon }} {{ d.high }}° / {{ d.low }}°{% if d.rain_chance %} · 💧{{ d.rain_chance|int }}%{% endif %}</span></div>
+        {% else %}<div class="empty-state">No forecast.</div>{% endfor %}
+      </section>
+      <section class="card"><h2>Meal plan</h2>{{ event_list(data.overview.meals, 'No meals planned in the next 5 days.') }}</section>
+      <section class="card"><h2>Family calendar</h2>{{ event_list(data.overview.calendar, 'Nothing coming up this week.') }}</section>
+      <section class="card"><h2>Who's home</h2>{{ tile_rows(data.overview.people) }}</section>
+    </div>
+  </div>
+
+  <div class="stack" id="climate">
+    <h2>Climate</h2>
+    <div class="grid">
+      {% for t in data.climate.thermostats %}{{ thermostat(t) }}{% endfor %}
+    </div>
+    <div class="grid">
+      <section class="card"><h2>Room temperatures</h2>
+        {% for t in data.climate.temperatures %}
+        <div class="status-row"><span>{{ t.name }}</span><span>{{ t.display if t.available else '—' }}</span></div>{% endfor %}
+      </section>
+      <section class="card"><h2>Space heaters</h2>{{ tile_rows(data.climate.heaters) }}
+        {% if data.climate.heater_hours %}<h2 class="ha-sub">On in the last 24 h</h2>
+        {% for h in data.climate.heater_hours %}
+        <div class="status-row"><span>{{ h.name }}</span><span>{{ h.minutes_on // 60 }}h {{ h.minutes_on % 60 }}m</span></div>{% endfor %}{% endif %}
+      </section>
+    </div>
+  </div>
+
+  <div class="stack" id="media">
+    <h2>Media</h2>
+    <div class="grid">
+      {% for t in data.media %}
+      <section class="card"><h2>{{ t.name }}</h2>
+        <div class="status-row"><span>{{ t.title or '—' }}</span>{{ state_pill(t) }}</div>
+        {% if t.available %}<div class="ha-row">
+          {% if 'media_play_pause' in t.writable %}{{ act(t.entity_id, 'media_play_pause', '⏯ Play / pause') }}{% endif %}
+          {% if 'volume_down' in t.writable and t.volume is not none %}{{ act(t.entity_id, 'volume_down', '🔉') }}<span class="metric-sub">{{ t.volume }}%</span>{{ act(t.entity_id, 'volume_up', '🔊') }}{% endif %}
+        </div>{% endif %}
+      </section>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="stack" id="security">
+    <h2>Security</h2>
+    <div class="grid">
+      <section class="card"><h2>Doors & sensors</h2>{{ tile_rows(data.security.doors) }}</section>
+      {% for c in data.security.cameras %}
+      <section class="card"><h2>{{ c.name }} camera</h2>
+        {% if c.available %}<img class="ha-cam" src="/home/ha/camera/{{ c.entity_id }}" alt="{{ c.name }} camera snapshot" loading="lazy">
+        {% else %}<div class="empty-state">Camera unavailable</div>{% endif %}
+      </section>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="stack" id="calendar">
+    <h2>Calendar</h2>
+    <div class="grid">
+      <section class="card"><h2>Family & school, next 30 days</h2>{{ event_list(data.calendar.family, 'Nothing scheduled.') }}</section>
+      <section class="card"><h2>Meal plan, next 2 weeks</h2>{{ event_list(data.calendar.meals, 'No meals planned.') }}</section>
+    </div>
+  </div>
+
+  <div class="stack" id="batteries">
+    <h2>Battery levels</h2>
+    <section class="card card-table">
+      <table class="tbl" data-limit="10">
+        <thead><tr><th>Device</th><th>Level</th></tr></thead>
+        <tbody>{% for b in data.batteries %}
+          <tr><td>{{ b.name }}</td><td><span class="pill {{ 'pill-warn' if b.low else 'pill-ok' }}">{{ b.level }}%</span></td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <div class="stack" id="irrigation">
+    <h2>Irrigation</h2>
+    <section class="card">{{ tile_rows(data.irrigation) }}</section>
+  </div>
+
+  <div class="stack" id="holiday">
+    <h2>Lights & holiday</h2>
+    <section class="card">{{ tile_rows(data.holiday, with_controls=True) }}</section>
+  </div>
+{% endif %}
+{% endblock %}
