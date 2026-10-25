@@ -5,14 +5,11 @@ update it when you finish or add something. Dates are absolute.
 
 ## Needs the user
 
-0. **Golf: enable the Google Sheets API (added 2026-10-24).** The golf mirror and `golf_store.py import --from-sheet`
-   get a 403 `SERVICE_DISABLED` until the Sheets API is enabled on the same Cloud project as Drive:
-   https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=848934149512
-   No new login is needed. Until then rounds log locally with `sheet.synced: false`; run
-   `python scripts/golf_store.py sync` afterwards. **Untested live:** the row append + formula copy-down in
-   `scripts/golf_sheet.py` (check the first synced row on the tab), and the scorecard-photo flow in chat.
-   Also: imported courses keep the sheet's labels (e.g. "Oaks - Kasey and Tyler"); tidy on `/golf/courses`
-   is add/update only for now.
+0. **Golf: scorecard-photo flow untested live (2026-10-24).** The Sheets API is enabled and the mirror was
+   verified end to end (read 36 rows; appended a test row with the formula columns F-I copied down; test row
+   then removed from the DB and the sheet). Still to try: send a real scorecard photo in chat.
+   Imported courses keep the sheet's labels (e.g. "Oaks - Kasey and Tyler"); `/golf/courses` can add/update
+   but not delete.
 
 1. **Save the backup key, then delete it from WSL.** `scripts/backup.py init-key` wrote the private
    key to `~/backup-age-key.txt` (2026-10-06). Copy it into the password manager, then

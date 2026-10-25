@@ -395,7 +395,7 @@ code** (`scripts/golf.py`) against the same tables (`golf_rounds`, `golf_courses
   dashboard's "Sync to sheet") retries. Deleting a round does not delete its sheet row.
 - **Scorecard photos:** send a photo in chat; the agent reads it from `state/attachments/`, replies with the
   extracted round and the handicap change, and logs only after you say yes. Hole-by-hole scores are not stored.
-- Needs the **Google Sheets API enabled** on the same Cloud project as Drive (the existing Drive login works;
+- Needs the **Google Sheets API enabled** on the same Cloud project as Drive (done 2026-10-24; the existing Drive login works;
   the `drive` scope covers Sheets). See `docs/TODO.md`.
 - No scheduled task.
 
