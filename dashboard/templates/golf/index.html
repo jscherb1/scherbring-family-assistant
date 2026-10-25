@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Golf</h1>
+  <p class="subtitle">Handicap = average of your best 8 differentials from the last 20 rounds × 0.96 (same rule as your sheet).</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
+  {% if notice %}<p class="ask-note" role="status">{{ notice }}</p>{% endif %}
+  {% set h = data.handicap %}
+  <div class="grid stats">
+    <section class="card"><h2>Handicap</h2><div class="metric">{{ h.handicap if h.handicap is not none else '–' }}</div>
+      <div class="metric-sub">{% if h.provisional %}provisional · {% endif %}{{ h.rounds_considered }} rounds considered</div></section>
+    <section class="card"><h2>Last round</h2>
+      {% if h.last_round %}<div class="metric">{{ h.last_round.score }}</div>
+        <div class="metric-sub">{{ h.last_round.course }} · {{ h.last_round.played_on|fmt_date('') }}</div>
+      {% else %}<div class="metric">–</div>{% endif %}</section>
+    <section class="card"><h2>Best score</h2><div class="metric">{{ h.best_score if h.best_score is not none else '–' }}</div></section>
+    <section class="card"><h2>Average, last 10</h2><div class="metric">{{ h.avg_score_last_10 if h.avg_score_last_10 is not none else '–' }}</div></section>
+  </div>
+
+  <section class="card habit-new">
+    <h2>Log a round</h2>
+    <form method="post" action="/golf/rounds" class="habit-form">
+      <label class="field"><span>Date</span><input type="date" name="played_on" value="{{ today }}" max="{{ today }}" required></label>
+      <label class="field"><span>Course</span><input name="course" list="golf-courses" required maxlength="80" placeholder="Pick a saved course or type a new one"></label>
+      <datalist id="golf-courses">{% for c in data.courses %}<option value="{{ c.name }}">{{ c.rating }} / {{ c.slope }}</option>{% endfor %}</datalist>
+      <label class="field"><span>Score (18 holes)</span><input name="score" type="number" min="40" max="200" required></label>
+      <label class="field"><span>Course rating</span><input name="rating" type="number" step="0.1" placeholder="blank = saved course"></label>
+      <label class="field"><span>Slope</span><input name="slope" type="number" placeholder="blank = saved course"></label>
+      <label class="field habit-form-wide"><span>Notes (optional)</span><input name="notes" maxlength="200"></label>
+      <button class="button" type="submit">Log round</button>
+    </form>
+    {% if data.pending_sync %}<form method="post" action="/golf/sync" class="habit-links"><span class="muted">{{ data.pending_sync }} round(s) not in the Google Sheet yet.</span>
+      <button class="link-button" type="submit">Sync to sheet</button></form>{% endif %}
+  </section>
+
+  <div class="stack">
+    <h2>Recent rounds</h2>
+    <section class="card card-table">
+      {% if data.rounds %}
+      <table class="tbl">
+        <thead><tr><th>Date</th><th>Course</th><th class="num">Score</th><th class="num">Rating / Slope</th><th class="num">Differential</th><th></th></tr></thead>
+        <tbody>
+        {% for r in data.rounds %}
+          <tr>
+            <td>{{ r.played_on|fmt_date('') }}</td><td>{{ r.course }}</td><td class="num">{{ r.score }}</td>
+            <td class="num">{{ r.rating }} / {{ r.slope }}</td><td class="num">{{ '%.1f'|format(r.differential) }}</td>
+            <td>{% if r.counts %}<span class="pill pill-ok" title="One of the 8 lowest differentials in the last 20">counts</span>
+                {% elif not r.in_window %}<span class="pill pill-muted">older than 20</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <form method="post" action="/golf/rounds/undo" class="habit-links"><button class="link-button" type="submit">Undo last entered round</button></form>
+      {% else %}<div class="empty-state">No rounds yet. Log your first above.</div>{% endif %}
+    </section>
+  </div>
+{% endif %}
+{% endblock %}

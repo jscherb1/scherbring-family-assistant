@@ -155,6 +155,7 @@ and its `state/schema.sql` tables):
 | Lawn/yard care tracking | `lawn-garden` |
 | Household facts (birthdays, allergies, sizes) | `profile` |
 | Weather-driven prep nudges | `weather-reminders` |
+| Golf rounds and handicap (incl. scorecard photos) | `golf` |
 | Habit / streak tracking | `habits` |
 | Daily 1-10 day rating with insights on what drives it | `dayrating` |
 | Nightly check-in (rate the day, yes/no journal, open habits in one message) | `journal` |

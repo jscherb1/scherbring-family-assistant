@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Golf courses</h1>
+  <p class="subtitle">Saved rating and slope per course, so logging a round only needs the course name and score.</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
+  {% if notice %}<p class="ask-note" role="status">{{ notice }}</p>{% endif %}
+  <section class="card habit-new">
+    <h2>Add or update a course</h2>
+    <form method="post" action="/golf/courses" class="habit-form">
+      <label class="field"><span>Name</span><input name="name" required maxlength="80" placeholder="e.g. Oaks - Whites"></label>
+      <label class="field"><span>Rating</span><input name="rating" type="number" step="0.1" required></label>
+      <label class="field"><span>Slope</span><input name="slope" type="number" required></label>
+      <label class="field"><span>Tee (optional)</span><input name="tee" maxlength="40"></label>
+      <button class="button" type="submit">Save course</button>
+    </form>
+  </section>
+  <section class="card card-table">
+    {% if data.courses %}
+    <table class="tbl">
+      <thead><tr><th>Course</th><th>Tee</th><th class="num">Rating</th><th class="num">Slope</th></tr></thead>
+      <tbody>{% for c in data.courses %}<tr><td>{{ c.name }}</td><td>{{ c.tee or '' }}</td><td class="num">{{ c.rating }}</td><td class="num">{{ c.slope }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<div class="empty-state">No courses saved yet.</div>{% endif %}
+  </section>
+{% endif %}
+{% endblock %}

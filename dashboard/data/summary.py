@@ -5,7 +5,7 @@ already safe to show (no finance amounts, no memory text).
 """
 from datetime import timedelta
 
-from . import (activity, agent, chores, common, family, habits, health, home, money, ops, schedule, shopping_fitness,
+from . import (activity, agent, chores, common, family, golf, habits, health, home, money, ops, schedule, shopping_fitness,
                wellness)
 from .. import dismissals
 from ..web import fmt_dt
@@ -103,6 +103,19 @@ def _home_tile(attention):
         headline, state = "All caught up", "ok"
     sub = f"{_plural(len(soon), 'due soon item')}" if overdue and soon else (soon[0]["name"] if soon else f"{len(items)} items tracked")
     return {"title": "Home & yard", "href": "/home", "headline": headline, "sub": sub, "state": state}
+
+
+def _golf_tile():
+    g = golf.get_rounds(limit=1)
+    href = "/golf"
+    if not _ok(g):
+        return {"title": "Golf", "href": href, "headline": "Unknown", "sub": "", "state": "warn"}
+    h = g["handicap"]
+    if h["handicap"] is None:
+        return {"title": "Golf", "href": href, "headline": "No rounds yet", "sub": "Log one to get a handicap", "state": "ok"}
+    last = h["last_round"]
+    return {"title": "Golf", "href": href, "headline": f"Handicap {h['handicap']}",
+            "sub": f"Last: {last['score']} at {last['course']}", "state": "ok"}
 
 
 def _habits_tile(attention):
@@ -243,7 +256,7 @@ def get_summary():
     schedule_tile = _schedule_tile(attention)
     systems = _credentials(attention)
     tiles = [
-        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _wellness_tile(), _chores_tile(),
+        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _golf_tile(), _wellness_tile(), _chores_tile(),
         _meals_tile(), _finance_tile(),
         _fitness_tile(), _family_tile(), _hyvee_tile(systems),
     ]
