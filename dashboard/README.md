@@ -99,6 +99,8 @@ other family members.
 | Me | Check-in | `/checkin` | The one place to log a day: rating + note, yes/no per journal question, daily habits, for today, yesterday (`?date=yesterday`) or any date; plus rating averages/streak and recent days. Same `scripts/journal.py` / `scripts/dayrating.py` services as the agents. `/rating` and `/wellness/journal?date=` redirect here |
 | | Journal | `/wellness/journal` | A 28-day yes/no/unanswered grid (tap a day to open it in Check-in) and adding / pausing questions. Same `scripts/journal.py` service as the `journal` agent; the check-in card also sits on Wellness → Today and Drivers shows each question's yes-vs-no impact |
 | Me | Insights | `/rating/insights` | The stats on what moves the day rating (`scripts/insights.py`), the AI-written weekly story and the data-source list |
+| Golf | Rounds | `/golf`, `/api/golf` | Current handicap, last round, best score, 10-round average, a log-a-round form (course autofills rating/slope), recent rounds with which ones count toward the handicap, undo, and a retry for sheet sync. Writes go through the shared `scripts/golf.py` service (same code as the `golf` agent) |
+| Golf | Courses | `/golf/courses`, `/api/golf/courses` | Saved course rating/slope used to autofill new rounds; add or update a course |
 | Habits | Analysis | `/habits/analysis` | Combined habits-done-per-day calendar (3 months) and a per-habit table (days done, last 30 days, best weekday, weekly strip); the place to grow cross-habit analysis. Same `scripts/habits.py` service (`analysis`) |
 | Habits | Streaks | `/habits` | Habit cards with current/longest streak and progress this period, one-tap Done, Undo, Pause, a 📅 Calendar flip on each card (2 months of days done), add-a-habit form, owner filter. Writes go through the shared `scripts/habits.py` service (same code as the `habits` agent) |
 | Chores | Today, Chores & kids, Money | `/chores`, `/chores/manage`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, balances and payouts, and fixing a missed or mistaken completion. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |
@@ -155,7 +157,7 @@ a page entry (with `src` = the router's `"section:page"`) under the right tab in
 
 - New features follow the **"New feature standard"** in the repo `CLAUDE.md`: the data module and write
   routes call one shared service in `scripts/` (as `routers/habits.py` does), never their own copy of the rules.
-- Read-only except `POST /ask`, the habits write routes (`POST /habits...`), the day-rating write route (`POST /rating`) and the chore-chart write routes
+- Read-only except `POST /ask`, the habits write routes (`POST /habits...`), the golf write routes (`POST /golf...`), the day-rating write route (`POST /rating`) and the chore-chart write routes
   (`POST /chores...`, `POST /kids/...`) and the Home Assistant routes (`POST /home/ha/act`, `/dismiss`, `/restore`), all same-origin guarded and going through `scripts/habits.py` /
   `scripts/chores.py`: the app opens `state/agent_results.db` in SQLite read-only mode
   and only reads files under `state/`; the ask box is the sole write (one row in `state/inbox.db`).

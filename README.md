@@ -32,6 +32,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/journal.md` | Journal subagent: the 8:30 PM nightly check-in (day rating + yes/no journal questions + open daily habits in one message), recording the reply, managing questions, and "what does X do to my HRV/sleep/mood" |
 | `.claude/agents/wellness.md` | Wellness subagent (read-only, Whoop-style): today's recovery, sleep and vitals against your normal, trends over time, and what drives the day rating / HRV / sleep / resting HR |
 | `.claude/agents/ha-overview.md` | Home Assistant status/health subagent — same data as the dashboard's Home > Home Assistant pages: what needs attention, recommendations, thermostat/door/garage state, and a few allow-listed changes (thermostats, kid door alerts, Christmas lights) |
+| `.claude/agents/golf.md` | Golf subagent: 18-hole rounds and handicap (mirrors the Handicap Google Sheet), logging rounds, reading scorecard photos sent in chat |
 | `.claude/agents/habits.md` | Habits subagent — habit/streak tracker (daily or weekly goals, no-goal counters), logging, streaks, and the daily at-risk nudge |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.claude/agents/home-assistant.md` | Home-assistant subagent (Phases 1-3) — ad-hoc smart-home control/query via the hosted Home Assistant connector plus a local `ha` MCP server (vendor/ha-mcp) for automation/script/scene/helper/dashboard authoring and history/log debugging; proactive monitoring is a later phase |
@@ -52,7 +53,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `golf_rounds`, `golf_courses`, `golf_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -97,6 +98,9 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/wellness_store.py` | Zero-dep CLI over `wellness.py` for the wellness subagent (today / metric / trends / drivers / scatter / metrics) |
 | `scripts/ha.py` | Shared Home Assistant board + health service (REST + minimal websocket client, board definition, health rules, write allow-list; alarm/garage/locks read-only). The single code path used by `ha_store.py` and the Home > Home Assistant dashboard pages |
 | `scripts/ha_store.py` | Zero-dep CLI over `ha.py` for the ha-overview subagent (`health`, `board`, `set-temp`, `set-mode`, `toggle`) |
+| `scripts/golf.py` | Shared golf service (differentials, best-8-of-last-20 x 0.96 handicap, round logging/undo, saved courses). The single code path used by both `golf_store.py` and the dashboard |
+| `scripts/golf_store.py` | Zero-dep CLI over `golf.py` for the golf subagent (round/course/handicap/import/sync sub-commands) |
+| `scripts/golf_sheet.py` | Google Sheets side of golf: read history, append new rounds to the "Handicap - 18 holes only" tab (best-effort mirror) |
 | `scripts/habits.py` | Shared habit-tracker service (streak rules, logging, at-risk). The single code path used by both `habits_store.py` and the dashboard |
 | `scripts/habits_store.py` | Zero-dep CLI over `habits.py` for the habits subagent (habit/log/at-risk/config sub-commands) |
 | `scripts/home_maintenance_store.py` | Zero-dep CLI for home maintenance data (item/completion/due sub-commands) |
@@ -376,6 +380,24 @@ python scripts/scheduler_store.py add --name "daily-weather-check" \
   --prompt "Delegate to the weather-reminders subagent to run the daily proactive weather check (rain before cushions, snow-shoveling prep, severe weather watch)." \
   --cron "30 6 * * *" --target-chat-id "<your chat_id>"
 ```
+
+## Golf agent
+
+Tracks 18-hole rounds and the handicap from Justin's Google Sheet ("Justin's Golf Handicap Calculator",
+tab "Handicap - 18 holes only"). The `golf` subagent and the dashboard's **Me > Golf** pages run the **same
+code** (`scripts/golf.py`) against the same tables (`golf_rounds`, `golf_courses`, `golf_config`).
+
+- **Handicap rule** (copied from the sheet): differential = (score - rating) x 113 / slope; take the last
+  20 rounds by date, average the 8 lowest differentials, x 0.96, one decimal.
+- **Source of truth is the local DB.** History was loaded once from the sheet (`golf_store.py import`).
+  New rounds are appended to the sheet by `scripts/golf_sheet.py` (writes date/course/rating/slope/score and
+  copies the formula columns F-I down). A failed mirror never blocks logging; `golf_store.py sync` (or the
+  dashboard's "Sync to sheet") retries. Deleting a round does not delete its sheet row.
+- **Scorecard photos:** send a photo in chat; the agent reads it from `state/attachments/`, replies with the
+  extracted round and the handicap change, and logs only after you say yes. Hole-by-hole scores are not stored.
+- Needs the **Google Sheets API enabled** on the same Cloud project as Drive (the existing Drive login works;
+  the `drive` scope covers Sheets). See `docs/TODO.md`.
+- No scheduled task.
 
 ## Habits agent
 

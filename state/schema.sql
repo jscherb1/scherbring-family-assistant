@@ -762,3 +762,38 @@ CREATE TABLE IF NOT EXISTS ha_health_runs (
     checked_at    TEXT NOT NULL,
     summary_json  TEXT NOT NULL
 );
+
+-- Golf rounds + handicap (18-hole rounds; mirrors Justin's "Handicap - 18 holes only" sheet tab).
+-- Shared service: scripts/golf.py (used by both the golf subagent CLI and the dashboard).
+CREATE TABLE IF NOT EXISTS golf_rounds (
+    id            TEXT PRIMARY KEY,      -- uuid4
+    played_on     TEXT NOT NULL,         -- YYYY-MM-DD
+    course        TEXT NOT NULL,
+    tee           TEXT,
+    rating        REAL NOT NULL,         -- course rating
+    slope         INTEGER NOT NULL,
+    score         INTEGER NOT NULL,
+    differential  REAL NOT NULL,         -- (score - rating) * 113 / slope, full precision
+    notes         TEXT,
+    sheet_synced  INTEGER NOT NULL DEFAULT 0,  -- 0/1: row appended to the Google Sheet
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_golf_rounds_played ON golf_rounds (played_on);
+
+CREATE TABLE IF NOT EXISTS golf_courses (
+    id          TEXT PRIMARY KEY,        -- uuid4
+    name        TEXT NOT NULL,           -- as written in the sheet, e.g. 'Oaks - Whites'
+    tee         TEXT,
+    rating      REAL NOT NULL,
+    slope       INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_golf_courses_name ON golf_courses (lower(name));
+
+CREATE TABLE IF NOT EXISTS golf_config (
+    key         TEXT PRIMARY KEY,        -- e.g. 'window', 'best_n', 'factor', 'sheet_id', 'sheet_tab'
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);

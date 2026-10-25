@@ -253,6 +253,7 @@ def client(state):
     "/hyvee", "/fitness", "/api/hyvee", "/api/fitness",
     "/finance", "/finance/tagging", "/finance/reports", "/api/finance/overview", "/api/finance/tagging",
     "/api/finance/reports",
+    "/golf", "/golf/courses", "/api/golf", "/api/golf/courses",
     "/habits", "/habits?owner=Justin", "/api/habits", "/habits/analysis", "/api/habits/analysis",
     "/rating", "/rating/insights", "/api/rating", "/api/rating/insights",
     "/wellness", "/wellness/trends", "/wellness/trends?range=30&heat=hrv", "/wellness/trends?range=180",
@@ -273,7 +274,7 @@ def test_landing_page(client):
     assert "Ask or tell the assistant" in r.text
     assert 'rel="manifest"' in r.text and "apple-touch-icon" in r.text
     data = client.get("/api/summary").json()
-    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 11
+    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 12
     assert "SECRET-MERCHANT" not in r.text
 
 
@@ -381,6 +382,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     assert client.delete("/api/recipes/r1").status_code == 405
     allowed = {"/wellness/checkin", "/journal/questions", "/journal/questions/{slug}/update", "/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore", "/me/refresh",
                "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
+               "/golf/rounds", "/golf/rounds/undo", "/golf/courses", "/golf/sync",
                "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
                "/chores/payout", "/chores/backfill", "/chores/undo",
@@ -426,6 +428,48 @@ def test_habits_log_for_past_date_via_ui(client):
     future = (date.today() + timedelta(days=2)).isoformat()
     r = client.post(f"/habits/{hid}/log", data={"log_date": future}, headers={"HX-Request": "true"})
     assert client.get(f"/api/habits/{hid}").json()["total_count"] == 1
+
+
+# ---- golf (shared service: scripts/golf.py) ----
+
+def test_golf_log_round_and_undo_via_ui(client, monkeypatch):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import golf_sheet
+    monkeypatch.setattr(golf_sheet, "append_round", lambda *_a, **_k: None)  # never touch Google in tests
+    assert "No rounds yet" in client.get("/golf").text
+    r = client.post("/golf/rounds", data={"played_on": "2026-10-01", "course": "Oaks <b>", "score": "88",
+                                         "rating": "69", "slope": "125"}, follow_redirects=False)
+    assert r.status_code == 303 and "notice=" in r.headers["location"]
+    page = client.get("/golf").text
+    assert "Oaks &lt;b&gt;" in page and "<b>" not in page.split("Recent rounds")[1].split("</table>")[0]
+    api = client.get("/api/golf").json()
+    assert api["handicap"]["rounds_total"] == 1 and api["rounds"][0]["score"] == 88
+    bad = client.post("/golf/rounds", data={"played_on": "nope", "course": "X", "score": "90",
+                                           "rating": "70", "slope": "113"}, follow_redirects=False)
+    assert "error=" in bad.headers["location"]
+    client.post("/golf/rounds/undo", follow_redirects=False)
+    assert client.get("/api/golf").json()["rounds"] == []
+    assert client.post("/golf/courses", data={"name": "Oaks", "rating": "69", "slope": "125"},
+                       follow_redirects=False).status_code == 303
+    assert client.get("/api/golf/courses").json()["courses"][0]["name"] == "Oaks"
+
+
+def test_golf_cross_origin_write_blocked(client):
+    r = client.post("/golf/rounds", data={"played_on": "2026-10-01", "course": "X", "score": "90"},
+                    headers={"Origin": "http://evil.example"})
+    assert r.status_code == 403
+
+
+def test_golf_ui_and_service_share_data(client, state):
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import golf as service
+    db = state / "agent_results.db"
+    service.add_round("2026-09-01", "Somerby", 82, rating=75.3, slope=133, mirror=False, db_path=db)
+    api = client.get("/api/golf").json()
+    assert api["rounds"][0]["course"] == "Somerby"
+    assert api["handicap"]["handicap"] == service.get_handicap(db_path=db)["handicap"]
 
 
 def test_habits_ui_and_service_share_data(client, state):

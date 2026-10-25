@@ -36,6 +36,8 @@ SECTIONS = [
             {"group": "Habits", "label": "Streaks", "href": "/habits", "src": "habits:habits"},
             {"label": "Analysis", "href": "/habits/analysis", "src": "habits:analysis"},
             {"group": "Training", "label": "Fitness", "href": "/fitness", "src": "fitness:overview"},
+            {"group": "Golf", "label": "Rounds", "href": "/golf", "src": "golf:rounds"},
+            {"label": "Courses", "href": "/golf/courses", "src": "golf:courses"},
         ],
     },
     {
