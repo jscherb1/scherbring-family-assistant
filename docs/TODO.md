@@ -5,11 +5,9 @@ update it when you finish or add something. Dates are absolute.
 
 ## Needs the user
 
-0. **Golf: scorecard-photo flow untested live (2026-10-24).** The Sheets API is enabled and the mirror was
-   verified end to end (read 36 rows; appended a test row with the formula columns F-I copied down; test row
-   then removed from the DB and the sheet). Still to try: send a real scorecard photo in chat.
-   Imported courses keep the sheet's labels (e.g. "Oaks - Kasey and Tyler"); `/golf/courses` can add/update
-   but not delete.
+0. **Golf: optional tidy-up.** Imported courses keep the sheet's labels (e.g. "Oaks - Kasey and Tyler");
+   `/golf/courses` can add/update but not delete. (Sheets mirror and scorecard-photo flow both verified live
+   2026-10-24.)
 
 1. **Save the backup key, then delete it from WSL.** `scripts/backup.py init-key` wrote the private
    key to `~/backup-age-key.txt` (2026-10-06). Copy it into the password manager, then
