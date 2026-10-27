@@ -44,3 +44,10 @@ def test_checkout_problem_names_branch_and_dirty_state(tmp_path):
 
 def test_checkout_problem_is_empty_outside_git(tmp_path):
     assert sd.checkout_problem(tmp_path) == ""
+
+
+def test_denied_tool_names_are_listed_in_order(tmp_path):
+    log = tmp_path / "run.log"
+    log.write_text("[DEBUG] Bash tool permission denied\n[DEBUG] Write tool permission denied\n")
+    assert sd.denied_tool_names(log) == ["Bash", "Write"]
+    assert sd.denied_tool_names(tmp_path / "missing.log") == []
