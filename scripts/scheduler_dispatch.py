@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -122,6 +123,15 @@ def count_permission_denials(debug_log: Path) -> int:
     except OSError:
         return 0
     return text.count("tool permission denied")
+
+
+def denied_tool_names(debug_log: Path) -> list[str]:
+    """Tool names behind the denials, in order (the debug log doesn't record the command)."""
+    try:
+        text = debug_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return re.findall(r"(\S+) tool permission denied", text)
 
 
 def checkout_problem(repo: Path = REPO_ROOT) -> str:
@@ -304,7 +314,11 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         denials = count_permission_denials(debug_log)
         if denials:
             success = False
-            summary = f"[{denials} tool permission denial(s): the run was degraded] {summary}"
+            tools = ", ".join(denied_tool_names(debug_log)) or "unknown tool"
+            summary = (
+                f"[{denials} tool permission denial(s) ({tools}); the run may still have finished its work, "
+                f"check the message below] {summary}"
+            )
         problem = checkout_problem()
         if problem and not success:
             summary = f"[possible cause: {problem}] {summary}"
