@@ -53,12 +53,15 @@ Scripts can't reach Google Calendar or Todoist, so you copy them in:
    `python scripts/myhub_store.py snapshot set --kind task --items-file state/myhub_tmp/<file>.json`. Always use exactly `state/myhub_tmp/events.json` and `state/myhub_tmp/tasks.json` (the Write tool refuses to overwrite a file you have not Read this session, so Read the file first if it exists, then overwrite it with Write; do not invent new names and do not delete them, you have no permission to).
    Never build or transform these files with inline scripts (`python3 -`, `python -c`, heredocs, `jq`, `sed`): scheduled runs have no one to approve them, so they are denied and the whole run is marked failed. Compose the final JSON yourself and write it with Write.
    Don't copy the shopping lists (projects named like "Shopping", "Costco", "Staple Groceries") into the snapshot.
-3. If a connector fails, say so in one line and leave that snapshot as it was; stale is better than empty.
+3. If `find-tasks` or `list_events` errors (a 504, timeout or dropped connection), retry that same call once or twice
+   before giving up. If it still fails, leave that snapshot as it was (stale is better than empty) and carry on to
+   `notify-check`: it adds a "could not refresh" caveat/warning itself when a snapshot is more than 4 hours old, so
+   a failed refresh is never silent. Do not fake a refresh by writing an old list back.
 4. Scheduled runs: after the snapshots are written, run `python scripts/myhub_store.py notify-check`. It decides
    what to tell the user (new or escalated items, a 6-hourly reminder for urgent ones, one morning digest, and a
    quiet window after 8pm) and records it as told. If `send` is true, reply with its `message` exactly as given,
    nothing added; if false, **reply with nothing**, even when warn or urgent items exist (they were already
-   announced). Only add a line yourself if the refresh itself failed. For a user-requested refresh, confirm in one
+   announced). If it says `send` is false, the refresh failing is still reported by `notify-check`, so add nothing. For a user-requested refresh, confirm in one
    line with the counts (do not run notify-check).
 
 You never change data in Calendar or Todoist; this agent is read-only against both.

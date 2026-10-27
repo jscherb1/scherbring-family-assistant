@@ -534,7 +534,9 @@ Summary tiles plus agent and login-expiry items).
 - **No repeat nagging**: after each refresh `myhub_store.py notify-check` decides what to message. An item is announced once
   when new (and again only if it escalates); urgent items repeat every 6 h while awake; warn items are only repeated by one
   morning digest (the first refresh at 7am); info items never message; from 8pm to 7am only a new urgent item gets through.
-  What was told is remembered in `hub_notified`. **Dismissals are one shared list** (`hub_dismissed`) used by the Today
+  If the calendar or task snapshot is more than 4 h old (a failed refresh, e.g. Todoist down), every message gets a "could
+  not refresh" caveat and, when nothing else is due, a warning goes out alone (every 6 h while awake). The agent retries a
+  failed `find-tasks`/`list_events` once or twice first. What was told is remembered in `hub_notified`. **Dismissals are one shared list** (`hub_dismissed`) used by the Today
   page, the archived Summary and My Hub pages, the agent and the notifier, so dismissing an item anywhere hides it everywhere and stops it
   notifying; the old `state/dashboard_dismissed.json` is imported once and renamed.
 - Not on the hub yet: Hy-Vee cart state; see `docs/TODO.md`. (Money now has its own Today tile from the Monarch snapshot.)
