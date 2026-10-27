@@ -225,3 +225,41 @@ def test_notify_check_cli(db, monkeypatch, capsys):
     monkeypatch.setattr(myhub, "connect", lambda p=None: dayrating.connect(db))
     assert myhub_store.main(["notify-check", "--dry-run"]) == 0
     assert "send" in json.loads(capsys.readouterr().out)
+
+
+# ---- stale snapshots ----
+
+def _age_tasks(db, stamp):
+    conn = myhub.connect(db)
+    conn.execute("UPDATE hub_items SET synced_at=? WHERE kind='task'", (stamp,))
+    conn.commit()
+    conn.close()
+
+
+def test_stale_task_snapshot_adds_caveat_but_keeps_the_items(db):
+    myhub.notify_check(db_path=db, now=datetime(2026, 10, 14, 7, 0))  # digest used up
+    _overdue(db, "Pay bill")
+    _age_tasks(db, "2026-10-14T01:00:00")
+    r = nc(db, 9)
+    assert r["send"] and "Pay bill" in r["message"]
+    assert "Could not refresh: Tasks (last refreshed 8h ago)" in r["message"]
+
+
+def test_stale_snapshot_alerts_alone_then_repeats_every_six_hours(db):
+    myhub.notify_check(db_path=db, now=datetime(2026, 10, 14, 7, 0))
+    _overdue(db, "Pay bill")
+    nc(db, 8)  # announce Pay bill while fresh
+    _age_tasks(db, "2026-10-14T01:00:00")
+    first = nc(db, 10)
+    assert first["send"] and first["mode"] == "alert" and "Pay bill" not in first["message"]
+    assert not nc(db, 12)["send"]  # only 2h later
+    assert nc(db, 16)["send"]
+
+
+def test_stale_alert_waits_for_awake_hours_and_resets_when_fresh(db):
+    _overdue(db, "Pay bill")
+    nc(db, 9)
+    _age_tasks(db, "2026-10-14T01:00:00")
+    assert not nc(db, 22)["send"]  # quiet window
+    myhub.set_snapshot("task", [], db_path=db)  # a good refresh lands (stamped with the real clock)
+    assert not nc(db, 11)["send"]

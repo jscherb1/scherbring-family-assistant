@@ -282,6 +282,8 @@ def restore(key: str | None = None, *, db_path=None) -> dict:
 
 AWAKE_FROM, AWAKE_UNTIL = 7, 20          # outside these hours only a NEW urgent item gets through
 URGENT_REPEAT_HOURS = 6
+SNAPSHOT_STALE_HOURS = 4                 # a calendar/task snapshot older than this is announced with a caveat
+STALE_ALERT_REPEAT_HOURS = 6             # how often the "refresh isn't working" warning repeats while awake
 NOTIFY_LEVELS = ("urgent", "warn")       # info items live on the page and never message
 
 
@@ -292,6 +294,22 @@ def _meta(conn, name):
 
 def _line(a: dict) -> str:
     return f"- {a['text']}"
+
+
+def _stale_snapshots(now: datetime, db_path=None) -> list[str]:
+    """Labels of the snapshots (Calendar, Tasks) whose last refresh is older than SNAPSHOT_STALE_HOURS."""
+    snap = snapshot_status(db_path=db_path)
+    out = []
+    for label, kind in (("Calendar", "event"), ("Tasks", "task")):
+        at = (snap.get(kind) or {}).get("synced_at")
+        if at is not None and now - datetime.fromisoformat(at) > timedelta(hours=SNAPSHOT_STALE_HOURS):
+            out.append(f"{label} (last refreshed {_ago(at, now)})")
+    return out
+
+
+def _ago(at: str, now: datetime) -> str:
+    hours = (now - datetime.fromisoformat(at)).total_seconds() / 3600
+    return f"{hours:.0f}h ago" if hours >= 1 else "under 1h ago"
 
 
 def notify_check(*, db_path=None, now: datetime | None = None, record: bool = True) -> dict:
@@ -305,7 +323,11 @@ def notify_check(*, db_path=None, now: datetime | None = None, record: bool = Tr
       - outside AWAKE_FROM..AWAKE_UNTIL only a new or escalated urgent item is sent; the rest waits;
       - the first refresh at/after AWAKE_FROM each day sends one digest of everything still open
         (this replaces that run's other messages);
-      - an item that resolves or is dismissed is forgotten, so if it comes back it counts as new.
+      - an item that resolves or is dismissed is forgotten, so if it comes back it counts as new;
+      - if the calendar or task snapshot is older than SNAPSHOT_STALE_HOURS (the refresh failed, e.g. Todoist was
+        down) every message carries a caveat that those items may be out of date, and when nothing else is due a
+        warning goes out on its own (at most every STALE_ALERT_REPEAT_HOURS, awake hours only), so a broken
+        refresh is never silent.
     Returns {"send": bool, "mode": "digest"|"update"|None, "new", "escalated", "reminders", "message"}.
     """
     now = now or datetime.now()
@@ -352,7 +374,16 @@ def notify_check(*, db_path=None, now: datetime | None = None, record: bool = Tr
                     (a["key"], a["level"], stamp, stamp))
             if digest_due:
                 conn.execute("INSERT OR REPLACE INTO hub_notify_meta (name, value) VALUES ('digest_date', ?)", (today,))
+        stale = _stale_snapshots(now, db_path)
+        alert_due = False
+        if stale and awake:
+            last = _meta(conn, "stale_alert_at")
+            alert_due = last is None or now - datetime.fromisoformat(last) >= timedelta(hours=STALE_ALERT_REPEAT_HOURS)
+        elif not stale:
+            conn.execute("DELETE FROM hub_notify_meta WHERE name='stale_alert_at'")
         if record:
+            if alert_due:
+                conn.execute("INSERT OR REPLACE INTO hub_notify_meta (name, value) VALUES ('stale_alert_at', ?)", (stamp,))
             conn.commit()
     finally:
         conn.close()
@@ -366,6 +397,10 @@ def notify_check(*, db_path=None, now: datetime | None = None, record: bool = Tr
         if reminders:
             parts.append("Still urgent:\n" + "\n".join(_line(a) for a in reminders))
         message = "\n\n".join(parts)
+    if stale and (message or alert_due):
+        caveat = ("⚠️ Could not refresh: " + "; ".join(stale) + ". Items from these may be out of date.")
+        message = f"{message}\n\n{caveat}" if message else caveat
+        mode = mode or "alert"
     return {"send": bool(message), "mode": mode if message else None, "message": message,
             "new": [a["key"] for a in new], "escalated": [a["key"] for a in escalated],
             "reminders": [a["key"] for a in reminders]}
