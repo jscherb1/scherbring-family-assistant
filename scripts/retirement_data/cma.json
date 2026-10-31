@@ -1,0 +1,24 @@
+{
+  "as_of": "2026-10-31",
+  "refresh": "Yearly, after J.P. Morgan publishes its Long-Term Capital Market Assumptions (October) and Vanguard its economic and market outlook (December).",
+  "method": "Nominal 10-15 year forecasts. 'geometric' is the compound annual return: an equal blend of J.P. Morgan 2027 LTCMA and the midpoint of Vanguard's 2026 10-year range, rounded. 'arithmetic' (what the engine draws) = geometric + volatility^2 / 2. Volatilities are long-run planning figures.",
+  "sources": [
+    "J.P. Morgan 2027 Long-Term Capital Market Assumptions (Oct 2026): US large cap 7.5%, global aggregate bonds 5.3%, 60/40 7.0%. https://am.jpmorgan.com/us/en/asset-management/institutional/about-us/media/press-releases/jp-morgan-releases-2027-long-term-capital-market-assumptions/",
+    "Vanguard economic and market outlook for 2026 (Dec 2025): US equities 4.0-5.0%, ex-US equities 4.9-6.9%, US bonds 3.8-4.8%. https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html"
+  ],
+  "default_fee": 0.0015,
+  "asset_classes": {
+    "us_equity":   {"label": "US stocks",            "geometric": 0.060, "volatility": 0.165},
+    "intl_equity": {"label": "International stocks", "geometric": 0.065, "volatility": 0.180},
+    "bonds":       {"label": "Bonds",                "geometric": 0.046, "volatility": 0.055},
+    "cash":        {"label": "Cash",                 "geometric": 0.033, "volatility": 0.010}
+  },
+  "correlations": {
+    "us_equity|intl_equity": 0.85,
+    "us_equity|bonds": 0.15,
+    "intl_equity|bonds": 0.15,
+    "us_equity|cash": 0.0,
+    "intl_equity|cash": 0.0,
+    "bonds|cash": 0.2
+  }
+}

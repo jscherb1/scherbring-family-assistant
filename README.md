@@ -49,11 +49,14 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/money_sync.py` | Pulls Monarch into the snapshot tables (runs with the vendored Monarch venv; `assistant-money-sync.timer`) |
 | `scripts/finance_store.py` | Zero-dep CLI for finance working-state (who-map / tagging log / rule proposals / report log / config sub-commands) |
 | `scripts/finance_report.py` | Renders self-contained HTML spending reports (`--period weekly|monthly|annual`) |
-| `scripts/retirement_model.py` | Monte Carlo retirement engine (numpy) — success probability, percentile bands, base + what-if scenarios |
+| `scripts/retirement.py` | Shared retirement service: classifies Monarch-snapshot accounts into buckets (pretax/Roth/HSA/taxable/cash/kids), derives balance, allocation and savings, resolves assumptions, runs the model, builds the workbook payload |
+| `scripts/retirement_store.py` | Retirement CLI for the `retirement` and `finance-advisor` agents (`inputs`, `accounts`, `securities`, `config`, `run`, `workbook`) |
+| `scripts/retirement_model.py` | Monte Carlo retirement engine (numpy) — capital-market-priced allocation with a glide path, success probability ± noise, percentile bands in nominal and today's dollars, base + what-if scenarios |
+| `scripts/retirement_data/cma.json` | Capital-market assumptions (forward-looking 10-15 yr returns, volatilities, correlations; refreshed yearly) |
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `golf_rounds`, `golf_courses`, `golf_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_holdings`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `golf_rounds`, `golf_courses`, `golf_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -792,14 +795,19 @@ from data, be transparent about assumptions/gaps, never hand-wave a number" disc
 
 ### `retirement` — retirement modeling (Phase 3)
 
-- Runs a **Monte Carlo retirement projection** (`scripts/retirement_model.py`, numpy) from
-  Monarch-derived, user-overridable assumptions (stored in `finance_config` under
-  `retirement_assumptions`) → success probability, p10/p50/p90 bands, ending-balance
-  percentiles, and what-if scenarios.
+- Runs a **Monte Carlo retirement projection** (`scripts/retirement_model.py`, numpy) through
+  the shared service `scripts/retirement.py` / CLI `scripts/retirement_store.py`. Inputs are
+  derived in code from the local Monarch snapshot: retirement balance (pretax + Roth + HSA +
+  taxable; kids' 529/UTMA money and cash excluded), allocation from holdings (synced daily into
+  `money_holdings`), and trailing-12-month savings. Returns come from forward-looking
+  capital-market assumptions (`scripts/retirement_data/cma.json`) with a glide path. User
+  choices live in `finance_config` (`retirement_assumptions`, plus `retirement_accounts` and
+  `retirement_securities` overrides) → success probability ± simulation noise, p10/p50/p90
+  bands in nominal and today's dollars, and what-if scenarios.
 - Produces a **deep, user-editable `.xlsx` workbook** (`scripts/retirement_workbook.py`) —
-  live Excel formulas on an editable Assumptions tab, a Monte Carlo band tab, one tab per
-  scenario — uploaded to a `Retirement/` Drive subfolder in place via `scripts/drive_upload.py`
-  (Drive revision history = the archive).
+  live Excel formulas on an editable Assumptions tab, a Monte Carlo band tab, an Accounts tab,
+  one tab per scenario — uploaded to a `Retirement/` Drive subfolder as a new date-stamped file every run via `scripts/drive_upload.py`
+  (the folder of dated files is the archive; nothing is overwritten).
 - Owns the formal **"can we afford X"** what-ifs (retire earlier, a second home, a big
   renovation) and the scheduled `retirement-quarterly-review` (plan-vs-actual, last
   Saturday of Jan/Apr/Jul/Oct).

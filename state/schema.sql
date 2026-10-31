@@ -750,6 +750,22 @@ CREATE TABLE IF NOT EXISTS money_recurring (
     transaction_id  TEXT                  -- set once the charge has posted
 );
 
+-- Investment holdings per account, refreshed on full syncs only (one Monarch call per account).
+-- Rows for an account are replaced whenever that account's holdings are fetched. Used by the
+-- retirement service (scripts/retirement.py) to derive the portfolio's asset allocation.
+CREATE TABLE IF NOT EXISTS money_holdings (
+    account_id     TEXT NOT NULL,
+    holding_id     TEXT NOT NULL,         -- Monarch's aggregate-holding id
+    ticker         TEXT,
+    name           TEXT,
+    security_type  TEXT,                  -- mutual_fund | etf | equity | cash | fixed_income ...
+    quantity       REAL,
+    value          REAL,
+    basis          REAL,
+    synced_at      TEXT NOT NULL,
+    PRIMARY KEY (account_id, holding_id)
+);
+
 -- Thresholds and settings for the money metrics (see money.CONFIG_DEFAULTS).
 CREATE TABLE IF NOT EXISTS money_config (
     key    TEXT PRIMARY KEY,

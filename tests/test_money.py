@@ -165,6 +165,31 @@ def test_normalize_accounts_and_recurring():
     assert rec[0]["id"] == "s1:2026-10-21" and rec[0]["merchant"] == "DAKBOARD"
 
 
+
+def test_holdings_normalize_and_replace_per_account(db):
+    import asyncio
+    rows = money_sync.normalize_holdings("a1", {"portfolio": {"aggregateHoldings": {"edges": [{"node": {
+        "id": "h1", "quantity": 2.0, "basis": 0.0, "totalValue": 100.0,
+        "holdings": [{"ticker": "FXAIX", "name": "FID 500", "type": "mutual_fund"}],
+        "security": {"ticker": "FXAIX", "name": "Fidelity 500 Index Fund", "type": "mutual_fund"}}}]}}})
+    assert rows == [{"account_id": "a1", "holding_id": "h1", "ticker": "FXAIX", "name": "Fidelity 500 Index Fund",
+                     "security_type": "mutual_fund", "quantity": 2.0, "value": 100.0, "basis": 0.0}]
+    money.apply_snapshot({"holdings": {"accounts": ["a1"], "items": rows}}, db_path=db)
+    money.apply_snapshot({"holdings": {"accounts": ["a1"], "items": []}}, db_path=db)
+    conn = money.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM money_holdings").fetchone()[0] == 0
+
+    class Client:
+        async def get_account_holdings(self, account_id):
+            if account_id == 2:
+                raise RuntimeError("provider error")
+            return {"portfolio": {"aggregateHoldings": {"edges": []}}}
+
+    accounts = [{"id": "1", "type": "brokerage", "balance": 10.0}, {"id": "2", "type": "brokerage", "balance": 5.0},
+                {"id": "3", "type": "depository", "balance": 5.0}, {"id": "4", "type": "brokerage", "balance": 0.0}]
+    out = asyncio.run(money_sync._holdings(Client(), accounts))
+    assert out["accounts"] == ["1"]  # failed, non-brokerage and empty accounts are skipped
+
 def test_auto_mode_runs_full_once_a_day(db):
     assert money_sync.choose_mode("auto", db) == "full"
     run = money.start_sync("full", db_path=db)
