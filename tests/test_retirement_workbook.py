@@ -79,3 +79,18 @@ class TestWorkbook(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResultFileTests(unittest.TestCase):
+    def test_cli_reads_result_from_result_file(self):
+        import json
+        payload = sample_payload()
+        with tempfile.TemporaryDirectory() as d:
+            rf = Path(d) / "result.json"
+            rf.write_text(json.dumps(payload.pop("result")))
+            payload["result_file"] = str(rf)
+            pf = Path(d) / "payload.json"
+            pf.write_text(json.dumps(payload))
+            out = Path(d) / "out.xlsx"
+            self.assertEqual(rw._main(["--data-file", str(pf), "--out", str(out)]), 0)
+            self.assertTrue(out.exists())
