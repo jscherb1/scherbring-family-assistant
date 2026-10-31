@@ -24,6 +24,8 @@ Payload shape:
   "assumptions": { ...engine assumption keys..., "scenarios": [...] },
   "assumption_sources": {"current_balance": "Monarch get_accounts (2026-07-23)", ...},
   "result": <retirement_model.run_all output: {"base": {...}, "scenarios": [...]}>,
+  "result_file": "state/retirement/result-2026-07-23.json"   (use instead of "result";
+                 the engine output is ~140KB, too big to write inline)
   "narrative": {"headline": "...", "body": "..."},
   "data_sources": [{"item": "...", "value": "...", "source": "...",
                     "pulled": "2026-07-23", "overridden": "No"}]
@@ -332,6 +334,8 @@ def _main(argv=None) -> int:
     ap.add_argument("--out", required=True, help="output .xlsx path")
     args = ap.parse_args(argv)
     payload = json.loads(Path(args.data_file).read_text(encoding="utf-8"))
+    if "result" not in payload and payload.get("result_file"):
+        payload["result"] = json.loads(Path(payload["result_file"]).read_text(encoding="utf-8"))
     path = build_workbook(payload, args.out)
     print(json.dumps({"workbook_path": path}))
     return 0

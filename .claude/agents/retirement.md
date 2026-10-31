@@ -121,7 +121,7 @@ firing" for the self-gate).
    matching `retirement_workbook.py`'s
    documented shape: `generated_date`, `assumptions` (the resolved dict incl.
    `scenarios`), `assumption_sources` (a short source string per data-driven key),
-   `result` (the engine output), `narrative`, and `data_sources` (one row per
+   `result_file` (path of the engine output file from step 2, e.g. `state/retirement/result-<date>.json`; the result is ~140KB, so never inline it as `result`), `narrative`, and `data_sources` (one row per
    data-driven value: item, value, source, date pulled, whether the user overrode it).
    Then:
    ```
