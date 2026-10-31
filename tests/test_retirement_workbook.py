@@ -126,8 +126,38 @@ class FormulaParityTests(unittest.TestCase):
             cache = {}
             for i, row in enumerate(det):
                 r = 5 + i  # header on row 4 (1-based), data from row 5
-                self.assertAlmostEqual(_evaluate(wb, "Base Case", f"I{r}", cache), row["end_balance"], delta=1.0)
-                self.assertAlmostEqual(_evaluate(wb, "Base Case", f"J{r}", cache), row["end_balance_real"], delta=1.0)
+                self.assertAlmostEqual(_evaluate(wb, "Base Case", f"K{r}", cache), row["end_balance"], delta=1.0)
+                self.assertAlmostEqual(_evaluate(wb, "Base Case", f"L{r}", cache), row["end_balance_real"], delta=1.0)
+
+    def test_household_formulas_match_engine_with_taxes_and_events(self):
+        a = {
+            "current_age": 50, "retirement_age": 55, "plan_through_age": 90, "retirement_spend": 90_000,
+            "inflation": 0.03, "current_balance": 2_000_000, "annual_contribution": 40_000,
+            "contribution_real_growth": 0.01,
+            "allocation": {"us_equity": 0.5, "intl_equity": 0.2, "bonds": 0.25, "cash": 0.05},
+            "buckets": {"taxable": 600_000, "pretax": 1_300_000, "roth": 100_000},
+            "contributions": {"pretax": 30_000, "taxable": 10_000},
+            "people": [{"name": "A", "ss_pia": 45_000, "ss_claim_age": 67},
+                       {"name": "B", "ss_pia": 30_000, "ss_claim_age": 70}],
+            "events": [{"name": "Mortgage", "start_age": "retirement", "end_age": 60, "amount": 20_000, "real": False},
+                       {"name": "Health", "start_age": "retirement", "end_age": 64, "amount": 20_000, "real_growth": 0.015},
+                       {"name": "College", "start_age": 51, "end_age": 54, "amount": 40_000, "funding": "kids"}],
+            "kids_balance": 60_000, "tax": {"enabled": True, "state": "MN"}, "taxable_gain_fraction": 0.4,
+            "survivor": {"first_death_age": 85},
+        }
+        payload = sample_payload()
+        payload["assumptions"] = a
+        payload["result"] = rm.run_all(a, n_paths=100, seed=1)
+        with tempfile.TemporaryDirectory() as d:
+            out = str(Path(d) / "wb.xlsx")
+            rw.build_workbook(payload, out)
+            wb = load_workbook(out)
+            det = payload["result"]["base"]["deterministic"]
+            assert any(r["taxes"] > 0 for r in det) and any(r["other_outflows"] for r in det)
+            cache = {}
+            for i, row in enumerate(det):
+                r = 5 + i
+                self.assertAlmostEqual(_evaluate(wb, "Base Case", f"K{r}", cache), row["end_balance"], delta=1.0)
 
 
 if __name__ == "__main__":

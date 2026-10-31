@@ -34,6 +34,7 @@ from pathlib import Path
 
 import money
 import retirement_model as rm
+import retirement_tax as rt
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = REPO_ROOT / "state" / "agent_results.db"
@@ -174,25 +175,33 @@ def get_assumptions(db_path=None) -> dict:
     return a
 
 
-def set_assumption(key: str, value, db_path=None) -> dict:
-    """Set one field of retirement_assumptions (value already JSON-decoded). Validates the result."""
-    a = get_assumptions(db_path)
+def set_assumption(key: str, value, db_path=None, today: date | None = None) -> dict:
+    """Set one field of retirement_assumptions (value already JSON-decoded; null removes it).
+    The result is validated by resolving a full run against the snapshot; if the snapshot is
+    empty only the basic checks run. Nothing is saved when validation fails."""
+    before = get_assumptions(db_path)
+    a = json.loads(json.dumps(before))
     if value is None:
         a.pop(key, None)
     else:
-        a[key] = value
-    if key in ("allocation_override",) and value is not None:
-        a[key] = _norm_alloc(value, key)
-    trial = {**a, **{k: 1 for k in ("current_balance", "annual_contribution") if a.get(k) is None}}
-    if not trial.get("allocation"):
-        trial["allocation"] = a.get("allocation_override") or _equity_split(float(a.get("fallback_stock_pct", 80)) / 100)
-    trial["glide_path"] = a.get("glide_path", DEFAULT_GLIDE)
-    trial.pop("expected_return", None)
-    trial.pop("volatility", None)
-    problems = rm.validate(trial)
-    if problems:
-        raise RetirementError("; ".join(problems))
+        a[key] = _norm_alloc(value, key) if key == "allocation_override" else value
+    for k in ("retirement_age", "plan_through_age", "retirement_spend", "inflation"):
+        if a.get(k) is None:
+            raise RetirementError(f"{k} is required")
+    if a.get("glide_path") is not None:
+        problems = rm.validate({"current_age": 30, "retirement_age": 30, "plan_through_age": 31,
+                                "current_balance": 0, "annual_contribution": 0, "retirement_spend": 0,
+                                "inflation": 0, "ss_start_age": 67, "ss_annual_amount": 0,
+                                "allocation": {"us_equity": 1.0}, "glide_path": a["glide_path"]})
+        if problems:
+            raise RetirementError("; ".join(problems))
     _set_json(ASSUMPTIONS_KEY, a, db_path)
+    try:
+        resolve_assumptions(db_path, today)
+    except RetirementError as exc:
+        if exc.code != 1:  # 1 = no snapshot to validate against
+            _set_json(ASSUMPTIONS_KEY, before, db_path)
+            raise
     return a
 
 
@@ -386,6 +395,19 @@ def trailing_savings(db_path=None, today: date | None = None, months: int = 12) 
             "savings": round(income - spend, 2)}
 
 
+def _gain_fraction(holdings: dict, accounts: list[dict], default: float = 0.5) -> float:
+    """Unrealized-gain share of taxable holdings that report a cost basis."""
+    value = basis = 0.0
+    for a in accounts:
+        if a["bucket"] != "taxable":
+            continue
+        for h in holdings.get(a["id"], []):
+            if (h["basis"] or 0) > 0 and (h["value"] or 0) > 0:
+                value += h["value"]
+                basis += h["basis"]
+    return round(max(0.0, 1 - basis / value), 4) if value > 0 else default
+
+
 def derive_inputs(db_path=None, today: date | None = None) -> dict:
     """Balances by bucket, the retirement portfolio's allocation, and trailing savings, all
     from the snapshot, with a source string per value and warnings for anything assumed."""
@@ -451,63 +473,232 @@ def derive_inputs(db_path=None, today: date | None = None) -> dict:
         "sources": sources,
         "buckets": {b: round(v, 2) for b, v in buckets.items() if b != "exclude"},
         "trailing_savings": savings,
+        "monthly_spending": round(savings["spend"] / 12, 2),
+        "taxable_gain_fraction": _gain_fraction(holdings, accounts),
         "accounts": detail,
         "warnings": warnings,
     }
 
 
-def _idle_cash_scenario(allocation: dict) -> dict | None:
-    """A what-if that moves the retirement accounts' cash into stocks at today's US/intl split."""
+def _idle_cash_allocation(allocation: dict) -> dict:
+    """Move the allocation's cash into stocks at its US/intl split."""
     cash = allocation.get("cash", 0.0)
-    if cash < 0.05:
-        return None
     eq = allocation["us_equity"] + allocation["intl_equity"]
     us_share = allocation["us_equity"] / eq if eq > 0 else 0.7
     new = {"us_equity": allocation["us_equity"] + cash * us_share,
            "intl_equity": allocation["intl_equity"] + cash * (1 - us_share),
            "bonds": allocation["bonds"], "cash": 0.0}
-    return {"name": "Idle cash invested", "allocation": {c: round(v, 4) for c, v in new.items()}}
+    return {c: round(v, 4) for c, v in new.items()}
+
+
+def _idle_cash_scenario(allocation: dict) -> dict | None:
+    """A what-if that moves the cash into stocks (only offered when cash is 5%+)."""
+    if allocation.get("cash", 0.0) < 0.05:
+        return None
+    return {"name": "Idle cash invested", "invest_idle_cash": True}
+
+
+# Scenario keys the service interprets (everything else is passed to the engine as-is).
+SCENARIO_KEYS = ("name", "invest_idle_cash", "college_per_kid", "reserve_months", "ss_claim_age",
+                 "people_overrides", "first_death_age", "extra_events")
+
+
+def _age_on(birth: str, on: date) -> int:
+    b = date.fromisoformat(birth)
+    return on.year - b.year - ((on.month, on.day) < (b.month, b.day))
+
+
+def _household_events(h: dict, people: list[dict], today: date) -> list[dict]:
+    """Dated cash flows on top of today's budget: they apply when they are new money, i.e.
+    the mortgage only once retired (it is already in today's spending while working)."""
+    head = date.fromisoformat(people[0]["birth_date"])
+    events = []
+    m = h.get("mortgage") or {}
+    if m.get("monthly_pi") and m.get("payoff"):
+        y, mo = (int(x) for x in m["payoff"].split("-")[:2])
+        events.append({"name": "Mortgage P&I (fixed, through payoff)", "start_age": "retirement",
+                       "end_age": _age_on(people[0]["birth_date"], date(y, mo, 1)),
+                       "amount": round(float(m["monthly_pi"]) * 12, 2), "real": False})
+    hc = h.get("healthcare") or {}
+    if hc.get("pre_medicare_annual"):
+        events.append({"name": "Health insurance before Medicare", "start_age": "retirement", "end_age": 64,
+                       "amount": float(hc["pre_medicare_annual"]), "real": True,
+                       "real_growth": float(hc.get("real_growth", 0.0))})
+    if hc.get("medicare_annual"):
+        events.append({"name": "Medicare premiums and out-of-pocket", "start_age": "retirement", "min_age": 65,
+                       "end_age": "plan_end", "amount": float(hc["medicare_annual"]), "real": True,
+                       "real_growth": float(hc.get("real_growth", 0.0))})
+    col = h.get("college") or {}
+    per_kid, years = float(col.get("per_kid_today", 0.0)), int(col.get("years", 4))
+    for kid in col.get("kids") or []:
+        if per_kid <= 0:
+            break
+        kb = date.fromisoformat(kid["birth_date"])
+        start_year = kb.year + int(col.get("start_age", 18))
+        start_age = _age_on(people[0]["birth_date"], date(start_year, 9, 1))
+        if start_year < today.year:
+            continue
+        events.append({"name": f"College: {kid['name']}", "start_age": start_age, "end_age": start_age + years - 1,
+                       "amount": round(per_kid / years, 2), "real": True, "funding": "kids"})
+    return events
+
+
+def _build_household(stored: dict, inputs: dict, today: date, spec: dict) -> tuple[dict, dict]:
+    """Engine assumptions for the household model, with scenario `spec` applied."""
+    import copy
+    h = copy.deepcopy(stored["household"])
+    people = h.get("people") or []
+    if not people:
+        raise RetirementError("household.people is empty")
+    for name, ov in (spec.get("people_overrides") or {}).items():
+        for p in people:
+            if p.get("name", "").lower() == name.lower():
+                p.update(ov)
+    if spec.get("ss_claim_age") is not None:
+        for p in people:
+            p["ss_claim_age"] = spec["ss_claim_age"]
+    if spec.get("college_per_kid") is not None:
+        h.setdefault("college", {})["per_kid_today"] = spec["college_per_kid"]
+    months = float(spec.get("reserve_months", h.get("emergency_reserve_months", 6)))
+
+    v, b = inputs["values"], inputs["buckets"]
+    tax = rt.load_tax()
+    limit = tax["contribution_limits"]["elective_deferral"]
+    reserve = round(months * inputs["monthly_spending"], 2)
+    excess = max(0.0, b["cash"] - reserve)
+    invested_taxable = b["taxable"]
+    taxable = invested_taxable + excess
+    buckets = {"pretax": b["pretax"], "roth": b["roth"] + b["hsa"], "taxable": round(taxable, 2)}
+    total = sum(buckets.values())
+
+    alloc = stored.get("allocation_override") or v["allocation"]
+    base_bal = v["current_balance"]
+    if total > 0:
+        alloc = {c: (alloc[c] * base_bal + (excess if c == "cash" else 0.0)) / total for c in CLASSES}
+    if spec.get("invest_idle_cash"):
+        alloc = _idle_cash_allocation(alloc)
+    alloc = {c: round(w, 4) for c, w in alloc.items()}
+
+    contrib = {"pretax": 0.0, "roth": 0.0, "taxable": 0.0}
+    for p in people:
+        deferral = min(float(p.get("gross_salary", 0)) * float(p.get("deferral_pct", 0)), limit)
+        contrib["roth" if p.get("deferral_type") == "roth" else "pretax"] += deferral
+        contrib["pretax"] += float(p.get("employer_contribution", 0))
+    contrib["taxable"] = (float(h["taxable_contribution"]) if h.get("taxable_contribution") is not None
+                          else max(v["annual_contribution"], 0.0))
+    contrib = {k: round(val, 2) for k, val in contrib.items()}
+
+    head_age = _age_on(people[0]["birth_date"], today)
+    engine_people = []
+    for p in people:
+        offset = _age_on(p["birth_date"], today) - head_age
+        engine_people.append({"name": p["name"], "age_offset": offset, "ss_pia": float(p.get("ss_pia_monthly", 0)) * 12,
+                              "ss_claim_age": float(p.get("ss_claim_age", 67)),
+                              "work_start_age": float(p.get("work_start_age", 22))})
+
+    gf = inputs.get("taxable_gain_fraction", 0.5)
+    a = {k: stored[k] for k in ("retirement_age", "plan_through_age", "retirement_spend", "inflation")}
+    a.update({
+        "current_age": head_age,
+        "current_balance": round(total, 2),
+        "annual_contribution": round(sum(contrib.values()), 2),
+        "buckets": buckets,
+        "contributions": contrib,
+        "contribution_real_growth": float(h.get("contribution_real_growth", 0.0)),
+        "people": engine_people,
+        "events": _household_events(h, people, today) + list(spec.get("extra_events") or []),
+        "kids_balance": b["kids"],
+        "kids_contribution": float(h.get("kids_contribution", 0.0)),
+        "taxable_gain_fraction": round(gf * invested_taxable / taxable, 4) if taxable > 0 else gf,
+        "tax": {"enabled": True, "state": h.get("tax_state", "MN")},
+        "withdrawal_order": h.get("withdrawal_order") or list(rm.DEFAULT_ORDER),
+        "allocation": alloc,
+        "glide_path": stored.get("glide_path", DEFAULT_GLIDE),
+    })
+    if stored.get("fee") is not None:
+        a["fee"] = stored["fee"]
+    if spec.get("first_death_age") is not None:
+        a["survivor"] = {"first_death_age": int(spec["first_death_age"]),
+                         "spend_factor": float(h.get("survivor_spend_factor", 0.75))}
+    info = {"reserve": reserve, "reserve_months": months, "excess_cash": round(excess, 2)}
+    return a, info
+
+
+def _build(stored: dict, inputs: dict, today: date, spec: dict) -> tuple[dict, dict]:
+    """Engine assumptions for the base case (spec = {}) or a scenario. Household config builds the
+    full household model; otherwise the single-pool model."""
+    if stored.get("household"):
+        a, info = _build_household(stored, inputs, today, spec)
+    else:
+        v = inputs["values"]
+        a = {k: stored[k] for k in rm.REQUIRED_KEYS if stored.get(k) is not None}
+        a["current_balance"] = v["current_balance"]
+        a["annual_contribution"] = (stored["contribution_override"] if stored.get("contribution_override") is not None
+                                    else v["annual_contribution"])
+        a["allocation"] = stored.get("allocation_override") or v["allocation"]
+        if spec.get("invest_idle_cash"):
+            a["allocation"] = _idle_cash_allocation(a["allocation"])
+        a["glide_path"] = stored.get("glide_path", DEFAULT_GLIDE)
+        if stored.get("fee") is not None:
+            a["fee"] = stored["fee"]
+        info = {}
+    for k, val in spec.items():
+        if k not in SCENARIO_KEYS:
+            a[k] = val  # None stays as an explicit removal (run_all drops the key from the base)
+    return a, info
 
 
 def resolve_assumptions(db_path=None, today: date | None = None, overrides: dict | None = None,
                         extra_scenarios: list[dict] | None = None) -> dict:
-    """The complete engine input: stored choices + derived values + explicit overrides.
-    Returns {"assumptions", "sources", "inputs"}."""
+    """The complete engine input: stored choices + derived values + explicit overrides, with
+    every scenario fully built. Returns {"assumptions", "sources", "inputs", "household"}."""
+    today = _today(today)
     stored = get_assumptions(db_path)
     inputs = derive_inputs(db_path, today)
-    v = inputs["values"]
-    a = {k: stored[k] for k in rm.REQUIRED_KEYS if stored.get(k) is not None}
-    a["current_balance"] = v["current_balance"]
-    a["annual_contribution"] = (stored["contribution_override"] if stored.get("contribution_override") is not None
-                                else v["annual_contribution"])
-    a["allocation"] = stored.get("allocation_override") or v["allocation"]
-    a["glide_path"] = stored.get("glide_path", DEFAULT_GLIDE)
-    if stored.get("fee") is not None:
-        a["fee"] = stored["fee"]
+    overrides = overrides or {}
+    a, info = _build(stored, inputs, today, overrides)
+
     sources = {k: f"config ({ASSUMPTIONS_KEY})" for k in a}
     sources.update(inputs["sources"])
-    if stored.get("contribution_override") is not None:
+    if stored.get("household"):
+        h = stored["household"]
+        sources["current_balance"] += (f"; plus cash above a {info['reserve_months']:g}-month emergency reserve "
+                                       f"(${info['reserve']:,.0f}), counted as taxable cash")
+        sources["contributions"] = ("payroll deferrals = gross salary x deferral % (capped at the IRS limit) "
+                                    "+ employer contributions; taxable = "
+                                    + ("config taxable_contribution" if h.get("taxable_contribution") is not None
+                                       else "Monarch trailing-12 income - spending"))
+        sources["people"] = "; ".join(f"{p['name']}: SS {p.get('ss_source', 'config')}, salary "
+                                      f"{p.get('salary_source', 'config')}" for p in h.get("people") or [])
+        sources["events"] = "household config: mortgage, healthcare, college"
+        sources["tax"] = f"federal + {h.get('tax_state', 'MN')} rules, {rt.load_tax()['year']} tables"
+    if stored.get("contribution_override") is not None and not stored.get("household"):
         sources["annual_contribution"] = "config contribution_override"
     if stored.get("allocation_override"):
         sources["allocation"] = "config allocation_override"
     if "glide_path" not in stored:
         sources["glide_path"] = "default (typical target-date glide: 60% stocks at retirement, 40% at plan end)"
-
-    for k, val in (overrides or {}).items():
-        a[k] = val
+    for k in overrides:
         sources[k] = "user override (this run)"
 
-    scenarios = list(stored.get("scenarios") or [])
+    specs = list(stored.get("scenarios") or [])
     idle = _idle_cash_scenario(a["allocation"]) if a.get("allocation") else None
-    if idle and not any(s.get("name") == idle["name"] for s in scenarios):
-        scenarios.append(idle)
-    scenarios.extend(extra_scenarios or [])
+    if idle and not any(s.get("name") == idle["name"] for s in specs):
+        specs.append(idle)
+    specs.extend(extra_scenarios or [])
+    scenarios = []
+    for spec in specs:
+        sc, _ = _build(stored, inputs, today, {**overrides, **spec})
+        sc["name"] = spec.get("name", "scenario")
+        scenarios.append(sc)
     a["scenarios"] = scenarios
 
     problems = rm.validate(a)
+    for sc in scenarios:
+        problems += [f"scenario {sc['name']}: {p}" for p in rm.validate(sc)]
     if problems:
         raise RetirementError("; ".join(problems))
-    return {"assumptions": a, "sources": sources, "inputs": inputs}
+    return {"assumptions": a, "sources": sources, "inputs": inputs, "household": info}
 
 
 # ---------------------------------------------------------------------------
@@ -522,6 +713,7 @@ def _summary(res: dict) -> dict:
         "ending_balance_real_p10": round(res["ending_balance_real"]["p10"]),
         "ending_balance_real_p50": round(res["ending_balance_real"]["p50"]),
         "median_depletion_age": res["depletion"]["median_depletion_age"],
+        "lifetime_taxes_real_p50": round(res.get("lifetime_taxes_real_p50") or 0),
     }
 
 
@@ -572,7 +764,11 @@ def run(db_path=None, today: date | None = None, n_paths: int = 10_000, seed: in
                       for s in result["scenarios"]],
         "inputs": {"current_balance": a["current_balance"], "annual_contribution": a["annual_contribution"],
                    "allocation": a["allocation"], "glide_path": a.get("glide_path"),
-                   "buckets": resolved["inputs"]["buckets"]},
+                   "buckets": resolved["inputs"]["buckets"],
+                   "engine_buckets": a.get("buckets"), "contributions": a.get("contributions"),
+                   "retirement_spend": a["retirement_spend"], "events": a.get("events"),
+                   "household": resolved.get("household")},
+        "social_security": base.get("social_security"),
         "sources": resolved["sources"],
         "warnings": resolved["inputs"]["warnings"],
         "accounts": resolved["inputs"]["accounts"],
@@ -611,8 +807,24 @@ def workbook_payload(as_of: str, headline: str, body: str, tag: str = "", run_di
          "overridden": "Yes" if "override" in summary["sources"].get("allocation", "") else "No"},
     ]
     for b, v in summary["inputs"]["buckets"].items():
-        data_sources.append({"item": f"Bucket: {b}", "value": f"${v:,.0f}", "source": "Monarch snapshot",
+        data_sources.append({"item": f"Monarch bucket: {b}", "value": f"${v:,.0f}", "source": "Monarch snapshot",
                              "pulled": as_of, "overridden": "No"})
+    hh = summary["inputs"].get("household") or {}
+    if hh:
+        data_sources.append({"item": "Emergency reserve (held back)", "value": f"${hh['reserve']:,.0f}",
+                             "source": f"{hh['reserve_months']:g} months of trailing-12 spending; "
+                                       f"${hh['excess_cash']:,.0f} of cash above it counts as taxable",
+                             "pulled": as_of, "overridden": "No"})
+    for k, v in (summary["inputs"].get("contributions") or {}).items():
+        data_sources.append({"item": f"Contribution / yr: {k}", "value": f"${v:,.0f}",
+                             "source": summary["sources"].get("contributions", ""), "pulled": as_of, "overridden": "No"})
+    for ss in summary.get("social_security") or []:
+        data_sources.append({"item": f"Social Security: {ss['name']}", "value": f"${ss['annual_benefit_today']:,.0f}/yr",
+                             "source": f"today's $, claiming at {ss['claim_age']:g}; {summary['sources'].get('people', '')}",
+                             "pulled": as_of, "overridden": "No"})
+    if summary["sources"].get("tax"):
+        data_sources.append({"item": "Taxes", "value": "", "source": summary["sources"]["tax"], "pulled": as_of,
+                             "overridden": "No"})
     for w in summary["warnings"]:
         data_sources.append({"item": "Warning", "value": "", "source": w, "pulled": as_of, "overridden": ""})
     return {

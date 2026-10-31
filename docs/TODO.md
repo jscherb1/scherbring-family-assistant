@@ -79,19 +79,22 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
    session limit; the permission fixes (commit `dc61b97`) are unproven for these two.
 9a. **Retirement model improvements (Phases 1-3).** Plan: `docs/superpowers/specs/2026-10-31-retirement-model-review.md`
    (review findings + phased build). Phase 1 (snapshot-derived inputs, capital-market returns, glide path,
-   median-path and timing fixes) is built; still open:
-   - **User inputs:** the fund mix of the employer plans whose provider returns no holdings (the run's
-     `warnings` name them; set each with `retirement_store.py accounts classify --account "<name>" --allocation '{...}'`). Phase 2 also needs
-     both spouses' SSA estimates at 67, 403b deferral % and employer match, mortgage rate/P&I/payoff date,
-     any pension, college targets and emergency-reserve size.
+   median-path and timing fixes) and Phase 2a (taxes, buckets, RMDs, two-person Social Security, mortgage /
+   healthcare / college cash flows, emergency reserve, after-tax spending) are built; still open:
+   - **User inputs (placeholders in `retirement_assumptions.household` today):** actual gross salaries (estimated
+     from take-home pay), employer retirement contributions (assumed 0), the second spouse's SSA estimate (assumed),
+     and the fund mix of employer plans whose provider returns no holdings (the run's `warnings` name them; set each
+     with `retirement_store.py accounts classify --account "<name>" --allocation '{...}'`).
    - **Decide on the idle retirement cash** (cash sweeps and money market inside the IRAs). The
      model now flags it every run.
-   - **Phase 2:** taxes and RMDs, three tax buckets and withdrawal order, two-person Social Security, cash-flow
-     events (mortgage payoff, ACA premiums 62-65, college), spending baseline, guardrails, stress tests.
+   - **Phase 2b:** spending guardrails, variable inflation, fat-tailed returns, stress tests (bad first year of
+     retirement, high-inflation decade). Consider a Roth-conversion what-if (large pre-tax balances make RMD-era
+     taxes the biggest lifetime cost).
    - **Phase 3:** solver metrics (max safe spend, earliest retirement age), pinned baseline for real
      plan-vs-actual, sensitivity tab, dashboard section.
    - **Yearly:** refresh `scripts/retirement_data/cma.json` after J.P. Morgan's LTCMA (Oct) and Vanguard's
-     outlook (Dec).
+     outlook (Dec), and `scripts/retirement_data/tax_<year>.json` after the IRS (Oct/Nov) and Minnesota (Dec)
+     publish the next year's figures (the Minnesota single-filer figures are estimated).
    - **Untested live:** the quarterly task on the new workflow (next real run 2027-01-30). Test with
      `scheduler_run_now.py --name retirement-quarterly-review --ignore-gates` after merging.
 10. **Reboot test: done** by the user on 2026-10-06 (the assistant came back on its own). Nothing left.

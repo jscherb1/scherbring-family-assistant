@@ -112,11 +112,13 @@ For any recommendation that materially draws down assets or changes the long-run
    balance, savings and allocation from the local Monarch snapshot itself, exactly as the
    `retirement` agent does, so no Monarch calls or hand-built JSON are needed:
    ```
-   python scripts/retirement_store.py run --tag whatif --scenarios '[{"name": "Rental from portfolio", "current_balance": 560000}]'
+   python scripts/retirement_store.py run --tag whatif --scenarios '[{"name": "Retire at 58", "retirement_age": 58}]'
    ```
-   A scenario is a name plus any assumption overrides (`retirement_age`, `retirement_spend`,
-   `annual_contribution`, `current_balance`, `ss_start_age`, `ss_annual_amount`,
-   `allocation`, `glide_path`). It prints the base and scenario success probabilities and
+   A scenario is a name plus overrides: `retirement_age`, `retirement_spend` (after-tax),
+   `allocation`, `glide_path`, `ss_factor`, `ss_claim_age`, `college_per_kid`,
+   `reserve_months`, `invest_idle_cash`, or `extra_events` for a purchase or new yearly
+   cost in today's dollars (`[{"name": "Rental down payment", "start_age": 40, "end_age": 40,
+   "amount": 120000}]`, ages are the household head's). It prints the base and scenario success probabilities and
    `delta_pp`. Use `--paths 10000 --seed 42` defaults; don't change them.
 2. Relay any `warnings` that bear on the recommendation (e.g. idle cash inside the
    retirement accounts, accounts with no holdings data).

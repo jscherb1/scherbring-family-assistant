@@ -53,6 +53,8 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/retirement_store.py` | Retirement CLI for the `retirement` and `finance-advisor` agents (`inputs`, `accounts`, `securities`, `config`, `run`, `workbook`) |
 | `scripts/retirement_model.py` | Monte Carlo retirement engine (numpy) — capital-market-priced allocation with a glide path, success probability ± noise, percentile bands in nominal and today's dollars, base + what-if scenarios |
 | `scripts/retirement_data/cma.json` | Capital-market assumptions (forward-looking 10-15 yr returns, volatilities, correlations; refreshed yearly) |
+| `scripts/retirement_tax.py` | Federal + Minnesota income tax, Social Security taxation and claiming rules for the retirement engine (numpy, vectorized) |
+| `scripts/retirement_data/tax_2026.json` | Tax tables, RMD divisors, Social Security bend points and contribution limits (refreshed yearly) |
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
@@ -804,6 +806,11 @@ from data, be transparent about assumptions/gaps, never hand-wave a number" disc
   choices live in `finance_config` (`retirement_assumptions`, plus `retirement_accounts` and
   `retirement_securities` overrides) → success probability ± simulation noise, p10/p50/p90
   bands in nominal and today's dollars, and what-if scenarios.
+- Household model: taxable / pre-tax / Roth buckets plus the kids' 529s, after-tax spending
+  with withdrawals grossed up for federal + Minnesota tax, RMDs and early-withdrawal
+  penalties, Social Security per person with claiming-age rules and a survivor case, and
+  dated cash flows (mortgage through payoff, healthcare before and after Medicare, college).
+  Household facts live in `retirement_assumptions.household`.
 - Produces a **deep, user-editable `.xlsx` workbook** (`scripts/retirement_workbook.py`) —
   live Excel formulas on an editable Assumptions tab, a Monte Carlo band tab, an Accounts tab,
   one tab per scenario — uploaded to a `Retirement/` Drive subfolder as a new date-stamped file every run via `scripts/drive_upload.py`

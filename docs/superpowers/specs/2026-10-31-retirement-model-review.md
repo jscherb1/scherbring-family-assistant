@@ -91,7 +91,13 @@ or missing. Correcting Phase 1's issues lowered it materially.
 - **Agents:** `retirement` and `finance-advisor` run everything through the CLI. Every
   quarterly run uploads a new date-stamped workbook.
 
-### Phase 2: household realism
+### Phase 2: household realism (2a built; 2b pending)
+
+Phase 2a is built: `scripts/retirement_tax.py` + `retirement_data/tax_2026.json`, the
+household core in `retirement_model.py` (one code path for the simulation and the median
+path; the single-pool model is its special case), the `household` config block and scenario
+keys in `retirement.py`, and household columns in the workbook (formula parity tested).
+Phase 2b (guardrails, variable inflation, fat tails, stress tests) remains.
 
 **Inputs needed from the user:**
 - both spouses' SSA estimates at 67

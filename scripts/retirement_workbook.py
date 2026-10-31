@@ -14,11 +14,13 @@ and emits a self-contained, user-editable `.xlsx`:
   - <scenario>     one tab per what-if, each with its own local (live) inputs
   - Data Sources   which values came from Monarch, when pulled, whether overridden
 
-The Base Case formulas mirror retirement_model.deterministic_projection exactly:
-    growth = (start - (withdrawal - ss)) * r + contribution * (SQRT(1 + r) - 1)
-    end    = MAX(0, start - (withdrawal - ss) + growth + contribution)
-(withdrawals at the start of the year, contributions mid-year, r = that year's median return)
-so the sheet and the engine agree on the deterministic path.
+The Base Case end balance matches retirement_model.deterministic_projection exactly:
+    out    = spending - social security + other outflows + taxes
+    growth = (start - out) * r + contribution * (SQRT(1 + r) - 1)
+    end    = MAX(0, start - out + growth + contribution)
+(outflows at the start of the year, contributions mid-year, r = that year's median return).
+Contribution and spending are live formulas; Social Security, other outflows, taxes and r are
+the engine's values for the median path, so the sheet and the engine agree on it.
 
 Usage (CLI):
     python scripts/retirement_workbook.py --data-file <payload.json> --out <out.xlsx>
@@ -50,7 +52,6 @@ from pathlib import Path
 
 import xlsxwriter
 
-import retirement_model as rm
 
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
@@ -64,15 +65,15 @@ FIELDS = [
     ("plan_through_age", "Plan through age", "0"),
     ("current_balance", "Current portfolio balance", "$#,##0"),
     ("annual_contribution", "Annual contribution (today's $)", "$#,##0"),
-    ("retirement_spend", "Retirement spending / yr (today's $)", "$#,##0"),
+    ("contribution_real_growth", "Contribution growth above inflation", "0.0%"),
+    ("retirement_spend", "Retirement spending / yr (today's $, after tax)", "$#,##0"),
     ("inflation", "Inflation", "0.0%"),
-    ("ss_start_age", "Social Security start age", "0"),
-    ("ss_annual_amount", "Social Security / yr (today's $)", "$#,##0"),
 ]
 
 PROJ_HEADERS = ["Age", "Year", "Start Balance", "Contribution", "Median Return", "Growth",
-                "Withdrawal", "Social Security", "End Balance", "End (today's $)"]
-END_COL = 8
+                "Spending", "Social Security", "Other Outflows", "Taxes", "End Balance", "End (today's $)"]
+END_COL = 10
+REAL_COL = 11
 
 
 def _sanitize_sheet_name(name: str) -> str:
@@ -91,6 +92,7 @@ def _fmts(wb):
         "note": wb.add_format({"italic": True, "font_color": "#666666", "text_wrap": True}),
         "wrap": wb.add_format({"text_wrap": True, "valign": "top"}),
         "money": wb.add_format({"num_format": "$#,##0"}),
+        "money_eng": wb.add_format({"num_format": "$#,##0", "font_color": "#555555", "bg_color": "#EEF3F8"}),
         "money_in": wb.add_format({"num_format": "$#,##0", "bg_color": "#FFF6DC", "border": 1}),
         "pct": wb.add_format({"num_format": "0.0%"}),
         "pct_in": wb.add_format({"num_format": "0.0%", "bg_color": "#FFF6DC", "border": 1}),
@@ -122,7 +124,7 @@ def _write_assumption_block(ws, assumptions, sources, fmts, sheet_name, title, t
     for i, (key, label, numfmt) in enumerate(FIELDS):
         r = data_start + i
         ws.write(r, 0, label, fmts["label"])
-        ws.write_number(r, 1, float(assumptions[key]), _input_fmt(numfmt, fmts))
+        ws.write_number(r, 1, float(assumptions.get(key) or 0), _input_fmt(numfmt, fmts))
         if sources:
             ws.write(r, 2, sources.get(key, "default"))
         cell_map[key] = f"$B${r + 1}"
@@ -150,27 +152,62 @@ def _write_assumption_block(ws, assumptions, sources, fmts, sheet_name, title, t
         ws.write(r + 2, 0, "Return volatility", fmts["label"])
         ws.write_number(r + 2, 1, float(assumptions.get("volatility", 0)), fmts["pct"])
         r += 3
+    r = _write_household_block(ws, assumptions, fmts, r)
     ws.set_column(0, 0, 36)
     ws.set_column(1, 1, 16)
     ws.set_column(2, 2, 38)
     return cell_map, r
 
 
-def _median_returns(res: dict) -> list[float]:
-    """Per-year median return for the projection: the engine's, or (older results without it)
-    derived from the scalar expected return and volatility."""
-    det = res.get("deterministic") or []
-    if det and "median_return" in det[0]:
-        return [row["median_return"] for row in det]
-    a = res["assumptions"]
-    g = rm.median_factor(float(a.get("expected_return", 0.0)), float(a.get("volatility", 0.0))) - 1.0
-    return [g] * len(det)
+def _write_household_block(ws, a, fmts, r):
+    """Household inputs the engine uses (informational; edit them in config and re-run)."""
+    if not a.get("buckets") and not a.get("people"):
+        return r
+    ws.write(r + 1, 0, "Household (informational; the engine's inputs)", fmts["h2"])
+    r += 2
+    rows = []
+    for b, v in (a.get("buckets") or {}).items():
+        rows.append((f"Balance: {b}", v, "money"))
+    for b, v in (a.get("contributions") or {}).items():
+        rows.append((f"Contribution / yr: {b}", v, "money"))
+    if a.get("kids_balance") is not None:
+        rows.append(("Kids' accounts (529s etc.)", a["kids_balance"], "money"))
+    if a.get("taxable_gain_fraction") is not None:
+        rows.append(("Taxable account: share that is gains", a["taxable_gain_fraction"], "pct"))
+    for p in a.get("people") or []:
+        if p.get("ss_pia"):
+            rows.append((f"{p['name']}: Social Security at 67 / yr (today's $)", p["ss_pia"], "money"))
+            rows.append((f"{p['name']}: claims at age", p.get("ss_claim_age", 67), "int"))
+    for lab, val, f in rows:
+        ws.write(r, 0, lab, fmts["label"])
+        ws.write_number(r, 1, float(val), fmts[f])
+        r += 1
+    events = a.get("events") or []
+    if events:
+        ws.write(r + 1, 0, "Cash-flow events", fmts["h2"])
+        ws.write(r + 2, 0, "Event", fmts["hdr"])
+        ws.write(r + 2, 1, "Amount / yr", fmts["hdr"])
+        ws.write(r + 2, 2, "Ages and basis", fmts["hdr"])
+        r += 3
+        for e in events:
+            ws.write(r, 0, e.get("name", ""))
+            ws.write_number(r, 1, float(e["amount"]), fmts["money"])
+            basis = "today's $" if e.get("real", True) else "fixed $"
+            if e.get("real_growth"):
+                basis += f", +{e['real_growth'] * 100:.1f}%/yr above inflation"
+            if e.get("funding") == "kids":
+                basis += ", paid from kids' accounts first"
+            start = e["start_age"] if e.get("min_age") is None else f"later of {e['start_age']} and {e['min_age']}"
+            ws.write(r, 2, f"{start} to {e.get('end_age', e['start_age'])}; {basis}")
+            r += 1
+    return r
 
 
-def _write_projection(ws, wb, assumptions, cell_map, prefix, fmts, base_year, header_row, returns):
-    """Write the live-formula projection table. `prefix` is prepended to every
-    cell_map ref (e.g. "'Assumptions'!" for Base Case, "" for on-sheet scenario
-    blocks). `returns` is the per-year median return (editable cells).
+def _write_projection(ws, wb, assumptions, cell_map, prefix, fmts, base_year, header_row, det):
+    """Write the projection table. `prefix` is prepended to every cell_map ref (e.g.
+    "'Assumptions'!" for Base Case, "" for on-sheet scenario blocks). Contribution and
+    spending are live formulas; the median return, Social Security, other outflows and taxes
+    come from the engine's median path `det` (editable values, not recalculated).
     Returns (first_data_row0, last_data_row0) as 0-based indices."""
     for c, h in enumerate(PROJ_HEADERS):
         ws.write(header_row, c, h, fmts["hdr"])
@@ -198,28 +235,32 @@ def _write_projection(ws, wb, assumptions, cell_map, prefix, fmts, base_year, he
         if i == 0:
             ws.write_formula(r, 2, f"={P('current_balance')}", fmts["money"])
         else:
-            ws.write_formula(r, 2, f"=I{R - 1}", fmts["money"])
-        # Contribution (accumulation only, arrives mid-year)
+            ws.write_formula(r, 2, f"=K{R - 1}", fmts["money"])
+        row = det[i] if i < len(det) else {}
+        # Contribution (working years only, arrives mid-year)
         ws.write_formula(r, 3,
-            f"=IF({age}<{P('retirement_age')},{P('annual_contribution')}*{infl},0)",
+            f"=IF({age}<{P('retirement_age')},{P('annual_contribution')}*{infl}"
+            f"*(1+{P('contribution_real_growth')})^({age}-{P('current_age')}),0)",
             fmts["money"])
         # Median return for the year (from the engine's glide path; editable)
-        ws.write_number(r, 4, float(returns[i]) if i < len(returns) else 0.0, fmts["pct_in"])
-        # Growth: start-of-year withdrawal, half a year of growth on the contribution
-        ws.write_formula(r, 5, f"=(C{R}-(G{R}-H{R}))*E{R}+D{R}*(SQRT(1+E{R})-1)", fmts["money"])
-        # Withdrawal (retirement only)
+        ws.write_number(r, 4, float(row.get("median_return", 0.0)), fmts["pct_in"])
+        # Growth: outflows leave at the start of the year, half a year of growth on contributions
+        net = f"(G{R}-H{R}+I{R}+J{R})"
+        ws.write_formula(r, 5, f"=(C{R}-{net})*E{R}+D{R}*(SQRT(1+E{R})-1)", fmts["money"])
+        # Spending (retirement only, after tax)
         ws.write_formula(r, 6,
             f"=IF({age}>={P('retirement_age')},{P('retirement_spend')}*{infl},0)",
             fmts["money"])
-        # Social Security (once eligible)
-        ws.write_formula(r, 7,
-            f"=IF({age}>={P('ss_start_age')},{P('ss_annual_amount')}*{infl},0)",
-            fmts["money"])
+        # Engine values: Social Security, other outflows (mortgage, healthcare, college beyond the
+        # kids' accounts, survivor spending change), taxes on withdrawals
+        ws.write_number(r, 7, float(row.get("ss", 0.0)), fmts["money_eng"])
+        ws.write_number(r, 8, float(row.get("other_outflows", 0.0)), fmts["money_eng"])
+        ws.write_number(r, 9, float(row.get("taxes", 0.0)), fmts["money_eng"])
         # End balance, nominal and in today's dollars
-        ws.write_formula(r, 8, f"=MAX(0,C{R}-(G{R}-H{R})+F{R}+D{R})", fmts["money"])
-        ws.write_formula(r, 9, f"=I{R}/(1+{P('inflation')})^({age}-{P('current_age')}+1)", fmts["money"])
+        ws.write_formula(r, 10, f"=MAX(0,C{R}-{net}+F{R}+D{R})", fmts["money"])
+        ws.write_formula(r, 11, f"=K{R}/(1+{P('inflation')})^({age}-{P('current_age')}+1)", fmts["money"])
     ws.set_column(0, 1, 8)
-    ws.set_column(2, 9, 16)
+    ws.set_column(2, 11, 15)
     return first, first + n - 1
 
 
@@ -268,14 +309,15 @@ def build_workbook(payload: dict, out_path: str) -> str:
     # --- Base Case (live formulas) ---
     ws_base.write(0, 0, "Base Case — deterministic projection", fmts["title"])
     ws_base.write(1, 0,
-        "Live formulas reference the Assumptions tab. Monte Carlo results are a "
-        "separate simulation — re-run the retirement agent to refresh them.",
+        "Contribution and spending are live formulas on the Assumptions tab. Blue-shaded columns "
+        "(Social Security, other outflows, taxes) and the median return come from the engine's run "
+        "and do not recalculate; re-run the retirement agent to refresh them and the Monte Carlo.",
         fmts["note"])
     first, last = _write_projection(
         ws_base, wb, assumptions, cell_map, "'Assumptions'!", fmts, base_year, header_row=3,
-        returns=_median_returns(base))
-    ws_base.insert_chart(3, 11,
-        _add_balance_chart(wb, "Base Case", first, last, 9, "Projected balance, today's dollars (base case)"))
+        det=base["deterministic"])
+    ws_base.insert_chart(3, 13,
+        _add_balance_chart(wb, "Base Case", first, last, REAL_COL, "Projected balance, today's dollars (base case)"))
 
     # --- Monte Carlo (static engine output + confidence bands) ---
     ws_mc.write(0, 0, "Monte Carlo simulation", fmts["title"])
@@ -332,9 +374,9 @@ def build_workbook(payload: dict, out_path: str) -> str:
         ws.write(next_row + 1, 2, sc["success_probability"] / 100.0, fmts["pct"])
         proj_hdr = next_row + 3
         f0, l0 = _write_projection(ws, wb, sc_assum, smap, "", fmts, base_year, header_row=proj_hdr,
-                                   returns=_median_returns(sc))
-        ws.insert_chart(proj_hdr, 11,
-            _add_balance_chart(wb, name, f0, l0, 9, f"Projected balance, today's $ ({sc.get('name', name)})"))
+                                   det=sc["deterministic"])
+        ws.insert_chart(proj_hdr, 13,
+            _add_balance_chart(wb, name, f0, l0, REAL_COL, f"Projected balance, today's $ ({sc.get('name', name)})"))
 
     # --- Accounts ---
     accounts = payload.get("accounts") or []
