@@ -28,7 +28,8 @@ from typing import Any, Awaitable, Callable, Protocol
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bridge_store import BridgeStore  # noqa: E402
-from paths import REPO_ROOT  # noqa: E402
+from bridge_store import session_key_for  # noqa: E402
+from paths import REPO_ROOT, dev_chat_ids, household_chat_id  # noqa: E402
 
 log = logging.getLogger("worker")
 
@@ -37,6 +38,11 @@ USAGE_LOG = REPO_ROOT / "state" / "usage.jsonl"
 TURN_TIMEOUT_S = 900
 SLOW_ACK_AFTER_S = 20
 MAX_ATTEMPTS = 3
+MAX_CONCURRENT_SESSIONS = 4  # each live session is a claude subprocess; bound memory and API fan-out
+STOP_GRACE_S = 10  # systemd TimeoutStopSec is 20: 10 s for turns + <=3 s cancel + <=4 s closing clients; cancelled turns are redelivered
+STOP_CANCEL_WAIT_S = 3
+STOP_CLOSE_WAIT_S = 4
+RETRY_BACKOFF_S = 1.0  # pause after an unexpected failure so a locked database does not make a loop spin
 MCP_READY_TIMEOUT_S = 90
 HEARTBEAT_EVERY_S = 2
 PING_EVERY_S = 30
@@ -61,6 +67,19 @@ You are running behind a message bridge, not the Telegram plugin. Overrides to a
 - A message with via="ios" was sent from the user's iPhone Shortcut. Same handling: your reply lands in Telegram, where it will likely be read on a phone, so keep it concise.
 - If a message is marked as a retry, a previous attempt may have partially executed: check current state before repeating any side effect.
 """
+
+DEV_PROMPT = """\
+This is the DEVELOPMENT chat (not the household chat). For any code or config change:
+- This session starts in the main checkout, which scheduled runs share. For ANY code or config change, create the worktree FIRST (`git worktree add`, new branch from origin/main) before editing anything. Never leave the main checkout dirty or on a branch other than main, and never switch its branch.
+- A worktree has no `state/` directory, so scripts run there do not see the live data. Never test against the live database (state/*.db) without saying so explicitly.
+- Follow CLAUDE.md's development process: present a plan and wait for approval, work on a branch, open a PR, merge only when the user says to.
+"""
+
+
+def is_dev_session(session_key: str) -> bool:
+    """True when this session belongs to a chat listed in BRIDGE_DEV_CHAT_IDS (directly or via BRIDGE_SESSION_MAP)."""
+    dev = dev_chat_ids()
+    return session_key in dev or any(session_key_for(c) == session_key for c in dev)
 
 
 @dataclass
@@ -179,7 +198,8 @@ class SdkSession:
             cwd=str(REPO_ROOT),
             setting_sources=["project"],
             permission_mode="auto",
-            system_prompt={"type": "preset", "preset": "claude_code", "append": CHANNEL_PROMPT},
+            # The dev note lives in the system prompt (fixed per session), not per turn, so the cached prefix stays stable.
+            system_prompt={"type": "preset", "preset": "claude_code", "append": CHANNEL_PROMPT + ("\n" + DEV_PROMPT if is_dev_session(self.key) else "")},
             resume=resume or None,
             # A background task outlives its turn and its completion has nowhere to be
             # delivered here; make the agent run things in the foreground instead.
@@ -212,12 +232,12 @@ class SdkSession:
             pending = [s.get("name") for s in servers if s.get("status") == "pending"]
             if not pending:
                 bad = [s.get("name") for s in servers if s.get("status") not in ("connected", "disabled")]
-                self.store.kv_set("mcp_down", json.dumps(bad))
+                self.store.set_mcp_down(self.key, bad)
                 self.mcp_ready = True
                 return
             await asyncio.sleep(1)
         log.warning("MCP servers still pending after %ss: proceeding anyway", MCP_READY_TIMEOUT_S)
-        self.store.kv_set("mcp_down", json.dumps(["timeout"]))
+        self.store.set_mcp_down(self.key, ["timeout"])
 
     async def run_turn(self, prompt: str, on_event: Callable[[dict], None], *, require_assistant: bool = True) -> TurnResult:
         from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, UserMessage
@@ -312,7 +332,7 @@ async def model_canary(model: str) -> None:
 
 
 class Worker:
-    def __init__(self, store: BridgeStore, session_factory: Callable[[str], AgentSession], *, turn_timeout: float = TURN_TIMEOUT_S, slow_ack_after: float = SLOW_ACK_AFTER_S):
+    def __init__(self, store: BridgeStore, session_factory: Callable[[str], AgentSession], *, turn_timeout: float = TURN_TIMEOUT_S, slow_ack_after: float = SLOW_ACK_AFTER_S, max_sessions: int = MAX_CONCURRENT_SESSIONS):
         self.store = store
         self.session_factory = session_factory
         self.sessions: dict[str, AgentSession] = {}
@@ -320,6 +340,18 @@ class Worker:
         self.slow_ack_after = slow_ack_after
         self.stop = asyncio.Event()
         self._ping_failures: dict[str, int] = {}
+        self.max_sessions = max_sessions
+        self._loops: dict[str, asyncio.Task] = {}  # session_key -> its running turn loop
+        self._locks: dict[str, asyncio.Lock] = {}  # session_key -> held while its client is in use
+
+    def _lock(self, key: str) -> asyncio.Lock:
+        if key not in self._locks:
+            self._locks[key] = asyncio.Lock()
+        return self._locks[key]
+
+    def _drop_session(self, key: str) -> None:
+        self.sessions.pop(key, None)
+        self.store.clear_mcp_down(key)  # a rebuilt client re-reports; don't leave a dead session's state in the union
 
     def _session(self, key: str) -> AgentSession:
         if key not in self.sessions:
@@ -330,60 +362,126 @@ class Worker:
         source = None if kind == "reply" else "worker"
         self.store.enqueue_outbound(row["channel"], row["chat_ref"], text, in_reply_to=row["id"], source=source, kind=kind, note=note)
 
-    async def process_one(self) -> bool:
-        row = self.store.claim_next()
+    async def process_one(self, session_key: str | None = None) -> bool:
+        """Claim and run one message (of `session_key`, or the oldest of any session). False if none."""
+        row = self.store.claim_next(session_key)
         if row is None:
             return False
+        try:
+            return await self._run_claimed(row)
+        except asyncio.CancelledError:
+            self._safe_requeue(row)
+            raise
+        except Exception as e:  # noqa: BLE001
+            # Anything unexpected between claim and finish: never strand the row as 'processing'
+            # (claim_next only takes 'pending'). attempts is kept, so MAX_ATTEMPTS still bounds retries.
+            log.exception("message %s failed unexpectedly: %r", row["id"], e)
+            self._safe_requeue(row)
+            await asyncio.sleep(RETRY_BACKOFF_S)
+            return True
+
+    def _safe_requeue(self, row: dict) -> None:
+        try:
+            self.store.requeue(row["id"])
+        except Exception as e:  # noqa: BLE001
+            log.error("could not requeue message %s: %r (recover_in_flight will on restart)", row["id"], e)
+
+    async def _run_claimed(self, row: dict) -> bool:
+        key = row["session_key"]
         if row["attempts"] > MAX_ATTEMPTS:
             self.store.fail(row["id"])
             self._reply(row, "⚠️ I couldn't process that message after several attempts. Please resend it or rephrase.", kind="notice", note=True)
             return True
         resolve_reply_to(self.store, row)
-        session = self._session(row["session_key"])
-        should_rotate = getattr(session, "should_rotate", None)
-        if should_rotate and should_rotate():
-            await session.rotate()
         started = time.time()
         events: list[dict] = []
 
         def on_event(ev: dict) -> None:
-            ev = {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "session": row["session_key"], **ev}
+            ev = {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "session": key, **ev}
             events.append(ev)
             _append_jsonl(STREAM_LOG, ev)
 
-        _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_start", "text": row["text"][:500]})
-        self.store.kv_set("current_turn", json.dumps({"inbox_id": row["id"], "started": started}))
-        slow_task = asyncio.create_task(self._slow_ack(row))
+        _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "session": key, "type": "turn_start", "text": row["text"][:500]})
+        slow_task = asyncio.create_task(self._slow_ack(row))  # also covers waiting behind compaction
+        session = None
+        lock, marked, running = self._lock(key), False, False
         try:
-            result = await asyncio.wait_for(session.run_turn(format_turn_prompt(row), on_event), timeout=self.turn_timeout)
+            try:
+                await asyncio.wait_for(lock.acquire(), timeout=self.turn_timeout)
+            except asyncio.TimeoutError:
+                raise RuntimeError(f"session {key} stayed busy for {self.turn_timeout}s") from None  # requeued by the caller
+            try:
+                # Marker set only now: the lock holder before us (maintenance) clears its own marker on exit.
+                self.store.set_current_turn(key, row["id"], started)
+                marked = True
+                session = self._session(key)
+                should_rotate = getattr(session, "should_rotate", None)
+                if should_rotate and should_rotate():
+                    await session.rotate()
+                running = True
+                result = await asyncio.wait_for(session.run_turn(format_turn_prompt(row), on_event), timeout=self.turn_timeout)
+            finally:
+                lock.release()
         except asyncio.TimeoutError:
             log.error("turn %s timed out", row["id"])
-            await session.close()
-            self.sessions.pop(row["session_key"], None)
+            if session is not None:
+                await session.close()
+            self._drop_session(key)
             self.store.complete(row["id"])
             self._reply(row, "⚠️ That took too long and I had to stop. Try again or break it into smaller steps.", kind="notice", note=True)
             _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_timeout"})
             return True
+        except asyncio.CancelledError:
+            # Worker is stopping mid-turn: hand the message back for redelivery (as recover_in_flight would).
+            self.store.requeue(row["id"])
+            raise
         except Exception as e:  # noqa: BLE001
             # Leave the row 'processing'->pending for redelivery; rebuild the client.
             log.exception("turn %s failed: %s", row["id"], e)
-            await session.close()
-            self.sessions.pop(row["session_key"], None)
+            if session is not None:
+                await session.close()
+            self._drop_session(key)
             self.store.requeue(row["id"])
             _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_error", "error": repr(e)})
+            if not running:
+                await asyncio.sleep(RETRY_BACKOFF_S)  # failed before the turn ran (e.g. database locked): don't spin
             return True
         finally:
             slow_task.cancel()
-            self.store.kv_set("current_turn", "")
+            if marked:
+                self.store.clear_current_turn(key)
 
         # Never close a message without telling the user something.
         final = result.text if result.text.strip() else "✅ Done (I had nothing further to report)."
         self._reply(row, final)
         self.store.complete(row["id"])
         self._track_daily_cost(result.cost_usd or 0.0)
-        _append_jsonl(USAGE_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "session": row["session_key"], "inbox_id": row["id"], "duration_s": round(time.time() - started, 1), "cost_usd": result.cost_usd, "usage": result.usage})
+        _append_jsonl(USAGE_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "session": key, "inbox_id": row["id"], "duration_s": round(time.time() - started, 1), "cost_usd": result.cost_usd, "usage": result.usage})
         _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_end", "duration_s": round(time.time() - started, 1)})
         return True
+
+    async def _session_loop(self, key: str) -> None:
+        """Drain one session's queue in order, then end (the dispatcher respawns it when more arrives).
+        Other sessions have their own loops, so a long turn here never blocks them."""
+        try:
+            while not self.stop.is_set() and self.store.kv_get("paused") != "1":
+                if not await self.process_one(key):
+                    return
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.exception("session loop %s crashed: %r", key, e)
+            await asyncio.sleep(1)  # backoff before the dispatcher respawns it
+
+    def _spawn_session_loops(self) -> None:
+        for key in self.store.pending_session_keys():
+            if len(self._loops) >= self.max_sessions:
+                break
+            if key in self._loops:
+                continue
+            task = asyncio.create_task(self._session_loop(key), name=f"session:{key}")
+            self._loops[key] = task
+            task.add_done_callback(lambda t, k=key: self._loops.pop(k, None) if self._loops.get(k) is t else None)
 
     def _track_daily_cost(self, cost: float) -> None:
         """Optional guard rail: alert once per day when API-rate cost passes BRIDGE_DAILY_COST_ALERT_USD."""
@@ -399,27 +497,37 @@ class Worker:
             self._alert(f"💸 Agent usage today is about ${total:.2f} at API rates (alert threshold ${limit:.2f}).")
 
     async def maintenance_once(self, now: datetime | None = None) -> bool:
-        """Quiet-hours compaction with instructions that keep what matters. Returns True if it ran."""
+        """Quiet-hours compaction with instructions that keep what matters. Compacts each big session
+        that is idle (no queued or running message, nobody holding its client); a busy one is retried
+        next minute while still inside the hour. Returns True once the day's pass is complete."""
         now = now or datetime.now()
         today = now.strftime("%Y-%m-%d")
         if now.hour != MAINTENANCE_HOUR or self.store.kv_get("last_maintenance") == today:
             return False
-        stats = self.store.stats()
-        if stats["inbox_pending"] or stats["inbox_processing"] or self.store.kv_get("current_turn"):
-            return False  # try again next minute while still inside the hour
-        self.store.kv_set("last_maintenance", today)
+        active = self.store.active_session_keys() | set(self.store.current_turns())
+        deferred = False
         for key, session in list(self.sessions.items()):
             compact = getattr(session, "compact", None)
-            if compact is None or int(self.store.kv_get(f"ctx_tokens:{key}", "0") or 0) < COMPACT_MIN_TOKENS:
+            if compact is None or self.store.kv_get(f"last_maintenance:{key}") == today:
                 continue
-            self.store.kv_set("current_turn", json.dumps({"inbox_id": "maintenance", "started": time.time()}))
+            if int(self.store.kv_get(f"ctx_tokens:{key}", "0") or 0) < COMPACT_MIN_TOKENS:
+                continue
+            if key in active or self._lock(key).locked():
+                deferred = True
+                continue
+            self.store.kv_set(f"last_maintenance:{key}", today)
+            self.store.set_current_turn(key, "maintenance", time.time())
             try:
-                await asyncio.wait_for(compact(), timeout=self.turn_timeout)
+                async with self._lock(key):
+                    await asyncio.wait_for(compact(), timeout=self.turn_timeout)
                 _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "type": "compacted", "session": key})
             except Exception as e:  # noqa: BLE001
                 log.error("maintenance compaction failed for %s: %r", key, e)
             finally:
-                self.store.kv_set("current_turn", "")
+                self.store.clear_current_turn(key)
+        if deferred:
+            return False
+        self.store.kv_set("last_maintenance", today)
         return True
 
     async def maintenance_loop(self) -> None:
@@ -435,7 +543,10 @@ class Worker:
         self._reply(row, "⏳ On it. This is taking a bit; I'll send the result when it's ready.", kind="notice")
 
     def _alert(self, text: str) -> None:
-        chat = os.environ.get("TELEGRAM_ALERT_CHAT_ID") or (os.environ.get("BRIDGE_ALLOWED_CHAT_IDS", "").split(",")[0].strip())
+        # Alerts go to the household chat, never a dev chat (household_chat_id skips BRIDGE_DEV_CHAT_IDS).
+        chat = os.environ.get("TELEGRAM_ALERT_CHAT_ID") or household_chat_id()
+        if chat in dev_chat_ids():
+            chat = household_chat_id()
         if chat:
             self.store.enqueue_outbound("telegram", chat, text, source="worker", kind="alert", note=True)
 
@@ -450,30 +561,42 @@ class Worker:
             self._alert(f"✅ Agent health check recovered ({kind}).")
 
     async def ping_once(self) -> None:
-        """Ping every live session that isn't mid-turn. Two straight failures rebuild the client."""
-        if self.store.kv_get("current_turn"):
-            return
+        """Ping every live session that isn't mid-turn (a busy one is skipped, so a long turn is never
+        misread as a hung client). Two straight failures rebuild that session's client."""
+        busy = set(self.store.current_turns())
+        failures: list[str] = []
+        notes: list[str] = []
+        pinged = False
         for key, session in list(self.sessions.items()):
             ping = getattr(session, "ping", None)
-            if ping is None:
+            lock = self._locks.get(key)
+            if ping is None or key in busy or "legacy" in busy or (lock is not None and lock.locked()):
                 continue
+            pinged = True
             try:
                 down = await asyncio.wait_for(ping(), timeout=PING_TIMEOUT_S)
-                self.store.kv_set("mcp_down", json.dumps(down))
+                self.store.set_mcp_down(key, down)
                 self._ping_failures[key] = 0
-                self._record_canary("ping", True, f"mcp not connected: {down}" if down else "")
+                if down:
+                    notes.append(f"mcp not connected: {down}")
             except Exception as e:  # noqa: BLE001
                 self._ping_failures[key] = self._ping_failures.get(key, 0) + 1
-                self._record_canary("ping", False, repr(e))
+                failures.append(repr(e))
                 if self._ping_failures[key] >= 2:
                     log.error("session %s unresponsive; rebuilding client", key)
                     await session.close()
-                    self.sessions.pop(key, None)
+                    self._drop_session(key)
                     self._ping_failures[key] = 0
+        if pinged:
+            # One result per pass: a hung session and a healthy one must not flip failed/recovered alerts.
+            if failures:
+                self._record_canary("ping", False, "; ".join(failures))
+            else:
+                self._record_canary("ping", True, "; ".join(notes))
 
     async def model_canary_once(self, fn: Callable[[], Awaitable[None]]) -> None:
-        if self.store.kv_get("current_turn"):
-            return
+        # No busy gate: the canary is a throwaway session that touches no live client, so it must keep
+        # running (and can catch an auth/API outage) while a long dev or household turn is in progress.
         try:
             await asyncio.wait_for(fn(), timeout=MODEL_CANARY_TIMEOUT_S)
             self._record_canary("model", True)
@@ -486,7 +609,7 @@ class Worker:
         while not self.stop.is_set():
             await asyncio.sleep(PING_EVERY_S)
             probe = Worker(cstore, self.session_factory)  # own connection; shares live sessions below
-            probe.sessions, probe._ping_failures = self.sessions, self._ping_failures
+            probe.sessions, probe._ping_failures, probe._locks = self.sessions, self._ping_failures, self._locks
             await probe.ping_once()
             if time.time() - last_model >= MODEL_CANARY_EVERY_S:
                 last_model = time.time()
@@ -505,20 +628,34 @@ class Worker:
         recovered = self.store.recover_in_flight()
         if recovered:
             log.warning("recovered %d in-flight message(s) from a previous crash", recovered)
+        self.store.clear_all_current_turns()  # also drops the pre-concurrency single `current_turn` value
+        self.store.clear_mcp_down()  # sessions re-report as they connect; stale keys must not pin the union
         hb = asyncio.create_task(self.heartbeat_loop())
         canary = asyncio.create_task(self.canary_loop(model))
         maint = asyncio.create_task(self.maintenance_loop())
         sd_notify("READY=1")
         try:
+            # Dispatcher: a loop per session with pending work, so a long turn in one session never
+            # blocks another. Idle sessions have no task at all; nothing spins.
             while not self.stop.is_set():
-                if self.store.kv_get("paused") == "1" or not await self.process_one():
-                    await asyncio.sleep(0.3)
+                if self.store.kv_get("paused") != "1":
+                    self._spawn_session_loops()
+                await asyncio.sleep(0.3)
         finally:
             hb.cancel()
             canary.cancel()
             maint.cancel()
-            for s in self.sessions.values():
-                await s.close()
+            loops = list(self._loops.values())
+            if loops:
+                _, pending = await asyncio.wait(loops, timeout=STOP_GRACE_S)  # let running turns finish briefly
+                for t in pending:
+                    t.cancel()  # process_one requeues its message, so it is redelivered on restart
+                if pending:
+                    await asyncio.wait(pending, timeout=STOP_CANCEL_WAIT_S)
+            if self.sessions:
+                await asyncio.wait([asyncio.ensure_future(s.close()) for s in self.sessions.values()], timeout=STOP_CLOSE_WAIT_S)
+            for key in list(self.sessions):
+                self.store.clear_mcp_down(key)
 
 
 def main() -> int:

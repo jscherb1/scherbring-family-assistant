@@ -339,3 +339,442 @@ def test_brand_new_session_is_seeded_from_message_log(tmp_path):
     finally:
         claude_agent_sdk.ClaudeSDKClient = orig
     assert "earlier question" in s.seed and "earlier answer" in s.seed
+
+
+# ---------------------------------------------------------------- concurrent sessions
+
+class GateSession(FakeSession):
+    """Blocks inside run_turn until its gate is opened; records start/finish order."""
+
+    def __init__(self, key, log, gates, fail=False):
+        super().__init__()
+        self.key, self.log, self.gates, self.fail = key, log, gates, fail
+
+    async def run_turn(self, prompt, on_event):
+        self.prompts.append(prompt)
+        self.log.append(("start", self.key, prompt))
+        gate = self.gates.get(self.key)
+        if gate is not None:
+            await gate.wait()
+        if self.fail:
+            raise RuntimeError("sdk died")
+        self.log.append(("end", self.key, prompt))
+        return TurnResult(text=f"done {self.key}", session_id="s", cost_usd=0.0, usage={})
+
+
+def make_concurrent(tmp_path, gates=None, fail_keys=(), **kw):
+    agent_worker.STREAM_LOG = tmp_path / "stream.jsonl"
+    agent_worker.USAGE_LOG = tmp_path / "usage.jsonl"
+    store = BridgeStore(tmp_path / "i.db")
+    log, gates = [], gates if gates is not None else {}
+    w = Worker(store, lambda key: GateSession(key, log, gates, fail=key in fail_keys), **kw)
+    return store, w, log, gates
+
+
+async def _until(pred, timeout=5.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        if pred():
+            return True
+        await asyncio.sleep(0.02)
+    return False
+
+
+def _replies(store, chat):
+    return [r["text"] for r in store._conn.execute("SELECT text FROM outbox WHERE chat_ref=? AND kind='reply'", (chat,))]
+
+
+def test_blocked_session_does_not_block_another(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path, gates={"A": asyncio.Event()})
+        store.add_inbound("telegram", "A", "long dev task", external_id="1")
+        store.add_inbound("telegram", "B", "turn off the lights", external_id="2")
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: _replies(store, "B") == ["done B"])
+        assert _replies(store, "A") == []  # A is still mid-turn
+        assert set(store.current_turns()) == {"A"}
+        gates["A"].set()
+        assert await _until(lambda: _replies(store, "A") == ["done A"])
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+        assert store.stats()["inbox_pending"] == 0 and store.stats()["inbox_processing"] == 0
+        assert store.current_turns() == {}
+
+    asyncio.run(go())
+
+
+def test_same_session_order_preserved(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path, gates={"A": asyncio.Event()})
+        store.add_inbound("telegram", "A", "first", external_id="1")
+        store.add_inbound("telegram", "A", "second", external_id="2")
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: any(e[0] == "start" for e in log))
+        await asyncio.sleep(0.5)
+        assert [e[:2] for e in log] == [("start", "A")]  # second must wait for the first
+        gates["A"].set()
+        assert await _until(lambda: len(_replies(store, "A")) == 2)
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+        order = [("first" in e[2], e[0]) for e in log]
+        assert order == [(True, "start"), (True, "end"), (False, "start"), (False, "end")]
+
+    asyncio.run(go())
+
+
+def test_paused_stops_all_sessions_then_resumes(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path)
+        store.kv_set("paused", "1")
+        store.add_inbound("telegram", "A", "a", external_id="1")
+        store.add_inbound("telegram", "B", "b", external_id="2")
+        run = asyncio.create_task(w.run())
+        await asyncio.sleep(0.8)
+        assert log == [] and store.stats()["inbox_pending"] == 2
+        store.kv_set("paused", "0")
+        assert await _until(lambda: store.stats()["inbox_pending"] == 0 and len(log) == 4)
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+
+    asyncio.run(go())
+
+
+def test_failure_in_one_session_does_not_kill_the_other(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path, fail_keys=("A",))
+        store.add_inbound("telegram", "A", "boom", external_id="1")
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: any(e[:2] == ("start", "A") for e in log))
+        store.add_inbound("telegram", "B", "fine", external_id="2")
+        assert await _until(lambda: _replies(store, "B") == ["done B"])
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+
+    asyncio.run(go())
+
+
+def test_loop_exception_outside_turn_is_contained_and_respawned(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path)
+        real = w.process_one
+        calls = {"n": 0}
+
+        async def flaky(key=None):
+            if key == "A" and calls["n"] == 0:
+                calls["n"] += 1
+                raise RuntimeError("db hiccup")
+            return await real(key)
+
+        w.process_one = flaky
+        store.add_inbound("telegram", "A", "a", external_id="1")
+        store.add_inbound("telegram", "B", "b", external_id="2")
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: _replies(store, "B") == ["done B"])
+        assert await _until(lambda: _replies(store, "A") == ["done A"], timeout=6)  # respawned after backoff
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+
+    asyncio.run(go())
+
+
+def test_idle_session_loops_exit_and_are_not_leaked(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path)
+        store.add_inbound("telegram", "A", "a", external_id="1")
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: _replies(store, "A") == ["done A"])
+        assert await _until(lambda: w._loops == {})
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+
+    asyncio.run(go())
+
+
+def test_concurrent_sessions_are_capped(tmp_path):
+    async def go():
+        gates = {k: asyncio.Event() for k in "ABC"}
+        store, w, log, _ = make_concurrent(tmp_path, gates=gates, max_sessions=2)
+        for i, k in enumerate("ABC"):
+            store.add_inbound("telegram", k, k, external_id=str(i))
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: len(store.current_turns()) == 2)
+        await asyncio.sleep(0.5)
+        assert set(store.current_turns()) == {"A", "B"}  # C waits for a free slot
+        gates["A"].set()
+        assert await _until(lambda: "C" in {e[1] for e in log})
+        for g in gates.values():
+            g.set()
+        assert await _until(lambda: store.stats()["inbox_pending"] == 0 and store.stats()["inbox_processing"] == 0)
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+
+    asyncio.run(go())
+
+
+def test_stop_cancels_unfinished_turn_and_redelivers(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_worker, "STOP_GRACE_S", 0.3)
+
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path, gates={"A": asyncio.Event()})
+        store.add_inbound("telegram", "A", "never finishes", external_id="1")
+        store.add_inbound("telegram", "B", "quick", external_id="2")
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: _replies(store, "B") == ["done B"])
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+        # A's message is back to pending for the next start; nothing is left marked as running.
+        assert store.stats()["inbox_pending"] == 1 and store.stats()["inbox_processing"] == 0
+        assert store.current_turns() == {}
+
+    asyncio.run(go())
+
+
+def test_current_turn_is_a_per_session_map(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path, gates={"A": asyncio.Event(), "B": asyncio.Event()})
+        store.add_inbound("telegram", "A", "a", external_id="1")
+        store.add_inbound("telegram", "B", "b", external_id="2")
+        run = asyncio.create_task(w.run())
+        assert await _until(lambda: len(store.current_turns()) == 2)
+        snap = store.health_snapshot()
+        assert {t["session"] for t in snap["current_turns"]} == {"A", "B"}
+        assert snap["current_turn"]["session"] in ("A", "B")
+        gates["A"].set()
+        assert await _until(lambda: set(store.current_turns()) == {"B"})  # A's marker cleared, B's untouched
+        gates["B"].set()
+        assert await _until(lambda: store.current_turns() == {})
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+
+    asyncio.run(go())
+
+
+def test_old_single_turn_value_is_tolerated_and_cleared_on_start(tmp_path):
+    store = BridgeStore(tmp_path / "i.db")
+    store.kv_set("current_turn", '{"inbox_id": 5, "started": %f}' % (time.time() - 10))
+    snap = store.health_snapshot()
+    assert snap["current_turns"][0]["session"] == "legacy" and snap["current_turns"][0]["inbox_id"] == 5
+    store.kv_set("current_turn", "not json")
+    assert store.health_snapshot()["current_turns"] == []
+    store.kv_set("current_turn", '{"inbox_id": 5, "started": 1}')
+    store.kv_set("current_turn:A", '{"inbox_id": 6, "started": 1}')
+
+    async def go():
+        w = Worker(store, lambda key: FakeSession())
+        run = asyncio.create_task(w.run())
+        await asyncio.sleep(0.2)
+        assert store.current_turns() == {}  # stale markers from a killed worker are dropped
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+
+    asyncio.run(go())
+
+
+def test_mcp_down_is_the_union_across_sessions(tmp_path):
+    store = BridgeStore(tmp_path / "i.db")
+    store.set_mcp_down("A", ["todoist"])
+    store.set_mcp_down("B", [])  # B's view must not wipe A's
+    assert store.health_snapshot()["mcp_down"] == ["todoist"]
+    store.set_mcp_down("B", ["ha"])
+    assert store.health_snapshot()["mcp_down"] == ["ha", "todoist"]
+    store.set_mcp_down("A", [])
+    assert store.health_snapshot()["mcp_down"] == ["ha"]
+
+
+def test_ping_skips_only_the_busy_session(tmp_path):
+    store, w, _ = make(tmp_path)
+    store.set_current_turn("A", 1, time.time())
+    busy, idle = PingSession([RuntimeError("would fail")]), PingSession([[]])
+    w.sessions["A"], w.sessions["B"] = busy, idle
+    asyncio.run(w.ping_once())
+    assert busy.results and not idle.results  # A untouched, B pinged
+    assert store.health_snapshot()["last_canary"]["ok"] is True
+
+
+def test_model_canary_runs_while_a_session_is_busy(tmp_path):
+    store, w, _ = make(tmp_path)
+    store.set_current_turn("A", 1, time.time())
+    ran = []
+
+    async def ok():
+        ran.append(1)
+
+    asyncio.run(w.model_canary_once(ok))
+    assert ran and store.health_snapshot()["last_canary"]["kind"] == "model"
+
+
+def test_maintenance_compacts_idle_session_while_another_is_busy(tmp_path):
+    from datetime import datetime
+
+    store, w, _ = make(tmp_path)
+    a, b = CompactSession(), CompactSession()
+    w.sessions["A"], w.sessions["B"] = a, b
+    for k in "AB":
+        store.kv_set(f"ctx_tokens:{k}", str(agent_worker.COMPACT_MIN_TOKENS + 1))
+    store.add_inbound("telegram", "A", "busy", external_id="1")
+    store.claim_next("A")
+    store.set_current_turn("A", 1, time.time())
+    assert asyncio.run(w.maintenance_once(datetime(2026, 10, 7, 3, 0))) is False  # A deferred, day not done
+    assert (a.compacted, b.compacted) == (0, 1)
+    store.complete(1)
+    store.clear_current_turn("A")
+    assert asyncio.run(w.maintenance_once(datetime(2026, 10, 7, 3, 1))) is True
+    assert (a.compacted, b.compacted) == (1, 1)  # B is not compacted twice
+    assert store.current_turns() == {}
+
+
+def test_sdk_options_dev_note_only_for_dev_chats(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRIDGE_DEV_CHAT_IDS", "-100")
+    monkeypatch.setenv("BRIDGE_SESSION_MAP", "{}")
+    store = BridgeStore(tmp_path / "i.db")
+    dev = agent_worker.SdkSession("-100", store, "sonnet")._options().system_prompt["append"]
+    home = agent_worker.SdkSession("1", store, "sonnet")._options().system_prompt["append"]
+    assert "git worktree add" in dev and "never switch its branch" in dev
+    assert dev.startswith(agent_worker.CHANNEL_PROMPT)  # stable shared prefix, note appended after
+    assert home == agent_worker.CHANNEL_PROMPT and "worktree" not in home
+
+
+def test_no_dev_session_when_unconfigured(monkeypatch):
+    import paths
+    monkeypatch.delenv("BRIDGE_DEV_CHAT_IDS", raising=False)
+    monkeypatch.setattr(paths, "get_env", lambda k, *a, **kw: None)
+    assert agent_worker.is_dev_session("-100") is False
+
+
+def test_alert_never_lands_in_dev_chat(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRIDGE_DEV_CHAT_IDS", "-100")
+    monkeypatch.setenv("BRIDGE_ALLOWED_CHAT_IDS", "-100,1")
+    monkeypatch.delenv("TELEGRAM_ALERT_CHAT_ID", raising=False)
+    store, w, _ = make(tmp_path)
+    w._alert("hello")
+    assert [r["chat_ref"] for r in store._conn.execute("SELECT chat_ref FROM outbox")] == ["1"]
+    monkeypatch.setenv("TELEGRAM_ALERT_CHAT_ID", "-100")  # misconfigured: still protected
+    w._alert("again")
+    assert {r["chat_ref"] for r in store._conn.execute("SELECT chat_ref FROM outbox")} == {"1"}
+
+
+def test_context_notes_follow_session_key(tmp_path):
+    store = BridgeStore(tmp_path / "i.db")
+    store.add_inbound("scheduled:x", "1", "household note", kind="context_note", session_key="1")
+    store.add_inbound("telegram", "-100", "dev question", external_id="1", session_key="-100")
+    row = store.claim_next("-100")
+    assert row["notes"] == []  # household notes stay out of the dev session
+
+
+# ---------------------------------------------------------------- review fixes
+
+def test_ping_alerts_are_one_per_outage_across_sessions(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRIDGE_ALLOWED_CHAT_IDS", "1")
+    monkeypatch.delenv("TELEGRAM_ALERT_CHAT_ID", raising=False)
+    store, w, _ = make(tmp_path)
+    hung = PingSession([RuntimeError("hung")] * 2)
+    healthy = PingSession([[], [], []])
+    w.sessions["A"], w.sessions["B"] = hung, healthy
+    asyncio.run(w.ping_once())  # A fails, B ok: one failure alert, no recovery flip
+    asyncio.run(w.ping_once())  # A fails again and is rebuilt: still the same outage
+    alerts = _alerts(store)
+    assert len(alerts) == 1 and "failed (ping)" in alerts[0]
+    asyncio.run(w.ping_once())  # only B left, all ok: recovered once
+    alerts = _alerts(store)
+    assert len(alerts) == 1 and "recovered" in alerts[0]
+
+
+def test_ping_skips_session_whose_lock_is_held(tmp_path):
+    async def go():
+        store, w, _ = make(tmp_path)
+        s = PingSession([RuntimeError("would fail")])
+        w.sessions["A"] = s
+        async with w._lock("A"):  # e.g. compaction in progress, no turn marker
+            await w.ping_once()
+        assert s.results and store.kv_get("last_canary") is None
+
+    asyncio.run(go())
+
+
+def test_turn_queued_behind_compaction_keeps_marker_and_slow_acks(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path, slow_ack_after=0.1)
+        lock = w._lock("A")
+        await lock.acquire()  # maintenance holds the session
+        store.set_current_turn("A", "maintenance", time.time())
+        store.add_inbound("telegram", "A", "hi", external_id="1")
+        task = asyncio.create_task(w.process_one("A"))
+        await asyncio.sleep(0.4)
+        assert store.current_turns()["A"]["inbox_id"] == "maintenance"  # the waiting turn did not overwrite it
+        assert any("On it" in r["text"] for r in store._conn.execute("SELECT text FROM outbox"))
+        store.clear_current_turn("A")  # compaction finishes
+        lock.release()
+        assert await asyncio.wait_for(task, 5) is True
+        assert _replies(store, "A") == ["done A"] and store.current_turns() == {}
+
+    asyncio.run(go())
+
+
+def test_exception_after_claim_requeues_instead_of_stranding(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_worker, "RETRY_BACKOFF_S", 0)
+    store, w, log, gates = make_concurrent(tmp_path)
+    store.add_inbound("telegram", "A", "hi", external_id="1")
+    real = store.set_current_turn
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("database is locked")
+        return real(*a, **k)
+
+    store.set_current_turn = boom
+    assert asyncio.run(w.process_one("A")) is True  # swallowed, not raised
+    assert store.stats()["inbox_pending"] == 1 and store.stats()["inbox_processing"] == 0
+    assert asyncio.run(w.process_one("A")) is True  # retried and completed
+    assert _replies(store, "A") == ["done A"]
+
+
+def test_repeated_unexpected_failure_hits_max_attempts(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_worker, "RETRY_BACKOFF_S", 0)
+    store, w, log, gates = make_concurrent(tmp_path)
+    store.add_inbound("telegram", "A", "hi", external_id="1")
+    store.set_current_turn = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("always"))
+    for _ in range(agent_worker.MAX_ATTEMPTS + 1):
+        asyncio.run(w.process_one("A"))
+    assert store.stats()["inbox_pending"] == 0 and store.stats()["inbox_processing"] == 0
+    assert "couldn't process" in store.next_outbound("telegram")["text"]
+
+
+def test_unexpected_failure_backs_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_worker, "RETRY_BACKOFF_S", 0.3)
+    store, w, log, gates = make_concurrent(tmp_path)
+    store.add_inbound("telegram", "A", "hi", external_id="1")
+    store.set_current_turn = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked"))
+    t0 = time.time()
+    asyncio.run(w.process_one("A"))
+    assert time.time() - t0 >= 0.3
+
+
+def test_closed_sessions_leave_no_mcp_state(tmp_path):
+    store = BridgeStore(tmp_path / "i.db")
+    store.set_mcp_down("A", ["ha"])
+    store.clear_mcp_down("A")
+    assert store.health_snapshot()["mcp_down"] == [] and store.kv_get("mcp_down:A") is None
+    store.set_mcp_down("B", ["x"])
+    store.clear_mcp_down()
+    assert store.health_snapshot()["mcp_down"] == []
+
+    async def go():
+        w = Worker(store, lambda key: FakeSession())
+        w.sessions["Z"] = FakeSession()
+        store.set_mcp_down("Z", ["stale"])
+        run = asyncio.create_task(w.run())
+        await asyncio.sleep(0.2)
+        assert store.health_snapshot()["mcp_down"] == []  # start clears the previous run's keys
+        store.set_mcp_down("Z", ["stale"])
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+        assert store.health_snapshot()["mcp_down"] == [] and w.sessions["Z"].closed
+
+    asyncio.run(go())
+
+
+def test_dev_prompt_mentions_worktree_first_and_no_live_state():
+    p = agent_worker.DEV_PROMPT
+    assert "worktree FIRST" in p and "state/" in p and "live database" in p and "dirty" in p

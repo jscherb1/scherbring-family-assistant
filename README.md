@@ -72,7 +72,7 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `scripts/setup_wsl.sh` | Builds `.venv`, installs Python deps + Playwright Chromium, the pinned `ha-mcp` and Monarch servers |
 | `scripts/paths.py` | Shared locations and secrets loading (`~/.config/scherbring-assistant/.env`); every script goes through this, nothing hardcodes a home directory |
 | `scripts/telegram_bridge.py` | Telegram bridge: polls Telegram into a durable inbox (`state/inbox.db`) and delivers replies from the outbox with retry |
-| `scripts/agent_worker.py` | Agent worker: runs Claude turns for inbox messages via the Agent SDK, resumes its session after a restart |
+| `scripts/agent_worker.py` | Agent worker: runs Claude turns for inbox messages via the Agent SDK (one concurrent loop per chat/session; a Telegram dev group is its own session), resumes its session after a restart |
 | `scripts/agent_ctl.py` | Operate the bridge and worker: `status`, `tail`, `say`, `pause`/`resume`, `sessions`, `drill` |
 | `scripts/run_watchdog.sh` | One watchdog pass (scheduler health + log pruning); run every 2 minutes by `assistant-watchdog.timer` |
 | `scripts/watchdog_scheduler_health.py` | Detects a stalled scheduler dispatcher (via the heartbeat file), restarts the timer, and sends a direct Telegram alert |

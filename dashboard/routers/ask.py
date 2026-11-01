@@ -20,7 +20,7 @@ from ..web import render
 
 sys.path.insert(0, str(common.SCRIPTS_DIR))
 from bridge_store import BridgeStore, session_key_for  # noqa: E402
-from paths import get_env  # noqa: E402
+from paths import get_env, household_chat_id  # noqa: E402
 
 router = APIRouter()
 
@@ -34,7 +34,7 @@ def _chat_id() -> str:
     explicit = (get_env("DASHBOARD_ASK_CHAT_ID") or "").strip()
     if explicit:
         return explicit
-    return (get_env("BRIDGE_ALLOWED_CHAT_IDS") or "").split(",")[0].strip()
+    return household_chat_id()  # first allowed chat that is not a dev chat
 
 
 def _same_origin(request: Request) -> bool:

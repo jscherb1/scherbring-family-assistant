@@ -120,7 +120,36 @@ the last 48 h / 40 messages); a quiet-hours (03:xx) `/compact` runs if context >
 Config (in `~/.config/scherbring-assistant/.env`): `TELEGRAM_TEST_BOT_TOKEN`,
 `BRIDGE_ALLOWED_CHAT_IDS` (comma-separated; empty = pairing mode, nobody is served and the bot
 replies with the sender's chat id), optional `BRIDGE_SESSION_MAP` (`{"chat_id":"shared-key"}` to
-put several chats in one session; default is one session per chat).
+put several chats in one session; default is one session per chat; do not map a dev chat into a household
+session), `BRIDGE_DEV_CHAT_IDS` (comma-separated dev chats, see above), `TELEGRAM_ALERT_CHAT_ID` and
+`DASHBOARD_ASK_CHAT_ID` (household chat id; required in practice once a dev chat exists).
+
+**Concurrent sessions and the dev chat.** The worker runs one loop per session (by default one session per
+chat), so a long turn in one chat (a 500 s Hy-Vee cart, a dev task) never blocks another; messages inside a
+session are still answered in order. At most 4 sessions run at once (`MAX_CONCURRENT_SESSIONS`); loops exist only
+while a session has queued work. `paused`, the health canaries, cost tracking and crash recovery are global;
+`current_turn` is per session (`current_turn:<session_key>` in the `kv` table; `agent_ctl.py status` and the
+dashboard list every running turn); the global MCP-down list is the union over sessions. The quiet-hours compaction
+only compacts a session that is idle, and the 30 s ping skips a session that is mid-turn. On SIGTERM the worker waits
+10 s for running turns, then cancels them (3 s) and closes clients (4 s), inside systemd's 20 s stop timeout, and puts
+cancelled messages back in the queue (redelivered as a retry). A turn that fails before it starts (for example a locked
+database) is requeued after a 1 s pause, bounded by the 3-attempt limit.
+
+The Telegram group on the same bot is the dev chat. Put its id in `BRIDGE_ALLOWED_CHAT_IDS` (the allow list is
+per chat; nobody but the owner is in the group) and in `BRIDGE_DEV_CHAT_IDS`. Its session gets a dev note in its
+system prompt: use `git worktree add` for code changes, never switch branches in the main checkout (scheduled runs
+share it), follow the CLAUDE.md development process. The household session does not get it, and context notes
+(scheduled results, alerts) follow the session key, so household notes never appear in dev. Because alerts, the
+dashboard ask box and `agent_ctl.py say` default to "the first allowed chat", set `TELEGRAM_ALERT_CHAT_ID` and
+`DASHBOARD_ASK_CHAT_ID` explicitly to the household chat; `agent_ctl.py status` warns if a dev chat is configured and
+they are not. The fallback (first allowed chat) skips dev chats, and `say` only reaches a dev chat with `--as`.
+Dev and household sessions share the Claude memory directory and fixed-name temp files such as `state/hyvee_tmp`
+and `state/myhub_tmp`, so don't run the same flow (a Hy-Vee build, a hub refresh) from both at once. A dev worktree has
+no `state/`, so scripts run there don't see live data; the dev prompt says so. Outage alerts from the bridge go to
+`TELEGRAM_ALERT_CHAT_ID`, else the first non-dev allowed chat, never the group. `/status@botname` works in groups. If Telegram upgrades the basic group to a supergroup its chat id changes: the
+bridge logs `chat <old> was upgraded to a supergroup with NEW chat id <new>` and answers nothing from the new id
+(it replies "Not authorized. Your chat id is ..."); replace the old id in `BRIDGE_ALLOWED_CHAT_IDS` and
+`BRIDGE_DEV_CHAT_IDS` and restart the bridge and worker. Config is never rewritten automatically.
 
 Hard rules learned the hard way: the worker disables Claude background tasks (their completion has
 nowhere to be delivered) and ignores stale result events; never close a message without a reply.
