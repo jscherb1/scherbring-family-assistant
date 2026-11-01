@@ -535,8 +535,10 @@ def test_model_cannot_reach_anything_off_the_allow_list(bad, ctx):
 
 def test_model_close_needs_a_closing_word_in_the_message(ctx):
     ok = {"action": "ha.set", "fields": {"target": "double garage", "action": "close"}, "confidence": 0.95}
-    assert fastlane.check_model_output(ok, "shut the double garage", ctx)[0] is not None
-    assert fastlane.check_model_output(ok, "what about the double garage", ctx)[0] is None
+    fields = ok["fields"]
+    assert fastlane.prepare("ha.set", fields, "shut the double garage", ctx)["action"] == "close"
+    with pytest.raises(fastlane.PassUp):
+        fastlane.prepare("ha.set", fields, "what about the double garage", ctx)
 
 
 def test_state_question_is_the_one_open_phrasing_that_is_answered(ctx):
@@ -555,24 +557,25 @@ def model(name, conf=0.95, **fields):
 
 
 def test_model_output_accepts_a_well_formed_answer(ctx):
-    m, _ = fastlane.check_model_output(model("habit.log", habit="Stretching/Mobility", day="yesterday"), "I stretched yesterday", ctx)
-    assert m.tier == 1 and m.action == "habit.log" and m.fields == {"habit": "Stretching/Mobility", "day": "2026-11-01"}
+    m, _ = fastlane.check_model_output(model("chore.done", kid="Claire", chore="Feed the dog", day="yesterday"), "Claire fed the dog yesterday", ctx)
+    assert m.tier == 1 and m.action == "chore.done" and m.fields == {"kid": "Claire", "chore": "Feed the dog", "day": "2026-11-01"}
     m, _ = fastlane.check_model_output(model("todo.add", items=["oat milk", "eggs"], list="grocery list"),
                                        "add oat milk and eggs to the grocery list", ctx)
     assert m.fields["items"] == ["oat milk", "eggs"]
 
 
 @pytest.mark.parametrize("answer,text,why", [
-    (model("habit.log", conf=0.5, habit="Pushups"), "did pushups", "model_low_confidence"),
-    ({"action": "habit.log", "fields": {"habit": "Pushups"}, "confidence": "high"}, "did pushups", "model_no_confidence"),
-    ({"action": "habit.log", "fields": {"habit": "Pushups"}}, "did pushups", "model_no_confidence"),
+    (model("chore.done", conf=0.5, kid="Claire", chore="Feed the dog"), "Claire fed the dog", "model_low_confidence"),
+    ({"action": "chore.done", "fields": {"kid": "Claire", "chore": "Feed the dog"}, "confidence": "high"}, "Claire fed the dog", "model_no_confidence"),
+    ({"action": "chore.done", "fields": {"kid": "Claire", "chore": "Feed the dog"}}, "Claire fed the dog", "model_no_confidence"),
+    (model("habit.log", habit="Stretching/Mobility"), "I stretched", "model_tier1_not_allowed"),      # the model may not log habits
+    (model("ha.set", target="porch lights", action="off"), "turn off the porch lights", "model_tier1_not_allowed"),  # nor control devices
     (model("none", conf=0), "hello", "model_none"),
     (model("email.send", to="x"), "send it", "model_unknown_action"),
     ("habit.log", "x", "model_not_object"), (None, "x", "model_not_object"),
-    (model("habit.log", habit="Pushups", day="tomorrow"), "log pushups tomorrow", "model_date_unparsed"),
-    (model("habit.log", habit="Pushups", day="2026-12-01"), "log pushups on 2026-12-01", "model_date_future"),
-    (model("habit.log", habit="Stretching/Mobility"), "I walked the dog", "model_habit_not_in_text"),
-    (model("habit.log", habit="Date night"), "log date night", "model_habit_unresolved"),
+    (model("chore.done", kid="Claire", chore="Feed the dog", day="tomorrow"), "Claire fed the dog tomorrow", "model_date_unparsed"),
+    (model("chore.done", kid="Claire", chore="Feed the dog", day="2026-12-01"), "Claire fed the dog on 2026-12-01", "model_date_future"),
+    (model("rating.set", score=7, day="2026-12-01"), "2026-12-01 was a 7", "model_date_future"),
     (model("rating.set", score=7, note="a paraphrase"), "7 - long day", "model_note_not_verbatim"),
     (model("rating.set", score=11), "rate it 11", "model_score_range"),
     (model("rating.set", score=7), "rate my day", "model_score_not_in_text"),
@@ -607,8 +610,9 @@ def test_prompt_carries_names_date_and_delimits_user_text(ctx):
     assert "Today is Monday 2026-11-02." in p
     assert "Stretching/Mobility" in p and "Ruth" in p and "Make their bed" in p
     assert p.count("<message>") == 1 and p.count("</message>") == 1 and p.rstrip().endswith("</message>")
-    for name in fastlane.ACTIONS:
+    for name in fastlane.TIER1_ACTIONS:
         assert name in fastlane_model.SYSTEM_PROMPT
+    assert "habit.log" not in fastlane_model.SYSTEM_PROMPT and "ha.set" not in fastlane_model.SYSTEM_PROMPT
 
 
 def test_router_parses_fenced_json_and_never_raises():
@@ -1164,20 +1168,20 @@ def test_default_deny_unknown_device_goes_to_the_agent(tmp_path, db, fake_ha):
     store, w, _ = mk(tmp_path, db, router=StubRouter(model("ha.set", conf=0.99, target="kitchen lights", action="off")))
     rid = add(store, "turn off the kitchen lights")
     asyncio.run(triage(w))
-    assert triage_of(store, rid)["triage"] == "pass:model_ha_target_unknown" and fake_ha.posts == []
+    assert triage_of(store, rid)["triage"] == "pass:model_tier1_not_allowed" and fake_ha.posts == []
 
 
 # ---- Tier 1 through the worker ----
 
 def test_tier1_takes_a_validated_answer_and_logs_its_tier(tmp_path, db):
-    router = StubRouter(model("habit.log", habit="Stretching/Mobility", day="yesterday"))
+    router = StubRouter(model("chore.done", kid="Claire", chore="Feed the dog", day="yesterday"))
     store, w, _ = mk(tmp_path, db, router=router)
-    rid = add(store, "I stretched yesterday")
+    rid = add(store, "Claire fed the dog yesterday")
     asyncio.run(triage(w))
-    assert triage_of(store, rid)["triage"] == "fast" and router.calls == ["I stretched yesterday"]
-    assert "Logged Stretching/Mobility for yesterday" in store.next_outbound()["text"]
+    assert triage_of(store, rid)["triage"] == "fast" and router.calls == ["Claire fed the dog yesterday"]
+    assert "Claire: Feed the dog done for yesterday" in store.next_outbound()["text"]
     line = usage_lines(tmp_path)[-1]
-    assert line["fastlane"]["tier"] == 1 and line["fastlane"]["action"] == "habit.log" and line["cost_usd"] == 0.0004
+    assert line["fastlane"]["tier"] == 1 and line["fastlane"]["action"] == "chore.done" and line["cost_usd"] == 0.0004
     assert isinstance(line["fastlane"]["latency_ms"], int)
 
 
@@ -1194,9 +1198,9 @@ def test_tier0_logs_tier0_and_agent_turns_log_tier2(tmp_path, db, fake_ha):
 
 
 def test_tier1_low_confidence_or_no_answer_passes(tmp_path, db):
-    for answer, why in ((model("habit.log", conf=0.4, habit="Pushups"), "pass:model_low_confidence"), (None, "pass:model_unparseable")):
+    for answer, why in ((model("chore.done", conf=0.4, kid="Claire", chore="Feed the dog"), "pass:model_low_confidence"), (None, "pass:model_unparseable")):
         store, w, _ = mk(tmp_path, db, router=StubRouter(answer))
-        rid = add(store, "pushups got done today")
+        rid = add(store, "Claire fed the dog")
         asyncio.run(triage(w))
         assert triage_of(store, rid)["triage"] == why
 
@@ -1650,3 +1654,124 @@ def test_store_test_is_tier0_only_unless_model_is_asked_for(db, monkeypatch, cap
     assert called == [] and json.loads(capsys.readouterr().out)["reason"] == "no_match"
     assert fastlane_store.main(["test", "I stretched yesterday", "--model", "--db", str(db)]) == 0
     assert called == ["I stretched yesterday"]
+
+
+# ---------------------------------------------------------------------------
+# review round 2: Tier 1 may not control devices or log habits; deferred / tentative / apostrophe-less wording
+# ---------------------------------------------------------------------------
+
+FORGED = {
+    "close the garage later": model("ha.set", conf=0.95, target="garage", action="close"),
+    "turn off the porch lights at 10pm": model("ha.set", conf=0.95, target="porch lights", action="off"),
+    "set claire to 68 tonight": model("ha.set", conf=0.95, target="claire", action="set_temp", value=68),
+    "maybe close the garage": model("ha.set", conf=0.95, target="garage", action="close"),
+    "remind me to close the garage": model("ha.set", conf=0.95, target="garage", action="close"),
+    "achilles pt done tomorrow": model("habit.log", conf=0.95, habit="Achilles PT"),
+    "today was a 7 tomorrow": model("rating.set", conf=0.95, score=7),
+    "dont turn off the porch lights": model("ha.set", conf=0.95, target="porch lights", action="off"),
+    "no alcohol tonight": model("habit.log", conf=0.95, habit="Pushups"),
+    "stretched yes rest no": model("habit.log", conf=0.95, habit="Stretching/Mobility"),
+}
+FORGED_ACTION = {k: v["action"] for k, v in FORGED.items()}
+
+
+@pytest.mark.parametrize("text", list(FORGED))
+def test_forged_replies_never_execute_through_the_worker(tmp_path, db, fake_ha, text):
+    store, w, _ = mk(tmp_path, db, router=StubRouter(FORGED[text]))
+    rid = add(store, text)
+    asyncio.run(triage(w))
+    t = triage_of(store, rid)
+    assert t["triage"].startswith("pass:") and t["status"] == "pending"
+    assert fake_ha.posts == []
+    for h in ("Achilles PT", "Pushups", "Stretching/Mobility"):
+        assert habits.list_logs(habits.resolve_habit(h, db)["id"], limit=None, db_path=db) == []
+    assert dayrating.get_rating(None, db_path=db) is None
+
+
+@pytest.mark.parametrize("text", list(FORGED))
+def test_forged_replies_are_refused_on_tier1_and_not_matched_on_tier0(ctx, text):
+    m, why = fastlane.check_model_output(FORGED[text], text, ctx)
+    assert m is None, text
+    assert fastlane.tier0(text, ctx) is None, text
+
+
+@pytest.mark.parametrize("text", list(FORGED))
+def test_the_veto_alone_blocks_each_phrase_even_if_tier1_could_run_the_action(text):
+    """Independent of the Tier 1 scope: the text rules reject these for the action they would be taken as."""
+    assert fastlane.write_veto(FORGED_ACTION[text], {}, text) is not None, text
+
+
+def test_tier1_can_never_run_device_control_or_habit_logs_even_for_a_perfect_command(ctx):
+    for text, answer in (
+        ("turn off the porch lights", model("ha.set", conf=0.99, target="porch lights", action="off")),
+        ("close the garage", model("ha.set", conf=0.99, target="garage", action="close")),
+        ("set claire to 68", model("ha.set", conf=0.99, target="claire", action="set_temp", value=68)),
+        ("achilles pt done", model("habit.log", conf=0.99, habit="Achilles PT")),
+        ("log stretching", model("habit.log", conf=0.99, habit="Stretching/Mobility")),
+    ):
+        assert fastlane.check_model_output(answer, text, ctx) == (None, "model_tier1_not_allowed"), text
+        assert fastlane.tier0(text, ctx) is not None and fastlane.tier0(text, ctx).tier == 0   # only the anchored rules do these
+    assert {"ha.set", "habit.log"}.isdisjoint(fastlane.TIER1_ACTIONS)
+    assert fastlane.TIER1_ACTIONS == {"ha.state", "hub.today", "hub.tasks", "hub.dinner", "habit.status", "todo.add", "rating.set", "chore.done"}
+
+
+@pytest.mark.parametrize("text,action", [
+    ("turn off the porch lights", "ha.set"), ("add milk to the costco list", "todo.add"), ("achilles pt done", "habit.log"),
+    ("today was a 7", "rating.set"), ("yesterday was a 7, long day", "rating.set"), ("tuesday was a 6", "rating.set"),
+    ("set claire to 68", "ha.set"), ("close the garage", "ha.set"), ("Today was a 7. Nice day, not too busy", "rating.set"),
+    ("log stretching on friday", "habit.log"), ("mark Ruth make bed done", "chore.done"),
+])
+def test_no_over_block_on_plain_commands(ctx, text, action):
+    m = fastlane.tier0(text, ctx)
+    assert m is not None and m.action == action, text
+
+
+@pytest.mark.parametrize("text", [
+    "achilles pt done later", "achilles pt done tomorrow", "log stretching please and thanks", "log stretching tonight",
+    "today was a 7 tomorrow", "today was a 7 but busy", "turn off the porch lights now", "turn off the porch lights at 10pm",
+    "close the garage later", "set claire to 68 tonight", "set claire to 68 degrees tonight", "mark Ruth make bed done later",
+    "add milk to the costco list later", "add milk tomorrow to the costco list", "rate my day 8 tomorrow",
+])
+def test_tier0_takes_no_trailing_unaccounted_words(ctx, text):
+    assert fastlane.tier0(text, ctx) is None, text
+
+
+@pytest.mark.parametrize("text", [
+    "close the garage in the morning", "turn off the porch lights when I get home", "turn off the porch lights after dinner",
+    "turn off the porch lights by 9", "turn off the porch lights this evening", "might turn off the porch lights", "perhaps log stretching",
+    "probably close the garage", "turn off the porch lights next week", "turn off the porch lights soon", "no thanks",
+    "wont turn off the porch lights", "cant close the garage", "shouldnt log stretching", "isnt done", "didnt stretch", "nope no",
+])
+def test_deferred_tentative_and_apostrophe_less_wording_is_vetoed(text):
+    assert fastlane.write_veto("ha.set", {}, text) is not None, text
+
+
+def test_deferred_words_do_not_block_ordinary_day_words():
+    for text in ("yesterday was a 7", "tuesday was a 6", "log stretching on friday", "turn off the porch lights"):
+        assert fastlane.write_veto("rating.set", {}, text) is None, text
+    assert fastlane.write_veto("rating.set", {}, "Today was a 7. later tomorrow maybe no", "Today was a 7. ") is None   # a note is free text
+
+
+@pytest.mark.parametrize("text,action", [
+    ("achilles pt done", "habit.log"), ("mark Ruth make bed done", "chore.done"), ("today was a 7", "rating.set")])
+def test_checkin_open_sends_journal_like_actions_to_the_agent_but_not_lights_or_lists(tmp_path, db, fake_ha, monkeypatch, text, action):
+    t = FakeTodoist(monkeypatch, projects=[{"id": "p1", "name": "Costco"}])
+    store, w, _ = mk(tmp_path, db)
+    store.add_inbound("telegram", "1", "seed", external_id="s0", now=time.time() - 9000)
+    store.enqueue_outbound("telegram", "1", "Evening check-in: how was your day? Anything to log?", source="scheduled:nightly-checkin", kind="scheduled", now=time.time() - 600 - 3000)
+    blocked = add(store, text)
+    lights = add(store, "turn off the porch lights")
+    lst = add(store, "add milk to the costco list")
+    asyncio.run(triage(w))
+    assert triage_of(store, blocked)["triage"] == "pass:checkin_open"
+    assert triage_of(store, lights)["triage"] == "fast" and triage_of(store, lst)["triage"] == "fast"
+    assert fastlane.JOURNAL_LIKE >= {"rating.set", "habit.log", "chore.done"}
+
+
+def test_close_doors_error_with_nothing_attempted_is_not_marked_as_written(ctx, fake_ha, monkeypatch):
+    def down(eid):
+        raise ha.HAError("Can't reach Home Assistant (down)", 1)
+
+    monkeypatch.setattr(ha, "fastlane_read", down)
+    r = run("close the garage", ctx)
+    assert r.wrote is False and "didn't answer" in r.text

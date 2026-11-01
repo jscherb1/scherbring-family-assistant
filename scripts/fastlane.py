@@ -683,7 +683,7 @@ def _close_doors(ents) -> Reply:
             if e.code == 2 and not said:
                 raise PassUp("ha_refused") from None
             said.append(f"Home Assistant didn't answer for {eid} ({e.message}); I can't tell whether that one went through. Please check it.")
-            return Reply(" ".join(said), wrote=True)
+            return Reply(" ".join(said), wrote=attempted)
     return Reply(" ".join(said), wrote=attempted)
 
 
@@ -945,6 +945,12 @@ def tier0(text: str, ctx: Context) -> Match | None:
 # ---------------------------------------------------------------------------
 
 
+# What Tier 1 (the model) may run. Device control (ha.set) and habit logs (habit.log) are NOT here: they happen only
+# through the anchored Tier 0 rules or the full agent, so a model that is fooled can never switch a device or log a habit.
+TIER1_ACTIONS = frozenset({"ha.state", "hub.today", "hub.tasks", "hub.dinner", "habit.status",
+                           "todo.add", "rating.set", "chore.done"})
+
+
 def check_model_output(obj, text: str, ctx: Context) -> tuple[Match | None, str]:
     """(Match, "") for a usable answer, else (None, reason). The registry and the per-action checks decide, never
     the model: unknown action, low confidence, a name or text that is not in the message, a future date, an action
@@ -956,6 +962,8 @@ def check_model_output(obj, text: str, ctx: Context) -> tuple[Match | None, str]
         return None, "model_none"
     if name not in ACTIONS:
         return None, "model_unknown_action"
+    if name not in TIER1_ACTIONS:
+        return None, "model_tier1_not_allowed"     # enforced here, not in the prompt
     try:
         conf = float(obj.get("confidence"))
     except (TypeError, ValueError):
@@ -1076,7 +1084,16 @@ def eligibility(row: dict, store, *, now: float, ctx: Context | None = None) -> 
     return None
 
 
-_NEGATION = re.compile(r"\b\w+n't\b|\b(?:not|never|no longer|skip|cancel\w*|nothing|neither|nor)\b", re.I)
+_NEGATION = re.compile(
+    r"\b\w+n't\b|\b(?:no|not|never|no longer|skip|cancel\w*|nothing|neither|nor|none|cannot|"
+    r"dont|wont|cant|shouldnt|wouldnt|couldnt|isnt|arent|wasnt|werent|didnt|doesnt|havent|hasnt|hadnt|aint|mustnt|neednt)\b", re.I)
+# Not a command to do it now: later, tomorrow, a time, an event to wait for, tentative or reminder wording.
+_DEFERRED = re.compile(
+    r"\b(?:later|tomorrow|tonight|tonite|soon|eventually|someday|sometime|maybe|might|perhaps|probably|remind\w*|"
+    r"next (?:week|month|year|time)|this (?:evening|afternoon|morning|weekend)|in the (?:morning|evening|afternoon)|"
+    r"when|whenever|once|while|until)\b"
+    r"|\b(?:at|in|after|before|by|until)\s+(?:\d|(?:noon|midnight|night|the (?:morning|evening|afternoon|night|weekend)|"
+    r"dinner|lunch|breakfast|bed|bedtime|work|school|church|practice|(?:the )?kids|i|we|you|they|she|he)\b)", re.I)
 _QUESTION_START = re.compile(
     r"^(?:should|shall|would|could|what if|if|did i|do i|have i|can i|how|why|what|when|where|who|which|is|are|was|were|does|will)\b", re.I)
 _CONDITIONAL = re.compile(r"\b(?:if|unless)\b", re.I)
@@ -1098,7 +1115,7 @@ def write_veto(action: str, fields: dict, text: str, probe: str | None = None) -
     spec = ACTIONS.get(action)
     if spec is None or not spec.writes:
         return None
-    t = _fix(probe if probe is not None else text).strip()
+    t = _fix(probe if probe is not None else text).strip().rstrip(" \t-–—:,.;")   # the separator before a note is not a comma
     lead = strip_polite(t)
     if _NEGATION.search(t):
         return "negation"
@@ -1106,6 +1123,8 @@ def write_veto(action: str, fields: dict, text: str, probe: str | None = None) -
         return "question"
     if _CONDITIONAL.search(t):
         return "conditional"
+    if _DEFERRED.search(t):
+        return "deferred"
     if _QUOTED.search(t):
         return "quoted"
     if _REPORTED.search(t):
@@ -1124,7 +1143,7 @@ def write_veto(action: str, fields: dict, text: str, probe: str | None = None) -
     return None
 
 
-JOURNAL_LIKE = {"rating.set"}     # answers a nightly check-in: never fast-laned while one is open
+JOURNAL_LIKE = {"rating.set", "habit.log", "chore.done"}   # could answer a nightly check-in: not fast-laned while one is open
 CHECKIN_WINDOW_S = 4 * 3600
 
 
