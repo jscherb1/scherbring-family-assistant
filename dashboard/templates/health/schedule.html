@@ -35,7 +35,7 @@
         </span>
         <span class="cell" data-label="7 days">
           <span><span class="ok-count">{{ t.ok_7d }} ok</span> ·
-            <span class="{{ 'fail-count' if t.fail_7d else 'muted' }}">{{ t.fail_7d }} failed</span></span>
+            <span class="{{ 'fail-count' if t.fail_7d else 'muted' }}">{{ t.fail_7d }} failed</span>{% if t.degraded_7d %} · <span class="muted">{{ t.degraded_7d }} degraded</span>{% endif %}</span>
         </span>
       </summary>
       <div class="row-body">

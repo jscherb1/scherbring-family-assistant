@@ -86,15 +86,15 @@ def main() -> int:
     task["prompt"] = task["prompt"] + TEST_NOTE + (GATE_NOTE if args.ignore_gates else "")
 
     started = time.time()
-    success, summary = sd.dispatch_task(task)
+    run_status, summary = sd.dispatch_task(task)
     seconds = time.time() - started
 
-    sd.log_run(task["id"], run_at, "ok" if success else "failed", f"[manual test] {summary}")
-    if not success:
+    sd.log_run(task["id"], run_at, run_status, f"[manual test] {summary}")
+    if run_status == "failed":
         sd.send_failure_alert(task["name"], run_at, summary)
     print(json.dumps({
         "task": task["name"],
-        "status": "ok" if success else "failed",
+        "status": run_status,
         "seconds": round(seconds),
         "ignore_gates": args.ignore_gates,
         "summary": summary[:600],

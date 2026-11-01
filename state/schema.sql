@@ -58,13 +58,14 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks (enabl
 -- One row per dispatch attempt / completion of a scheduled task. The poller inserts
 -- a 'dispatched' row when it fires the event; the orchestrator flips it to 'ok' or
 -- 'failed' after actually completing the work, so the heartbeat task can tell
--- "ran fine" apart from "silently dropped".
+-- "ran fine" apart from "silently dropped". 'degraded' = exited cleanly and delivered its
+-- message but some commands were denied (summary names them); not a failure, no alert.
 CREATE TABLE IF NOT EXISTS scheduled_task_runs (
     id            INTEGER PRIMARY KEY,
     task_id       TEXT NOT NULL REFERENCES scheduled_tasks(id),
     run_at        TEXT NOT NULL,   -- nominal scheduled fire time (ISO-8601 UTC)
     dispatched_at TEXT,            -- actual wall-clock POST time, NULL if dispatch_failed
-    status        TEXT NOT NULL,   -- 'dispatched' | 'dispatch_failed' | 'ok' | 'failed'
+    status        TEXT NOT NULL,   -- 'dispatched' | 'dispatch_failed' | 'ok' | 'degraded' | 'failed'
     summary       TEXT
 );
 

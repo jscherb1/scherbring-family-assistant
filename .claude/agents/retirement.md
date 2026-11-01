@@ -30,6 +30,15 @@ vars — you're already at the project root and each script forces UTF-8 output 
 arguments go inline in single quotes. Never generate-and-execute a throwaway script, heredoc,
 `python -c` or `jq`.
 
+Every Bash call must be **one plain command** matching a documented form: no `&&`, `;`, pipes,
+`cd`, heredocs, `python -`, `python -c`, `sed -i` or `echo $?`. A scheduled run has nobody to approve
+a prompt, so anything else is denied. The command's own output (JSON or an error message on stderr)
+says whether it worked; never run a follow-up command to check an exit code.
+
+**A scheduled run must never patch code or scripts** (no `sed -i`, no edits under `scripts/`, no
+inline `python -`). If something is broken, say so in the Telegram message (what failed and the
+error) and stop; the fix belongs in a normal development session.
+
 ## Continuity: the shared state store
 
 Before a run, check recent context:

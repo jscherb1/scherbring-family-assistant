@@ -149,6 +149,7 @@ def list_tasks(now: datetime | None = None):
             "last_status": recent[0]["status"] if recent else None,
             "last_run_at": recent[0]["run_at"] if recent else None,
             "ok_7d": sum(1 for r in in_week if r["status"] == "ok"),
+            "degraded_7d": sum(1 for r in in_week if r["status"] == "degraded"),
             "fail_7d": sum(1 for r in in_week if r["status"] in FAIL_STATUSES),
             "recent_runs": [
                 {"run_at": r["run_at"], "status": r["status"], "summary": r["summary"]}

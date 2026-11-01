@@ -295,7 +295,7 @@ def fmt_minutes(minutes):
 def status_pill(status):
     return {
         "ok": "pill-ok", "done": "pill-ok", "synced": "pill-ok", "created": "pill-ok",
-        "failed": "pill-warn", "pending": "pill-muted", "dispatch_failed": "pill-warn", "overdue": "pill-warn",
+        "degraded": "pill-warn", "failed": "pill-warn", "pending": "pill-muted", "dispatch_failed": "pill-warn", "overdue": "pill-warn",
         "missed": "pill-warn", "manual_needed": "pill-warn", "expired": "pill-warn",
         "active": "pill-warn", "warn": "pill-warn",
     }.get(status, "pill-muted")

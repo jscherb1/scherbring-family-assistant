@@ -72,22 +72,28 @@ def get_task_run_health():
     conn.close()
 
     current = now()
-    ok_24h = fail_24h = ok_7d = fail_7d = 0
+    ok_24h = fail_24h = ok_7d = fail_7d = deg_24h = deg_7d = 0
     recent_failures = []
+    recent_degraded = []
 
     for row in rows:
         ts = parse_ts(row["run_at"])
         is_fail = row["status"] in ("failed", "dispatch_failed")
         is_ok = row["status"] == "ok"
+        is_deg = row["status"] == "degraded"
 
         if ts and current - ts <= timedelta(hours=24):
             if is_ok:
                 ok_24h += 1
+            elif is_deg:
+                deg_24h += 1
             elif is_fail:
                 fail_24h += 1
         if ts and current - ts <= timedelta(days=7):
             if is_ok:
                 ok_7d += 1
+            elif is_deg:
+                deg_7d += 1
             elif is_fail:
                 fail_7d += 1
 
@@ -99,16 +105,28 @@ def get_task_run_health():
                 "summary": row["summary"],
             })
 
-    total_24h = ok_24h + fail_24h
-    success_rate_24h = (ok_24h / total_24h * 100) if total_24h else None
+        if is_deg and len(recent_degraded) < 10:
+            recent_degraded.append({
+                "task_name": row["task_name"] or "(unknown task)",
+                "run_at": row["run_at"],
+                "status": row["status"],
+                "summary": row["summary"],
+            })
+
+    # degraded runs finished and delivered, so they are not failures in the rate
+    total_24h = ok_24h + deg_24h + fail_24h
+    success_rate_24h = ((ok_24h + deg_24h) / total_24h * 100) if total_24h else None
 
     return {
         "ok_24h": ok_24h,
         "fail_24h": fail_24h,
         "ok_7d": ok_7d,
         "fail_7d": fail_7d,
+        "degraded_24h": deg_24h,
+        "degraded_7d": deg_7d,
         "success_rate_24h": success_rate_24h,
         "recent_failures": recent_failures,
+        "recent_degraded": recent_degraded,
     }
 
 

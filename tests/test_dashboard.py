@@ -1411,3 +1411,19 @@ def test_checkin_defaults_to_today_with_yesterday_unfinished(client, state):
     page = client.get("/checkin").text
     assert f'name="date" value="{today}"' in page
     assert 'class="chip active"' in page and "/checkin?date=yesterday" in page
+
+
+def test_degraded_runs_are_visible_but_not_failures(client, state):
+    conn = sqlite3.connect(state / "agent_results.db")
+    run_at = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None).isoformat(timespec="seconds")
+    conn.execute("INSERT INTO scheduled_task_runs (task_id,run_at,status,summary) VALUES ('t1',?,?,?)",
+                 (run_at, "degraded", "[1 command(s) denied: Bash: echo $?] done"))
+    conn.commit()
+    conn.close()
+    from dashboard.data import health as health_data
+    runs = health_data.get_task_run_health()
+    # the fixture already seeds one failed run; the degraded one must not add to the failures
+    assert runs["degraded_24h"] == 1 and all(f["status"] == "failed" for f in runs["recent_failures"])
+    total = runs["ok_24h"] + runs["degraded_24h"] + runs["fail_24h"]
+    assert runs["success_rate_24h"] == (runs["ok_24h"] + 1) / total * 100
+    assert runs["recent_degraded"][0]["summary"].startswith("[1 command(s) denied: Bash: echo $?]")
