@@ -56,15 +56,10 @@ bridge"). The soak ended and the plugin-era path is removed from the repo: orche
 the log-grep Telegram watchdog, the context-bridge hooks, `agent_ctl.py mode`, and the dashboard restart history
 (so the "record a structured restart cause" dashboard follow-up is moot).
 
-Host steps after merging (the repo change does not touch the machine):
-- [ ] `systemctl --user disable --now assistant-orchestrator.service` if it is still enabled, then delete the
-      installed `~/.config/systemd/user/assistant-orchestrator.service` and run `systemctl --user daemon-reload`.
+Host steps after merging (the repo change does not touch the machine). Done 2026-11-01: the orchestrator unit
+was disabled and deleted, the gitignored `state/` leftovers were removed, and the worker and dashboard were
+restarted on the merged code. Still open (besides rotating the bot token, item 5):
 - [ ] Windows: `Unregister-ScheduledTask -TaskName WSL-Assistant-Window -Confirm:$false` (the attach window).
-- [ ] Delete gitignored leftovers in `state/`: `orchestrator_restarts.jsonl`, `orchestrator.lock`,
-      `telegram_conversation_log.jsonl`, `telegram_fallback_used.json`, `telegram_watchdog.json`, and
-      `state/logs/orchestrator_debug.log`, `state/logs/orchestrator_exits.log`.
-- [ ] Restart `assistant-agent-worker` (new code) and `assistant-dashboard`; the watchdog service picks up the new
-      script on its next run.
 
 Deferred by the user (do later, none urgent):
 - **Send files/photos back through the bridge** (the plugin could; the bridge only receives them
