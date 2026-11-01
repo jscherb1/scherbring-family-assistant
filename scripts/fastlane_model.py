@@ -7,9 +7,9 @@ scripts/fastlane.py validates the answer against the registry (`check_model_outp
 tool loop, so a model that goes wrong can at worst produce an answer that gets rejected.
 
 Latency: a cold `claude` process costs about 4-7 s per call (measured), which is over budget. So the router keeps ONE
-idle client connected and sends each message as a new turn (about 1.3 s median measured). The client is replaced every
-few calls so earlier messages do not pile up in its context, and on any error or timeout. Nothing here blocks the
-event loop: it is all awaited, with a hard timeout (default 6 s).
+idle client connected and already primed, and each message uses it ONCE (see HaikuRouter): no message can see another's
+text, and a replacement is built in the background. Nothing here blocks the event loop or waits for a client to be
+built: it is all awaited, with a hard timeout (default 6 s).
 
 Every call is independent: the system prompt tells the model to classify only the latest <message> and to treat its
 content as data.
@@ -35,7 +35,8 @@ log = logging.getLogger("fastlane_model")
 
 MODEL = "haiku"
 TIMEOUT_S = 6.0
-RECYCLE_AFTER = 8
+DISCONNECT_TIMEOUT_S = 3.0
+PREWARM_RETRY_S = 30.0
 COOLDOWN_S = 30.0   # after a timeout or error, skip the model for a while so a sick API never adds 6 s to every message
 
 
@@ -97,22 +98,32 @@ def parse_json(raw: str) -> dict | None:
     return obj if isinstance(obj, dict) else None
 
 
-class HaikuRouter:
-    """Holds one warm model client and answers `route(text, ctx)`. `ask` is injectable for tests:
-    an async callable (prompt) -> (reply text, cost) that replaces the SDK client."""
+PRIME = 'Reply with exactly: {"action": "none", "fields": {}, "confidence": 0}'
 
-    def __init__(self, *, model: str = MODEL, timeout: float = TIMEOUT_S, recycle_after: int = RECYCLE_AFTER,
+
+class HaikuRouter:
+    """Answers `route(text, ctx)` with a ONE-USE warm client.
+
+    A cold `claude` process costs 4-7 s, so one connected client (already through a throwaway first turn) waits idle.
+    A message takes it, so no client ever sees two messages: the context of one never leaks into the next. The moment
+    a client is taken, a replacement is built in the background, outside any request. While none is ready (the first
+    seconds after switching on, a burst of messages, a failed start) `route()` answers `cooling_down` at once and the
+    message simply goes to the agent: nothing ever waits on a client being built. Used clients are disconnected in the
+    background with a bound, and `close()` is bounded too, so shutdown is never held up.
+
+    `ask` is injectable for tests: an async callable (prompt) -> (reply text, cost) that replaces the SDK client."""
+
+    def __init__(self, *, model: str = MODEL, timeout: float = TIMEOUT_S,
                  ask: Callable[[str], Awaitable[tuple[str, float | None]]] | None = None):
         self.model = model
         self.timeout = timeout
-        self.recycle_after = recycle_after
         self._ask_override = ask
-        self._client = None
-        self._calls = 0
-        self._lock = asyncio.Lock()
-        self._bg: set[asyncio.Task] = set()
-        self._recycling = False
+        self._client = None                 # connected, primed, unused
+        self._prewarm_task: asyncio.Task | None = None
+        self._closing: set[asyncio.Task] = set()
+        self._closed = False
         self._cool_until = 0.0
+        self._logged_tools = False
 
     # ---- client lifecycle ----
     def _options(self):
@@ -122,107 +133,107 @@ class HaikuRouter:
             model=self.model, setting_sources=[], max_turns=1, allowed_tools=[], system_prompt=SYSTEM_PROMPT,
             extra_args={"strict-mcp-config": None, "tools": ""}, env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"})
 
-    async def _new_client(self):
-        """A connected client that has already answered one throwaway turn (the first turn is the slow one)."""
-        from claude_agent_sdk import ClaudeSDKClient
-
-        client = ClaudeSDKClient(options=self._options())
-        await client.connect()
-        try:
-            await self._query("Reply with exactly: {\"action\": \"none\", \"fields\": {}, \"confidence\": 0}", client)
-        except BaseException:
-            await self._disconnect(client)
-            raise
-        return client
-
-    async def _ensure(self) -> None:
-        if self._client is not None or self._ask_override is not None:
-            return
-        self._client = await self._new_client()
-        self._calls = 0
-
-    async def _query(self, prompt: str, client=None) -> tuple[str, float | None]:
+    async def _run(self, client, prompt: str) -> tuple[str, float | None]:
+        """One turn on `client`: (reply text, cost). The first turn's init message is logged once (its tool list
+        should be empty: this client must have no tools)."""
         from claude_agent_sdk import ResultMessage
 
-        client = client or self._client
         await client.query(prompt)
         out, cost = "", None
         async for m in client.receive_response():
+            if not self._logged_tools and getattr(m, "subtype", None) == "init":
+                self._logged_tools = True
+                log.info("fastlane model client init: tools=%s", (getattr(m, "data", None) or {}).get("tools"))
             if isinstance(m, ResultMessage):
                 out, cost = m.result or "", m.total_cost_usd
         return out, cost
 
     @staticmethod
     async def _disconnect(client) -> None:
+        """Bounded: a hung disconnect is abandoned after DISCONNECT_TIMEOUT_S."""
         try:
-            await client.disconnect()
-        except Exception as e:  # noqa: BLE001
-            log.debug("fastlane disconnect: %s", e)
+            await asyncio.wait_for(client.disconnect(), timeout=DISCONNECT_TIMEOUT_S)
+        except BaseException as e:  # noqa: BLE001 - incl. timeout and cancel: nothing here may block or raise
+            log.debug("fastlane disconnect: %r", e)
 
-    async def _drop(self) -> None:
-        client, self._client = self._client, None
-        if client is not None:
+    async def _connect_client(self):
+        """A connected client that has answered one throwaway turn (the first turn is the slow one). Any failure or
+        cancellation disconnects what was started, so nothing is leaked."""
+        from claude_agent_sdk import ClaudeSDKClient
+
+        client = ClaudeSDKClient(options=self._options())
+        try:
+            await client.connect()
+            await self._run(client, PRIME)
+        except BaseException:
             await self._disconnect(client)
+            raise
+        return client
 
-    def _spawn(self, coro) -> None:
-        task = asyncio.create_task(coro)
-        self._bg.add(task)
-        task.add_done_callback(self._bg.discard)
+    def _ensure_prewarm(self) -> None:
+        if self._closed or self._ask_override is not None or self._client is not None:
+            return
+        if self._prewarm_task is not None and not self._prewarm_task.done():
+            return
+        self._prewarm_task = asyncio.create_task(self._prewarm_loop())
+
+    async def _prewarm_loop(self) -> None:
+        while not self._closed and self._client is None:
+            try:
+                client = await self._connect_client()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                log.warning("fastlane prewarm failed: %r (retry in %ss)", e, PREWARM_RETRY_S)
+                await asyncio.sleep(PREWARM_RETRY_S)
+                continue
+            if self._closed or self._client is not None:   # switched off (or beaten) while connecting
+                await self._disconnect(client)
+                return
+            self._client = client
+            return
 
     async def prewarm(self) -> None:
-        """Connect now (worker start) so the first message does not pay the process start."""
-        try:
-            async with self._lock:
-                await self._ensure()
-        except Exception as e:  # noqa: BLE001
-            log.warning("fastlane prewarm failed: %r", e)
-            await self._drop()
-
-    async def _recycle(self) -> None:
-        """Swap in a fresh client without making anyone wait: build it first, then exchange under the lock."""
-        try:
-            fresh = await self._new_client()
-        except Exception as e:  # noqa: BLE001
-            log.warning("fastlane recycle failed: %r", e)
-            return
-        async with self._lock:
-            old, self._client, self._calls = self._client, fresh, 0
-        if old is not None:
-            await self._disconnect(old)
-
-    async def _recycle_once(self) -> None:
-        try:
-            await self._recycle()
-        finally:
-            self._recycling = False
+        """Start getting a client ready (worker: the lane was switched on). Returns at once."""
+        self._closed = False
+        self._ensure_prewarm()
 
     async def close(self) -> None:
-        for t in list(self._bg):
-            t.cancel()
-        await self._drop()
+        """Switch off / shut down. Bounded, never raises."""
+        self._closed = True
+        pending = []
+        if self._prewarm_task is not None and not self._prewarm_task.done():
+            self._prewarm_task.cancel()
+            pending.append(self._prewarm_task)
+        client, self._client = self._client, None
+        if client is not None:
+            pending.append(asyncio.ensure_future(self._disconnect(client)))
+        pending += list(self._closing)
+        if pending:
+            try:
+                await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), timeout=DISCONNECT_TIMEOUT_S + 1)
+            except BaseException:  # noqa: BLE001
+                pass
 
     # ---- the call ----
-    async def _route_locked(self, prompt: str) -> tuple[str, float | None]:
-        async with self._lock:
-            try:
-                if self._ask_override is not None:
-                    return await self._ask_override(prompt)
-                await self._ensure()
-                res = await self._query(prompt)
-                self._calls += 1
-                return res
-            except BaseException:
-                await self._drop()   # a half-finished turn must never leak into the next call
-                raise
-
     async def route(self, text: str, ctx: "fastlane.Context") -> RouteResult:
-        """Ask the model. Never raises: a timeout or any error is a RouteResult with no answer (the caller passes)."""
+        """Ask the model. Never raises and never waits for a client to be built: no client ready, or cooling down
+        after a failure, is an immediate RouteResult with no answer (the caller passes the message on)."""
         t0 = time.monotonic()
         if t0 < self._cool_until:
             return RouteResult(None, error="cooling_down")
         prompt = build_prompt(text, ctx)
+        client = None
+        if self._ask_override is None:
+            client, self._client = self._client, None   # one use: it is closed after this message
+            self._ensure_prewarm()                       # the replacement is built in the background
+            if client is None:
+                return RouteResult(None, error="cooling_down")
         try:
-            raw, cost = await asyncio.wait_for(self._route_locked(prompt), timeout=self.timeout)
+            if client is None:
+                raw, cost = await asyncio.wait_for(self._ask_override(prompt), timeout=self.timeout)
+            else:
+                raw, cost = await asyncio.wait_for(self._run(client, prompt), timeout=self.timeout)
         except asyncio.TimeoutError:
             self._cool_until = time.monotonic() + COOLDOWN_S
             return RouteResult(None, error="timeout", latency_s=time.monotonic() - t0)
@@ -231,8 +242,10 @@ class HaikuRouter:
         except Exception as e:  # noqa: BLE001
             self._cool_until = time.monotonic() + COOLDOWN_S
             return RouteResult(None, error=f"{type(e).__name__}", latency_s=time.monotonic() - t0)
-        if self._ask_override is None and self._calls >= self.recycle_after and not self._recycling:
-            self._recycling = True
-            self._spawn(self._recycle_once())
+        finally:
+            if client is not None:
+                task = asyncio.ensure_future(self._disconnect(client))
+                self._closing.add(task)
+                task.add_done_callback(self._closing.discard)
         obj = parse_json(raw)
         return RouteResult(obj, cost_usd=cost, error=None if obj else "unparseable", latency_s=time.monotonic() - t0)

@@ -177,7 +177,7 @@ def test_parse_day_rejects_future_and_garbage(word):
 
 TIER0 = [
     ("log stretching", "habit.log", {"habit": "Stretching/Mobility", "day": None}),
-    ("Can you log my workouts for yesterday?", "habit.log", {"habit": "Workouts", "day": "2026-11-01"}),
+    ("Can you log my workouts for yesterday", "habit.log", {"habit": "Workouts", "day": "2026-11-01"}),
     ("I did my stretching today", "habit.log", {"habit": "Stretching/Mobility", "day": None}),
     ("achilles pt done", "habit.log", {"habit": "Achilles PT", "day": None}),
     ("Mark my achilles PT habit complete for the day", "habit.log", {"habit": "Achilles PT", "day": None}),
@@ -236,6 +236,13 @@ AMBIGUOUS = [
     "", "   ", "log", "done", "x" * 400,
     "close the garage door and then log stretching",
     "did you log my stretching?",                  # a question about the past
+    "sun 5, pick up kids", "friday 3, soccer", "yesterday 7, long day",     # a day word and a number are not a rating
+    "set claire's room to 85", "set claire's room to 55",                   # the lane only does 60-80
+    "turn off the porch lights?", "Can you log my workouts for yesterday?", "add milk to the Costco list?",
+    "turn off the porch lights and the kitchen lights", "log stretching and workouts", "log stretching, then workouts",
+    "Ruth and Claire made bed done", "don't turn off the porch lights", "do not log stretching", "I didn't stretch",
+    "should I log stretching", "if it's dark turn off the porch lights", 'Caroline said "log stretching"',
+    "Caroline told me to log stretching", "log stretching but not workouts",
 ]
 
 
@@ -287,6 +294,12 @@ def test_habit_log_writes_once_then_says_already_logged(ctx, db):
     assert run("log stretching for yesterday", ctx).wrote is False
 
 
+def test_no_goal_count_habits_can_be_logged_several_times_a_day(ctx, db):
+    assert run("log pushups", ctx).wrote and run("log pushups", ctx).wrote
+    hid = habits.resolve_habit("Pushups", db)["id"]
+    assert len(habits.list_logs(hid, limit=None, db_path=db)) == 2
+
+
 def test_habit_log_weekly_and_no_goal_replies(ctx, db):
     assert "1/5 this week" in run("log workouts", ctx).text
     assert "1 this week" in run("log pushups", ctx).text
@@ -300,11 +313,16 @@ def test_habit_status_one_and_all(ctx, db):
     assert everything.count("\n") == 3 and "Pushups" in everything
 
 
-def test_rating_set_replaces_and_reports_previous(ctx, db):
+def test_rating_never_overwrites_a_different_rating(ctx, db):
     assert "Rated today 6/10." in run("rate my day 6", ctx).text
-    again = run("Today was a 8. Better after lunch", ctx)
-    assert "Rated today 8/10" in again.text and "It was 6" in again.text and "Better after lunch" in again.text
-    assert dayrating.get_rating(None, db_path=db, today=TODAY)["score"] == 8
+    with pytest.raises(fastlane.PassUp) as e:
+        run("Today was a 8. Better after lunch", ctx)       # a different score: the agent decides
+    assert e.value.reason == "rating_exists"
+    with pytest.raises(fastlane.PassUp):
+        run("Today was a 6. A new note", ctx)               # same score, different note: also the agent
+    same = run("rate my day 6", ctx)
+    assert not same.wrote and "already rated 6/10" in same.text
+    assert dayrating.get_rating(None, db_path=db, today=TODAY)["score"] == 6
 
 
 def test_rating_long_note_passes_up_instead_of_truncating(ctx):
@@ -412,11 +430,12 @@ def test_ha_porch_lights_and_thermostat(ctx, fake_ha):
 
 
 def test_ha_thermostat_respects_min_max(ctx, fake_ha):
-    r = run("set claire's room to 85", ctx)       # her thermostat tops out at 75
+    r = run("set claire's room to 78", ctx)       # her thermostat tops out at 75
     assert fake_ha.posts[-1][2]["temperature"] == 75
     assert "limit" in r.text and "75" in r.text
-    with pytest.raises(fastlane.PassUp):          # outside 50-90 is not a normal request at all
-        fastlane.prepare("ha.set", {"target": "claire's room", "action": "set_temp", "value": 120}, "set claire's room to 120", ctx)
+    for bad in (85, 55, 120):                     # the lane only does 60-80; the rest goes to the agent
+        with pytest.raises(fastlane.PassUp):
+            fastlane.prepare("ha.set", {"target": "claire's room", "action": "set_temp", "value": bad}, f"set claire's room to {bad}", ctx)
 
 
 def test_ha_close_garage_only_moves_open_doors(ctx, fake_ha):
@@ -783,12 +802,14 @@ def test_recent_assistant_question_rules(tmp_path):
     assert store.recent_assistant_question("1", now=now) == "question"
     store.enqueue_outbound("telegram", "1", "All done.", now=now - 10)
     assert store.recent_assistant_question("1", now=now) is None
-    # a scheduled check-in asked something and nobody has answered: still a question hours later
+    # a scheduled message that asks something is an open check-in for 4 hours, whatever else was said since
+    assert store.open_checkin("1", now=now) is None
     store.enqueue_outbound("telegram", "1", "How was your day? Rate it 1-10", source="scheduled:journal", kind="scheduled", now=now - 7200)
     store.enqueue_outbound("telegram", "1", "Noted.", now=now - 3600)
-    assert store.recent_assistant_question("1", now=now) == "scheduled_question"
-    add(store, "7, long day", at=now - 1800)
-    assert store.recent_assistant_question("1", now=now) is None
+    add(store, "an unrelated message", at=now - 1800)
+    assert store.open_checkin("1", now=now) == pytest.approx(now - 7200, abs=1)
+    assert store.open_checkin("1", now=now + 8000) is None                              # older than 4 hours
+    assert store.recent_assistant_question("1", now=now) is None                        # the 10-minute rule is separate
 
 
 # ---------------------------------------------------------------------------
@@ -963,13 +984,34 @@ def test_message_ten_minutes_after_a_question_is_a_command_again(tmp_path, db, f
     assert triage_of(store, rid)["triage"] == "fast" and t.added == [("milk", "Costco")]
 
 
-def test_message_after_a_scheduled_checkin_passes(tmp_path, db, fake_ha):
+def test_rating_is_blocked_while_a_checkin_is_open_but_lights_and_lists_proceed(tmp_path, db, fake_ha, monkeypatch):
+    t = FakeTodoist(monkeypatch, projects=[{"id": "p1", "name": "Costco"}])
+    store, w, _ = mk(tmp_path, db, router=StubRouter(model("rating.set", score=8, note="long day, rest no")))
+    store.add_inbound("telegram", "1", "seed", external_id="s0", now=time.time() - 9000)
+    store.enqueue_outbound("telegram", "1", "How was your day? Rate it 1-10", source="scheduled:nightly-checkin", kind="scheduled", now=time.time() - 3000)
+    unrelated = add(store, "turn off the porch lights")             # an unrelated message in the window
+    asyncio.run(triage(w))
+    assert triage_of(store, unrelated)["triage"] == "fast"          # other actions proceed
+    other = add(store, "add milk to the Costco list")
+    asyncio.run(triage(w))
+    assert triage_of(store, other)["triage"] == "fast" and t.added == [("milk", "Costco")]
+    rid = add(store, "Today was a 7. Fine day")                     # a Tier 0 rating: the unrelated messages did not answer it
+    asyncio.run(triage(w))
+    assert triage_of(store, rid)["triage"] == "pass:checkin_open"
+    rid2 = add(store, "8, long day, rest no")                       # the answer itself, with a model that would rate it
+    asyncio.run(triage(w))
+    assert triage_of(store, rid2)["triage"].startswith("pass:")
+    assert dayrating.get_rating(None, db_path=db) is None           # nothing was written
+
+
+def test_rating_proceeds_once_the_day_has_been_rated_since_the_checkin(tmp_path, db, fake_ha):
     store, w, _ = mk(tmp_path, db)
     store.add_inbound("telegram", "1", "seed", external_id="s0", now=time.time() - 9000)
-    store.enqueue_outbound("telegram", "1", "How was your day?", source="scheduled:journal", kind="scheduled", now=time.time() - 3000)
-    rid = add(store, "Today was a 7. Fine day")
+    store.enqueue_outbound("telegram", "1", "How was your day?", source="scheduled:nightly-checkin", kind="scheduled", now=time.time() - 3000)
+    dayrating.set_rating(5, db_path=db)                              # the journal recorded the answer
+    rid = add(store, "yesterday was a 6")
     asyncio.run(triage(w))
-    assert triage_of(store, rid)["triage"] == "pass:scheduled_question"
+    assert triage_of(store, rid)["triage"] == "fast"
 
 
 def test_late_row_passes(tmp_path, db, fake_ha):
@@ -1321,3 +1363,290 @@ def test_talk_about_the_assistant_itself_is_never_a_command(tmp_path, db, fake_h
     rid = add(store, text)
     asyncio.run(triage(w))
     assert triage_of(store, rid)["triage"] == "pass:meta" and fake_ha.posts == []
+
+
+# ---------------------------------------------------------------------------
+# write veto (negation, questions, quotes, multi-command), in code, any tier
+# ---------------------------------------------------------------------------
+
+VETO_CASES = [
+    ("don't turn off the porch lights", model("ha.set", target="porch lights", action="off")),
+    ("should I turn off the porch lights?", model("ha.set", target="porch lights", action="off")),
+    ("Caroline said 'turn off the porch light'", model("ha.set", target="porch light", action="off")),
+    ("what if I set claire's room to 90", model("ha.set", target="claire's room", action="set_temp", value=90)),
+    ("don't close the garage", model("ha.set", target="garage", action="close")),
+    ("do not add milk to the costco list", model("todo.add", items=["milk"], list="costco list")),
+    ("I didn't stretch", model("habit.log", habit="Stretching/Mobility")),
+    ("did I log stretching", model("habit.log", habit="Stretching/Mobility")),
+    ("turn off the porch lights and close the garage", model("ha.set", target="porch lights", action="off")),
+]
+
+
+@pytest.mark.parametrize("text,wrong", VETO_CASES)
+def test_write_veto_holds_even_when_the_model_picks_the_wrong_action(tmp_path, db, fake_ha, monkeypatch, text, wrong):
+    t = FakeTodoist(monkeypatch, projects=[{"id": "p1", "name": "Costco"}])
+    store, w, _ = mk(tmp_path, db, router=StubRouter({**wrong, "confidence": 0.99}))
+    rid = add(store, text)
+    asyncio.run(triage(w))
+    assert triage_of(store, rid)["triage"].startswith("pass:") and triage_of(store, rid)["status"] == "pending"
+    assert fake_ha.posts == [] and t.added == []
+    hid = habits.resolve_habit("Stretching", db)["id"]
+    assert habits.list_logs(hid, limit=None, db_path=db) == []
+
+
+@pytest.mark.parametrize("text,wrong", VETO_CASES)
+def test_write_veto_reasons_come_from_check_model_output(ctx, text, wrong):
+    m, why = fastlane.check_model_output({**wrong, "confidence": 0.99}, text, ctx)
+    assert m is None, text
+
+
+def test_veto_reasons(ctx):
+    reasons = {
+        "don't turn off the porch lights": "negation", "I didn't stretch": "negation", "never log it": "negation",
+        "should I turn off the porch lights": "question", "turn off the porch lights?": "question", "how do I log stretching": "question",
+        "turn off the porch lights if it is dark": "conditional", 'say "turn off the porch lights"': "quoted",
+        "Caroline said turn off the porch light": "reported", "turn off the porch lights and close the garage": "multi_command",
+    }
+    for text, why in reasons.items():
+        assert fastlane.write_veto("ha.set", {}, text) == why, text
+    assert fastlane.write_veto("ha.set", {}, "Can you turn off our outside lights") is None     # a polite command is fine
+    assert fastlane.write_veto("hub.today", {}, "don't what's on today?") is None                 # reads are not checked
+    todo = {"items": ["mac and cheese"], "list": "Costco list"}
+    assert fastlane.write_veto("todo.add", todo, "add mac and cheese to the Costco list") is None
+    assert fastlane.write_veto("todo.add", todo, "add mac and cheese to the Costco list and turn off the porch lights") == "multi_command"
+    assert fastlane.write_veto("todo.add", {"items": ["milk"], "list": "Costco list"}, "add milk and eggs to the Costco list") == "partial"
+    assert fastlane.write_veto("rating.set", {}, "Today was a 7. not a great day, don't ask", "Today was a 7. ") is None  # a note is free text
+
+
+# ---------------------------------------------------------------------------
+# garage states
+# ---------------------------------------------------------------------------
+
+
+def set_door(fake_ha, state, eid="cover.single_garage_door"):
+    fake_ha.states[eid]["state"] = state
+
+
+@pytest.mark.parametrize("state,closes", [("open", True), ("opening", True), ("stopped", True), ("closed", False),
+                                           ("closing", False), ("unavailable", False), ("unknown", False), ("weird", False)])
+def test_close_acts_only_on_open_opening_or_stopped(ctx, fake_ha, state, closes):
+    set_door(fake_ha, state)
+    r = run("close the single garage door", ctx)
+    assert bool(fake_ha.posts) == closes
+    if closes:
+        assert "Closing Single garage" in r.text and "haven't confirmed it finished" in r.text and "doorway should be clear" in r.text
+    elif state == "closed":
+        assert "is already closed" in r.text
+    elif state == "closing":
+        assert "already closing" in r.text and "closed" not in r.text.replace("already closing", "")
+    else:
+        assert "can't read the state" in r.text and "already closed" not in r.text and not r.wrote
+
+
+@pytest.mark.parametrize("state,said", [("open", "open"), ("opening", "opening"), ("closing", "closing"), ("closed", "closed"),
+                                         ("stopped", "stopped partway"), ("unavailable", "state unavailable"), ("unknown", "state unavailable")])
+def test_garage_reads_report_the_real_state_and_never_default_to_closed(ctx, fake_ha, state, said):
+    set_door(fake_ha, state)
+    text = run("is the single garage open?", ctx).text
+    assert text.startswith(f"Single garage: {said}")
+    if state in ("unavailable", "unknown"):
+        assert "closed" not in text
+
+
+def test_unreadable_door_sensor_is_not_called_closed(ctx, fake_ha):
+    fake_ha.states["binary_sensor.zb_doorsensor_frontdoor_opening"]["state"] = "unavailable"
+    assert "can't be read" in run("is the front door closed", ctx).text
+
+
+def test_door_state_helper():
+    assert [fastlane._door_state({"state": s}) for s in ("open", "OPEN", "closing", "unavailable", None, "")] == \
+        ["open", "open", "closing", "unknown", "unknown", "unknown"]
+
+
+def test_two_door_close_error_on_the_second_reports_the_first(ctx, fake_ha, monkeypatch):
+    set_door(fake_ha, "open")
+    set_door(fake_ha, "open", "cover.athom_garage_door")
+    real = ha.fastlane_act
+
+    def flaky(eid, action, value=None):
+        if eid == "cover.athom_garage_door":
+            raise ha.HAError("Can't reach Home Assistant (reset)", 1)
+        return real(eid, action, value)
+
+    monkeypatch.setattr(ha, "fastlane_act", flaky)
+    r = run("close the garage", ctx)
+    assert r.wrote and "Closing Single garage" in r.text and "didn't answer for cover.athom_garage_door" in r.text
+    assert [p[2]["entity_id"] for p in fake_ha.posts] == ["cover.single_garage_door"]
+
+
+def test_two_door_close_error_in_the_worker_is_a_reply_not_a_release(tmp_path, db, fake_ha, monkeypatch):
+    set_door(fake_ha, "open")
+    set_door(fake_ha, "open", "cover.athom_garage_door")
+    real = ha.fastlane_act
+    monkeypatch.setattr(ha, "fastlane_act", lambda e, a, v=None: (_ for _ in ()).throw(ha.HAError("down", 1)) if e.endswith("athom_garage_door") else real(e, a, v))
+    store, w, _ = mk(tmp_path, db)
+    rid = add(store, "close the garage")
+    asyncio.run(triage(w))
+    t = triage_of(store, rid)
+    assert t["triage"] == "fast" and t["status"] == "done"          # the first door's outcome was reported; nothing is repeated
+    assert "Closing Single garage" in store.next_outbound()["text"]
+
+
+# ---------------------------------------------------------------------------
+# the model router: one-use clients, no waiting, bounded shutdown
+# ---------------------------------------------------------------------------
+
+
+class FakeClient:
+    made = []
+
+    def __init__(self, hang_disconnect=False):
+        self.uses = 0
+        self.disconnected = False
+        self.hang = hang_disconnect
+        FakeClient.made.append(self)
+
+    async def disconnect(self):
+        if self.hang:
+            await asyncio.sleep(60)
+        self.disconnected = True
+
+
+def fake_router(build_delay=0.0, answer='{"action": "none", "fields": {}, "confidence": 0}', hang_disconnect=False, fail_build=False):
+    FakeClient.made = []
+
+    class R(fastlane_model.HaikuRouter):
+        async def _connect_client(self):
+            await asyncio.sleep(build_delay)
+            if fail_build:
+                raise RuntimeError("cannot start")
+            return FakeClient(hang_disconnect)
+
+        async def _run(self, client, prompt):
+            client.uses += 1
+            self.last_prompt = prompt
+            return answer, 0.0001
+
+    return R(timeout=1.0)
+
+
+def test_router_options_have_no_tools_no_mcp_no_settings():
+    o = fastlane_model.HaikuRouter()._options()
+    assert o.setting_sources == [] and o.allowed_tools == [] and o.max_turns == 1 and o.model == "haiku"
+    assert o.extra_args.get("tools") == "" and "strict-mcp-config" in o.extra_args
+    assert o.system_prompt == fastlane_model.SYSTEM_PROMPT and not getattr(o, "mcp_servers", None)
+
+
+def test_route_never_waits_for_a_client_and_prewarms_in_the_background():
+    async def go():
+        r = fake_router(build_delay=0.3)
+        c = fastlane.Context(today=TODAY)
+        t0 = time.monotonic()
+        res = await r.route("add milk to the Costco list", c)
+        assert res.error == "cooling_down" and time.monotonic() - t0 < 0.1     # nothing was built inside the request
+        await asyncio.sleep(0.5)
+        res = await r.route("add milk to the Costco list", c)
+        assert res.obj == {"action": "none", "fields": {}, "confidence": 0} and res.error is None
+        await r.close()
+
+    asyncio.run(go())
+
+
+def test_each_client_sees_exactly_one_message():
+    async def go():
+        r = fake_router()
+        c = fastlane.Context(today=TODAY)
+        await r.prewarm()
+        for i in range(4):
+            await asyncio.sleep(0.05)
+            await r.route(f"message {i}", c)
+            await asyncio.sleep(0.05)
+        assert FakeClient.made and all(cl.uses <= 1 for cl in FakeClient.made)
+        assert sum(cl.uses for cl in FakeClient.made) == 4
+        await asyncio.sleep(0.1)
+        used = [cl for cl in FakeClient.made if cl.uses]
+        assert used and all(cl.disconnected for cl in used)             # a used client is closed, never reused
+        await r.close()
+
+    asyncio.run(go())
+
+
+def test_burst_of_messages_pass_instead_of_waiting():
+    async def go():
+        r = fake_router(build_delay=0.5)
+        c = fastlane.Context(today=TODAY)
+        await r.prewarm()
+        await asyncio.sleep(0.7)
+        first = await r.route("a", c)
+        t0 = time.monotonic()
+        second = await r.route("b", c)                                    # the replacement is still being built
+        assert first.error is None and second.error == "cooling_down" and time.monotonic() - t0 < 0.1
+        await r.close()
+
+    asyncio.run(go())
+
+
+def test_switching_off_while_connecting_leaves_no_client_connected():
+    async def go():
+        r = fake_router(build_delay=0.3)
+        await r.prewarm()
+        await asyncio.sleep(0.05)
+        await r.close()                      # `fastlane off` races the prewarm
+        await asyncio.sleep(0.5)
+        assert r._client is None and all(cl.disconnected for cl in FakeClient.made)
+
+    asyncio.run(go())
+
+
+def test_close_after_ready_disconnects_and_is_bounded_even_if_disconnect_hangs():
+    async def go():
+        r = fake_router(hang_disconnect=True)
+        await r.prewarm()
+        await asyncio.sleep(0.1)
+        assert r._client is not None
+        t0 = time.monotonic()
+        await r.close()
+        assert time.monotonic() - t0 < fastlane_model.DISCONNECT_TIMEOUT_S + 2 and r._client is None
+
+    asyncio.run(go())
+
+
+def test_failed_prewarm_retries_in_the_background_and_route_stays_instant(monkeypatch):
+    async def go():
+        monkeypatch.setattr(fastlane_model, "PREWARM_RETRY_S", 0.1)
+        r = fake_router(fail_build=True)
+        await r.prewarm()
+        for _ in range(3):
+            t0 = time.monotonic()
+            assert (await r.route("x", fastlane.Context(today=TODAY))).error == "cooling_down"
+            assert time.monotonic() - t0 < 0.05
+            await asyncio.sleep(0.12)
+        await r.close()
+
+    asyncio.run(go())
+
+
+# ---------------------------------------------------------------------------
+# fastlane_store test: Tier 0 by default, --model for the live call
+# ---------------------------------------------------------------------------
+
+
+def test_store_test_is_tier0_only_unless_model_is_asked_for(db, monkeypatch, capsys):
+    called = []
+
+    class R:
+        async def route(self, text, ctx):
+            called.append(text)
+            return fastlane_model.RouteResult(model("hub.today"))
+
+        async def prewarm(self):
+            pass
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(fastlane_store, "_router", lambda: R())
+    assert fastlane_store.main(["test", "I stretched yesterday", "--db", str(db)]) == 1
+    assert called == [] and json.loads(capsys.readouterr().out)["reason"] == "no_match"
+    assert fastlane_store.main(["test", "I stretched yesterday", "--model", "--db", str(db)]) == 0
+    assert called == ["I stretched yesterday"]

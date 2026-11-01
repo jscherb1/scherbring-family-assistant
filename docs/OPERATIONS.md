@@ -142,11 +142,13 @@ list, "what's for dinner") without a full agent turn. It is **off by default**: 
 turns it on within a second, `off` stops it (no restart; the switch is `kv` key `fastlane`), `status` shows it with the last
 24 h of counts. While on, the task stamps `fastlane_beat` every second and `claim_next` holds a new message for it for at most
 10 s; if the stamp is older than 5 s, the fast lane is off, or a message is older than 10 s, the agent takes it as usual. The
-Tier 1 model call keeps one idle Haiku client connected (replaced every 8 calls and after any error); it is only started
-while the lane is on. Each fast message logs `fastlane: {tier, action, latency_ms}` to `state/usage.jsonl`, an answer
+Tier 1 model call keeps one pre-started, primed Haiku client and uses it for exactly one message (so no message sees
+another's text); the replacement is built in the background, and while none is ready `route()` returns at once and the
+message goes to the agent. Disconnects are bounded (3 s), so a hung one cannot hold up a restart. It is only started while
+the lane is on, and closed when it is switched off. A failure or timeout pauses Tier 1 for 30 s. Each fast message logs `fastlane: {tier, action, latency_ms}` to `state/usage.jsonl`, an answer
 leaves one context note ("You asked: ... I replied: ...") and a `source="fastlane"` outbox reply, and `inbox.triage`
 records the decision (`fast`, or `pass:<reason>` such as `pass:question`, `pass:no_match`, `pass:order_conflict`).
-Debug a message with `python scripts/fastlane_store.py test "<text>"` (dry run, never writes). The worker needs a restart
+Debug a message with `python scripts/fastlane_store.py test "<text>"` (dry run, never writes; Tier 0 only, `--model` adds the live call). The worker needs a restart
 to pick up the code (`systemctl --user restart assistant-agent-worker`), then switch it on.
 
 The Telegram group on the same bot is the dev chat. Put its id in `BRIDGE_ALLOWED_CHAT_IDS` (the allow list is

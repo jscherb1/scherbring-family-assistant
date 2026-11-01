@@ -316,11 +316,23 @@ class BridgeStore:
             "SELECT id, text, status, triage FROM inbox WHERE session_key=? AND kind='message' AND id<?"
             " AND status IN ('pending','processing') ORDER BY id", (session_key, before_id))]
 
-    def recent_assistant_question(self, session_key: str, *, within_s: float = 600, scheduled_within_s: float = 4 * 3600,
+    def open_checkin(self, session_key: str, *, now: float | None = None, within_s: float = 4 * 3600) -> float | None:
+        """When the most recent scheduled message that asks something (a nightly check-in) was sent, if that was
+        within `within_s`; None otherwise. Whether it was answered is for the caller to judge from real data."""
+        ts = now if now is not None else time.time()
+        refs = [r["chat_ref"] for r in self._conn.execute("SELECT DISTINCT chat_ref FROM inbox WHERE session_key=?", (session_key,))]
+        if not refs:
+            return None
+        marks = ",".join("?" * len(refs))
+        row = self._conn.execute(
+            f"SELECT created_at FROM outbox WHERE chat_ref IN ({marks}) AND source LIKE 'scheduled:%' AND status<>'failed'"
+            " AND text LIKE '%?%' ORDER BY id DESC LIMIT 1", refs).fetchone()
+        return row["created_at"] if row and ts - row["created_at"] <= within_s else None
+
+    def recent_assistant_question(self, session_key: str, *, within_s: float = 600,
                                   now: float | None = None, exclude_id: int | None = None) -> str | None:
         """Why the next message may be an answer: the assistant's last outbound for this session asked something in
-        the last `within_s`, or a scheduled task asked something (a check-in) in the last `scheduled_within_s` that
-        no later message has answered. Returns a short reason or None."""
+        the last `within_s`. Returns a short reason or None."""
         ts = now if now is not None else time.time()
         refs = [r["chat_ref"] for r in self._conn.execute("SELECT DISTINCT chat_ref FROM inbox WHERE session_key=?", (session_key,))]
         if not refs:
@@ -332,15 +344,6 @@ class BridgeStore:
             refs).fetchone()
         if last and ts - last["created_at"] <= within_s and asks(last["text"]):
             return "question"
-        sched = self._conn.execute(
-            f"SELECT text, created_at FROM outbox WHERE chat_ref IN ({marks}) AND source LIKE 'scheduled:%' AND status<>'failed'"
-            " ORDER BY id DESC LIMIT 1", refs).fetchone()
-        if sched and ts - sched["created_at"] <= scheduled_within_s and "?" in (sched["text"] or ""):
-            answered = self._conn.execute(
-                "SELECT 1 FROM inbox WHERE session_key=? AND kind='message' AND received_at>? AND id<>? LIMIT 1",
-                (session_key, sched["created_at"], exclude_id or 0)).fetchone()
-            if not answered:
-                return "scheduled_question"
         return None
 
     def active_session_keys(self) -> set[str]:

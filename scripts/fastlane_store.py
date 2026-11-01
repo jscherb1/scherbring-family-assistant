@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """CLI for the fast lane (scripts/fastlane.py): try a message without running anything. JSON on stdout, errors on stderr.
 
-    fastlane_store.py test "<text>" [--tier0-only] [--db PATH] [--today YYYY-MM-DD]
-        Dry run: what the fast lane would do with this message (Tier 0 rules, then the Tier 1 model unless
-        --tier0-only). Never writes, never touches a device or Todoist. Exit 0 = the fast lane would take it,
+    fastlane_store.py test "<text>" [--model] [--db PATH] [--today YYYY-MM-DD]
+        Dry run: what the fast lane would do with this message. Tier 0 rules only by default; --model also makes the
+        live Tier 1 call (a real, small API call). Never writes, never touches a device or Todoist. Exit 0 = the fast lane would take it,
         1 = it would pass it to the agent, 2 = bad input.
     fastlane_store.py eval --file PATH [--tier1-sample N] [--show] [--tier0-only] [--db PATH]
         Replay a message history (JSONL of agent_stream turn_start events or {"text": ...}, or one message per line)
@@ -97,6 +97,14 @@ def _router():
     return fastlane_model.HaikuRouter(timeout=25.0)   # cold start allowed here: this is a CLI, not the worker
 
 
+async def _ready(router, wait_s: float = 40.0) -> None:
+    """The CLI may wait for the one-use model client (the worker never does: it passes the message instead)."""
+    await router.prewarm()
+    end = asyncio.get_running_loop().time() + wait_s
+    while getattr(router, "_client", 1) is None and asyncio.get_running_loop().time() < end:
+        await asyncio.sleep(0.25)
+
+
 def cmd_test(args) -> int:
     text = (args.text or "").strip()
     if not text:
@@ -112,8 +120,10 @@ def cmd_test(args) -> int:
     ctx = fastlane.Context.load(args.db, today)
 
     async def go():
-        router = None if args.tier0_only else _router()
+        router = _router() if args.model else None
         try:
+            if router:
+                await _ready(router)
             return await classify(text, ctx, router)
         finally:
             if router:
@@ -153,10 +163,10 @@ def cmd_eval(args) -> int:
 
         async def run_t1():
             router = _router()
-            await router.prewarm()
             out = []
             try:
                 for i in sample:
+                    await _ready(router)     # each message uses a fresh one-use client
                     r = await classify(texts[i], ctx, router)
                     out.append((i, r))
             finally:
@@ -187,7 +197,8 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("test")
     t.add_argument("text")
-    t.add_argument("--tier0-only", action="store_true")
+    t.add_argument("--model", action="store_true", help="also make the live Tier 1 model call")
+    t.add_argument("--tier0-only", action="store_true", help=argparse.SUPPRESS)  # old spelling; Tier 0 is the default now
     t.add_argument("--db")
     t.add_argument("--today")
     t.set_defaults(fn=cmd_test)

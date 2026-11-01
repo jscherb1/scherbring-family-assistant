@@ -277,7 +277,8 @@ def _habit_log(f, ctx, dry):
         raise PassUp("habit_paused")
     day = _day_of(f, ctx)
     label = day_label(day, ctx.today)
-    if any(lg["log_date"] == day.isoformat() for lg in habits.list_logs(h["id"], limit=None, db_path=ctx.db_path)):
+    counter = h.get("target_count") is None   # a "just count it" habit: several a day are legitimate
+    if not counter and any(lg["log_date"] == day.isoformat() for lg in habits.list_logs(h["id"], limit=None, db_path=ctx.db_path)):
         return Reply(f"{h['name']} is already logged for {label}, so I didn't add another.")
     res = habits.log_completion(h["id"], log_date=day.isoformat(), db_path=ctx.db_path, today=ctx.today)
     st = res["status"]
@@ -357,13 +358,15 @@ def _rating_set(f, ctx, dry):
     if dry:
         return Reply(f"Would rate {label} {f['score']}/10" + (f" with the note {f['note']!r}." if f.get("note") else "."))
     before = dayrating.get_rating(day.isoformat(), db_path=ctx.db_path, today=ctx.today)
+    if before:
+        if before["score"] == f["score"] and (not f.get("note") or f["note"] == before.get("note")):
+            return Reply(f"{label.capitalize()} is already rated {before['score']}/10, so I left it.")
+        raise PassUp("rating_exists")    # a different score or note: changing a rating is for the agent
     try:
         r = dayrating.set_rating(f["score"], f.get("note"), rating_date=day.isoformat(), db_path=ctx.db_path, today=ctx.today)
     except dayrating.RatingError:
         raise PassUp("rating_rejected") from None
     out = f"✅ Rated {label} {r['score']}/10."
-    if before and before["score"] != r["score"]:
-        out += f" (It was {before['score']}.)"
     if r.get("note"):
         out += f" Note: {r['note']}"
     return Reply(out, wrote=True)
@@ -613,7 +616,7 @@ def _check_ha_set(fields, text, ctx):
             value = float(fields.get("value"))
         except (TypeError, ValueError):
             raise PassUp("ha_value_invalid") from None
-        if not 50 <= value <= 90:
+        if not 60 <= value <= 80:
             raise PassUp("ha_value_range")
         if not re.search(rf"(?<![\d.]){re.escape(str(int(value)))}(?![\d])", text):
             raise PassUp("ha_value_not_in_text")
@@ -621,8 +624,11 @@ def _check_ha_set(fields, text, ctx):
     raise PassUp("ha_action_unknown")
 
 
-def _tile_open(tile: dict) -> bool:
-    return bool(tile.get("open")) or tile.get("state") in ("open", "opening")
+def _door_state(tile: dict) -> str:
+    """The real state of a garage cover: open, opening, stopped, closing, closed. Anything else (unavailable,
+    unknown, ...) is "unknown", which is never treated as closed."""
+    st = str(tile.get("state") or "").lower()
+    return st if st in ("open", "opening", "stopped", "closing", "closed") else "unknown"
 
 
 def _ha_set(f, ctx, dry):
@@ -646,22 +652,39 @@ def _ha_set(f, ctx, dry):
             applied = f["value"] if lo is None or hi is None else max(lo, min(hi, f["value"]))
             note = "" if applied == f["value"] else f" (that's the thermostat's limit; you asked for {f['value']})"
             return Reply(f"✅ {tile.get('name') or f['target']} set to {applied:g}°.{note}", wrote=True)
-        # close: only doors that are open, and report the rest
-        said, wrote = [], False
-        for eid in ents:
-            tile = ha.fastlane_read(eid)
-            name = tile.get("name") or eid
-            if not _tile_open(tile):
-                said.append(f"{name} is already closed.")
-                continue
-            ha.fastlane_act(eid, "close_cover")
-            wrote = True
-            said.append(f"✅ Closing {name}.")
-        return Reply(" ".join(said), wrote=wrote)
+        return _close_doors(ents)
     except ha.HAError as e:
         if e.code == 2:
             raise PassUp("ha_refused") from None
         return Reply(f"Home Assistant didn't answer ({e.message}). I can't tell if that went through; check it.", wrote=True)
+
+
+def _close_doors(ents) -> Reply:
+    """Close only doors that are open, opening or stopped; say what each one was. An unreadable state is never
+    treated as closed. An error on a later door reports the earlier doors' outcome (side effects are possible, so
+    this is a reply, not a pass-up). Completion is not awaited: the reply says it was requested."""
+    said, attempted = [], False
+    for eid in ents:
+        try:
+            tile = ha.fastlane_read(eid)
+            name = tile.get("name") or eid
+            state = _door_state(tile)
+            if state == "closed":
+                said.append(f"{name} is already closed.")
+            elif state == "closing":
+                said.append(f"{name} is already closing.")
+            elif state == "unknown":
+                said.append(f"I can't read the state of {name} (it reports {tile.get('state')!r}), so I did nothing for it. Please check it.")
+            else:
+                attempted = True
+                ha.fastlane_act(eid, "close_cover")
+                said.append(f"Closing {name} (it was {state}). I haven't confirmed it finished, and the doorway should be clear.")
+        except ha.HAError as e:
+            if e.code == 2 and not said:
+                raise PassUp("ha_refused") from None
+            said.append(f"Home Assistant didn't answer for {eid} ({e.message}); I can't tell whether that one went through. Please check it.")
+            return Reply(" ".join(said), wrote=True)
+    return Reply(" ".join(said), wrote=attempted)
 
 
 def _check_ha_state(fields, text, ctx):
@@ -706,8 +729,13 @@ def _ha_state(f, ctx, dry):
                 out.append(f"{name}: {bit}.")
             elif eid.startswith("sensor."):
                 out.append(f"{name}: {t.get('display')}.")
-            elif eid.startswith(("cover.", "binary_sensor.")):
-                out.append(f"{name}: {'open' if _tile_open(t) else 'closed'}.")
+            elif eid.startswith("cover."):
+                st = _door_state(t)
+                out.append(f"{name}: " + ("stopped partway" if st == "stopped" else st if st != "unknown"
+                                           else f"state unavailable (it reports {t.get('state')!r})") + ".")
+            elif eid.startswith("binary_sensor."):
+                word = {"on": "open", "off": "closed"}.get(t.get("state"))
+                out.append(f"{name}: {word}." if word else f"{name}: can't be read (it reports {t.get('state')!r}).")
             else:
                 out.append(f"{name}: {t.get('state')}.")
     except ha.HAError as e:
@@ -797,7 +825,8 @@ _CHORE_RULES = [
 ]
 _RATE_RULES = [
     re.compile(rf"^(?:rate|rating)(?:\s+(?:my|the))?(?:\s+day)?(?:\s+(?P<day>{DAY}))?(?:\s+(?:to|at|as))?\s+(?:an?\s+)?(?P<score>10|[1-9])(?:/10)?(?:\s*[-–—:,.;]\s*(?P<note>\S.*))?$", re.I | re.S),
-    re.compile(rf"^(?P<day>{DAY})(?:\s+(?:was|is))?\s+(?:an?\s+)?(?P<score>10|[1-9])(?:/10)?(?:\s*[-–—:,.;]\s*(?P<note>\S.*))?$", re.I | re.S),
+    re.compile(rf"^(?P<day>{DAY})\s+(?:was|is)\s+(?:an?\s+)?(?P<score>10|[1-9])(?:/10)?(?:\s*[-–—:,.;]\s*(?P<note>\S.*))?$", re.I | re.S),
+    re.compile(rf"^(?P<day>{DAY})\s+(?P<score>10|[1-9])/10(?:\s*[-–—:,.;]\s*(?P<note>\S.*))?$", re.I | re.S),
 ]
 _TODO_RULE = re.compile(r"^(?:add|put) (?P<items>.+?) (?:to|on|onto) (?:my |the |our )?(?P<list>[a-z0-9' &-]+? list)$", re.I)
 _HA_ONOFF = [
@@ -849,6 +878,8 @@ def tier0(text: str, ctx: Context) -> Match | None:
         try:
             fields = prepare(action, fields, text, ctx)
         except PassUp:
+            return None
+        if write_veto(action, fields, text, check_text):
             return None
         return Match(action, fields, tier=0, check_text=check_text)
 
@@ -941,7 +972,11 @@ def check_model_output(obj, text: str, ctx: Context) -> tuple[Match | None, str]
     except PassUp as e:
         return None, "model_" + e.reason
     note = canon.get("note")
-    return Match(name, canon, tier=1, confidence=conf, check_text=text.replace(note, "") if note else None), ""
+    probe = text.replace(note, "") if note else None
+    why = write_veto(name, canon, text, probe)
+    if why:
+        return None, "model_veto_" + why
+    return Match(name, canon, tier=1, confidence=conf, check_text=probe), ""
 
 
 # ---------------------------------------------------------------------------
@@ -1039,6 +1074,76 @@ def eligibility(row: dict, store, *, now: float, ctx: Context | None = None) -> 
     if meta_text(text):
         return "meta"
     return None
+
+
+_NEGATION = re.compile(r"\b\w+n't\b|\b(?:not|never|no longer|skip|cancel\w*|nothing|neither|nor)\b", re.I)
+_QUESTION_START = re.compile(
+    r"^(?:should|shall|would|could|what if|if|did i|do i|have i|can i|how|why|what|when|where|who|which|is|are|was|were|does|will)\b", re.I)
+_CONDITIONAL = re.compile(r"\b(?:if|unless)\b", re.I)
+_QUOTED = re.compile(r"\"|(?:^|\s)'[^']+'(?:\s|$|[.,!?])")
+_REPORTED = re.compile(r"\b(?:said|says|told|asked|asks|thinks|wants me|wanted me|wants you)\b", re.I)
+_MULTI = re.compile(r"\b(?:and|then|also|plus)\b|[,;]", re.I)
+_SECOND_VERB = re.compile(
+    r"(?:\band\b|\bthen\b|\balso\b|\bplus\b|[,;])\s*(?:please\s+)?(?:turn|switch|set|close|shut|lower|log|mark|add|put|rate|open|raise|"
+    r"lift|unlock|remind|call|send|text|email|buy|get|check|schedule|make|start|stop|delete|remove|move|change|update)\b", re.I)
+_TODO_FILLER = {"add", "put", "to", "on", "onto", "the", "my", "our", "please", "and", "a", "an", "some", "can", "you",
+                "could", "would", "will", "list", "shopping", "grocery"}
+
+
+def write_veto(action: str, fields: dict, text: str, probe: str | None = None) -> str | None:
+    """A reason NOT to run a write action from this message, whatever tier chose it, or None. Negations, questions,
+    conditionals, quotes and reported speech are not commands; a message with more than one command is never
+    answered by doing part of it. `probe` is the message without free text (a rating note), so the user's own words in
+    a note cannot trip it. Read-only actions are not checked."""
+    spec = ACTIONS.get(action)
+    if spec is None or not spec.writes:
+        return None
+    t = _fix(probe if probe is not None else text).strip()
+    lead = strip_polite(t)
+    if _NEGATION.search(t):
+        return "negation"
+    if _QUESTION_START.match(lead) or t.endswith("?"):
+        return "question"
+    if _CONDITIONAL.search(t):
+        return "conditional"
+    if _QUOTED.search(t):
+        return "quoted"
+    if _REPORTED.search(t):
+        return "reported"
+    if action == "todo.add":
+        if _SECOND_VERB.search(t):
+            return "multi_command"
+        words = set(re.findall(r"[a-z0-9']+", t.lower()))
+        known = set(_TODO_FILLER)
+        for part in [*fields.get("items", []), fields.get("list", "")]:
+            known |= set(re.findall(r"[a-z0-9']+", part.lower()))
+        if words - known:
+            return "partial"     # words the action does not account for: something else was asked
+    elif _MULTI.search(t):
+        return "multi_command"
+    return None
+
+
+JOURNAL_LIKE = {"rating.set"}     # answers a nightly check-in: never fast-laned while one is open
+CHECKIN_WINDOW_S = 4 * 3600
+
+
+def checkin_block(match: Match, store, row: dict, ctx: Context, now: float) -> str | None:
+    """While a scheduled check-in asked something in the last 4 h and the day has no rating written since,
+    a rating-like message is an answer to it and belongs to the journal. Lights and list adds are unaffected."""
+    if match.action not in JOURNAL_LIKE:
+        return None
+    asked = store.open_checkin(row["session_key"], now=now, within_s=CHECKIN_WINDOW_S)
+    if asked is None:
+        return None
+    try:
+        rated = dayrating.get_rating(None, db_path=ctx.db_path, today=ctx.today)
+    except Exception:  # noqa: BLE001
+        return "checkin_open"
+    since = datetime.fromtimestamp(asked).isoformat(timespec="seconds")
+    if rated and (rated.get("updated_at") or "") >= since:
+        return None     # already answered
+    return "checkin_open"
 
 
 def ordering_conflict(row: dict, match: Match, store) -> str | None:

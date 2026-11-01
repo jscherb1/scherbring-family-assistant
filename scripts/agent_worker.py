@@ -631,7 +631,7 @@ class Worker:
             cost = res.cost_usd
             if time.time() - row["received_at"] > fastlane.MAX_AGE_S:
                 return self._fl_pass(row, "late")
-        why = fastlane.ordering_conflict(row, match, self.store)
+        why = fastlane.ordering_conflict(row, match, self.store) or fastlane.checkin_block(match, self.store, row, ctx, now)
         if why:
             return self._fl_pass(row, why)
         if not self.store.fastlane_claim(row["id"]):
