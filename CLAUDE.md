@@ -54,10 +54,10 @@ Applies to all development work (features, fixes, docs), whether it comes from a
 2. **Always work on a separate branch and merge through a PR.** Never commit directly to `main`. Branch,
    commit, open a PR, and merge only when the user says to.
 3. **Check whether a service restart is needed.** Before calling work done, work out which running
-   service picks up the change (dashboard, agent worker, orchestrator, scheduler; see
+   service picks up the change (dashboard, Telegram bridge, agent worker, scheduler; see
    `docs/OPERATIONS.md`) and restart it if needed, or tell the user it needs one. New or edited
    `.claude/agents/*.md` files are picked up by a fresh agent session (restart the agent worker if it
-   doesn't see them); `/reload-plugins` is a terminal-session command and doesn't apply to the bridge. Say in the final message what was
+   doesn't see them). Say in the final message what was
    restarted, and whether the change was verified live or only by tests.
 
 ## Open to-dos and runbook
@@ -67,17 +67,16 @@ in `docs/TODO.md`; read it before starting related work and update it when you f
 something. Day-to-day operation (status, logs, restarts, backups, expiring logins) is in
 `docs/OPERATIONS.md`.
 
-## Telegram via the bridge (current setup)
+## Telegram via the bridge
 
-Telegram messages now reach you through `scripts/telegram_bridge.py` + `scripts/agent_worker.py`
-(see `docs/OPERATIONS.md`, "Telegram bridge"), not the Telegram plugin. You are in this mode if
-there is no `mcp__plugin_telegram_telegram__reply` tool and messages arrive wrapped in a
-`<channel source=... chat_id=...>` tag. In this mode:
+Telegram messages reach you through `scripts/telegram_bridge.py` + `scripts/agent_worker.py`
+(see `docs/OPERATIONS.md`, "Telegram bridge"). Messages arrive wrapped in a
+`<channel source=... chat_id=...>` tag. The rules:
 
 - **Your final message IS the reply.** It is delivered to the user on the channel the message came
   from. Do not call a Telegram tool or run `telegram_send.py` for normal replies.
 - **The bridge handles acknowledgements** (👀 reaction, typing, and a "working on it" notice after
-  ~20 s). Don't send your own; the plugin-era "always ack >3 s" rule below is satisfied for you.
+  ~20 s). Don't send your own.
 - **Never use `AskUserQuestion`.** If you need an answer, ask in your final message; the user's
   answer arrives as the next message.
 - A `[Earlier notes]` block holds things already delivered to the user outside this conversation
@@ -91,53 +90,4 @@ there is no `mcp__plugin_telegram_telegram__reply` tool and messages arrive wrap
 - A `[Retry #N ...]` marker means an earlier attempt didn't finish and may have partly run: check
   current state before repeating any side effect (adding tasks, carts, tags, calendar events).
 - Run things in the foreground. Background tasks are disabled; their completion can't reach anyone.
-- Operating it: `scripts/agent_ctl.py status|tail|say|pause|mode`.
-
-The sections below describe the **plugin-era** behavior. They apply only if the Telegram plugin
-tool is present (e.g. after `agent_ctl.py mode plugin`).
-
-## Telegram channel behavior (plugin mode only)
-
-**Acknowledge any request expected to take more than ~3 seconds. This is a hard rule,
-always followed, no exceptions.** When a request arrives via the Telegram channel
-(a `channel` event carrying a `chat_id`, not a terminal request) and the work — ANY
-work, not just subagent delegation — will take more than a few seconds (delegating to a
-subagent like `hyvee`, `meal-planner`, `kids-memory`, etc.; multi-step web automation;
-bulk jobs; multi-file investigation; running several tool calls in sequence), FIRST send
-a brief one-line acknowledgement to the user via the Telegram reply tool
-(`mcp__plugin_telegram_telegram__reply`) using the incoming `chat_id`, then do the work,
-then send the result.
-
-- Send a SINGLE acknowledgement at the start that names the task, e.g. "🛒 On it — building
-  your Hy-Vee cart. This usually takes a couple of minutes; I'll send the summary when it's
-  ready." or "💙 On it — saving that memory for Ruth."
-- Do NOT send interim progress spam — one start ack plus the final result is enough.
-- Applies ONLY to Telegram-originated requests; never send Telegram messages for terminal
-  requests.
-- Skip the ack ONLY for requests you're confident will answer in a couple seconds (a quick
-  lookup, a single fast tool call). If there's any doubt whether it'll take longer, send the
-  ack — a redundant ack costs nothing, a missing one leaves the user wondering if the message
-  landed.
-
-**Always ask and reply through Telegram, never through `AskUserQuestion`.** For a
-request that arrived via the Telegram channel, the user only sees messages sent with
-`mcp__plugin_telegram_telegram__reply` (or the `telegram_send.py` fallback below) — they
-are not attached to this terminal session, so `AskUserQuestion` never reaches them and
-will silently hang or get skipped. This applies to every reply, not just clarifying
-questions: acknowledgements, results, and any question you need answered mid-task must
-all go out via the Telegram reply tool (or its fallback). Only use `AskUserQuestion` for
-requests that originated in the terminal.
-
-**If the Telegram reply tool errors or isn't available.** The `mcp__plugin_telegram_telegram__reply`
-tool's binding can go stale mid-session (a known failure mode after an SSE stream reconnect —
-the MCP server stays connected but the tool silently drops out of the render-time tool list).
-If a call to it errors, or it's simply missing when you go to use it, do not give up or just
-answer in plain text — fall back immediately to:
-
-    python scripts/telegram_send.py "<message text>"
-
-This sends directly via the Telegram Bot API, bypassing the broken tool binding, so the user
-still gets the reply. It also stamps a state file that the `watchdog_telegram_health.py` check
-picks up as an explicit unhealthy signal and uses to restart the orchestrator with a fresh,
-working tool binding — so use this fallback every single time the real tool fails, not just
-once. Just keep using the fallback until it's healed.
+- Operating it: `scripts/agent_ctl.py status|tail|say|pause`.

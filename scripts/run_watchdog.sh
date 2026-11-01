@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# One watchdog pass: Telegram health, scheduler health, context-log prune, and
-# log pruning. Invoked every 2 minutes by systemd/assistant-watchdog.timer;
+# One watchdog pass: scheduler health and log pruning. Invoked every 2 minutes by systemd/assistant-watchdog.timer;
 # safe to run by hand for an immediate check.
 #
 # Output goes to a per-day file under state/logs/ (as the PowerShell version
@@ -18,11 +17,8 @@ mkdir -p "$LOG_DIR"
 
 {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] --- watchdog pass ---"
-    "$PY" scripts/watchdog_telegram_health.py 2>&1
     "$PY" scripts/watchdog_scheduler_health.py 2>&1
-    "$PY" scripts/telegram_context_bridge.py prune 2>&1
 } | tee -a "$LOG_FILE"
 
 # Prune old per-day and per-run logs so state/logs doesn't grow without bound.
-find "$LOG_DIR" -type f -name '*.log' -mtime "+$RETENTION_DAYS" \
-    ! -name 'orchestrator_debug.log' ! -name 'orchestrator_exits.log' -delete
+find "$LOG_DIR" -type f -name '*.log' -mtime "+$RETENTION_DAYS" -delete

@@ -8,9 +8,6 @@
                                       send a message from the "terminal" channel and print the reply
     agent_ctl.py tail                 follow the live agent event stream (read-only)
     agent_ctl.py sessions             session ids the worker resumes
-    agent_ctl.py mode status|plugin|bridge [--yes]
-                                      which stack serves Telegram; switch between the old plugin
-                                      orchestrator and the bridge (takes the other one down first)
     agent_ctl.py drill worker-kill|bridge-kill|hang|worker-stop|worker-start
                                       induce a failure to verify detection and recovery
 """
@@ -27,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bridge_store import BridgeStore  # noqa: E402
-from paths import REPO_ROOT, find_claude, get_env  # noqa: E402
+from paths import REPO_ROOT, get_env  # noqa: E402
 
 DB = REPO_ROOT / "state" / "inbox.db"
 STREAM_LOG = REPO_ROOT / "state" / "logs" / "agent_stream.jsonl"
@@ -55,6 +52,8 @@ def cmd_status(args) -> int:
     print(f"outbox : {snap['outbox_pending']} pending, {snap['outbox_failed']} failed")
     if snap["current_turn"]:
         print(f"turn   : message {snap['current_turn']['inbox_id']} running {int(time.time() - snap['current_turn']['started'])}s")
+    token_env = _effective_token_env()
+    print(f"token  : {token_env} ({'PRODUCTION bot' if token_env == 'TELEGRAM_BOT_TOKEN' else 'test bot'})")
     if snap["mcp_down"]:
         print(f"mcp    : not connected: {', '.join(snap['mcp_down'])}")
     return 0 if snap["bridge_up"] and snap["worker_up"] else 1
@@ -114,18 +113,6 @@ def cmd_sessions(_args) -> int:
     return 0
 
 
-ORCH_UNIT = "assistant-orchestrator"
-PLUGIN = "telegram@claude-plugins-official"
-
-
-def _plugin(action: str) -> None:
-    """The Telegram plugin must be disabled while the bridge runs: any Claude session that loads it
-    (even a pre-warmed spare) polls the same bot token and blocks the bridge with a getUpdates Conflict."""
-    claude = find_claude()
-    if claude:
-        subprocess.run([claude, "plugin", action, PLUGIN], capture_output=True, text=True)
-
-
 def _effective_token_env() -> str:
     """What the bridge unit really uses: .env override, else the unit's own Environment default."""
     override = get_env("BRIDGE_TOKEN_ENV")
@@ -136,52 +123,6 @@ def _effective_token_env() -> str:
         if part.startswith("BRIDGE_TOKEN_ENV="):
             return part.split("=", 1)[1]
     return "TELEGRAM_TEST_BOT_TOKEN"
-
-
-def _active(unit: str) -> bool:
-    return _systemctl("is-active", unit).stdout.strip() == "active"
-
-
-def _tmux_session_exists() -> bool:
-    return subprocess.run(["tmux", "has-session", "-t", "assistant"], capture_output=True).returncode == 0
-
-
-def cmd_mode(args) -> int:
-    token_env = _effective_token_env()
-    on_prod_bot = token_env == "TELEGRAM_BOT_TOKEN"
-    stacks = {"plugin orchestrator": _active(ORCH_UNIT), "bridge": _active(BRIDGE_UNIT), "worker": _active(WORKER_UNIT)}
-    if args.target == "status":
-        for name, up in stacks.items():
-            print(f"{name:20}: {'active' if up else 'stopped'}")
-        print(f"bridge uses token    : {token_env} ({'PRODUCTION bot' if on_prod_bot else 'test bot'})")
-        if on_prod_bot and stacks["plugin orchestrator"] and stacks["bridge"]:
-            print("WARNING: both stacks are polling the production bot; they will fight over updates. Run `mode plugin` or `mode bridge`.")
-            return 1
-        return 0
-    if not args.yes:
-        print(f"`mode {args.target}` restarts the production Telegram path (a few seconds of downtime; queued messages are kept by the bridge). Re-run with --yes.")
-        return 2
-    if args.target == "plugin":
-        for u in (WORKER_UNIT, BRIDGE_UNIT):
-            _systemctl("disable", "--now", u)
-        _plugin("enable")
-        _systemctl("enable", "--now", ORCH_UNIT)
-        print("Switched to the plugin orchestrator. Bridge and worker stopped and disabled.")
-        return 0
-    # bridge
-    _systemctl("disable", "--now", ORCH_UNIT)
-    deadline = time.time() + 15
-    while _tmux_session_exists() and time.time() < deadline:
-        time.sleep(0.5)
-    if _tmux_session_exists() or _active(ORCH_UNIT):
-        print("The old orchestrator is still running; refusing to start the bridge (two pollers on one bot token). Check `tmux ls`.", file=sys.stderr)
-        return 1
-    _plugin("disable")
-    _systemctl("enable", "--now", BRIDGE_UNIT, WORKER_UNIT)
-    print(f"Switched to the bridge (token {token_env}). The old orchestrator is stopped and disabled.")
-    if on_prod_bot and get_env("BRIDGE_EXPORT_LEGACY_LOG") != "1":
-        print("Tip: set BRIDGE_EXPORT_LEGACY_LOG=1 in .env so a switch back keeps recent conversation context.")
-    return 0
 
 
 def cmd_drill(args) -> int:
@@ -215,10 +156,6 @@ def main() -> int:
     p.set_defaults(fn=cmd_say)
     sub.add_parser("tail").set_defaults(fn=cmd_tail)
     sub.add_parser("sessions").set_defaults(fn=cmd_sessions)
-    p = sub.add_parser("mode")
-    p.add_argument("target", choices=["status", "plugin", "bridge"])
-    p.add_argument("--yes", action="store_true")
-    p.set_defaults(fn=cmd_mode)
     p = sub.add_parser("drill")
     p.add_argument("drill", choices=["worker-kill", "bridge-kill", "hang", "worker-stop", "worker-start"])
     p.set_defaults(fn=cmd_drill)

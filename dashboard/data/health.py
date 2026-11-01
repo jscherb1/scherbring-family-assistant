@@ -1,49 +1,9 @@
-"""Orchestrator health readers (moved unchanged from the original Flask app)."""
-import json
+"""Scheduled-task run health and scheduler watchdog readers."""
 import sqlite3
 from datetime import timedelta
 
 from . import common
 from .common import now, parse_ts, read_json
-
-
-def get_uptime_info():
-    restarts_path = common.state_dir() / "orchestrator_restarts.jsonl"
-    if not restarts_path.exists():
-        return {"error": "no restart log found", "last_restart_at": None,
-                "restarts_24h": 0, "restarts_7d": 0}
-
-    current = now()
-    restarts = []
-    with open(restarts_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            ts = parse_ts(row.get("ts"))
-            if ts:
-                restarts.append(ts)
-
-    if not restarts:
-        return {"error": "restart log empty", "last_restart_at": None,
-                "restarts_24h": 0, "restarts_7d": 0}
-
-    restarts.sort()
-    last_restart = restarts[-1]
-    uptime_seconds = (current - last_restart).total_seconds()
-    restarts_24h = sum(1 for ts in restarts if current - ts <= timedelta(hours=24))
-    restarts_7d = sum(1 for ts in restarts if current - ts <= timedelta(days=7))
-
-    return {
-        "last_restart_at": last_restart.isoformat(),
-        "uptime_seconds": max(uptime_seconds, 0),
-        "restarts_24h": restarts_24h,
-        "restarts_7d": restarts_7d,
-    }
 
 
 def get_task_run_health():
@@ -133,8 +93,7 @@ def get_task_run_health():
 def get_watchdog_status():
     result = {}
     state = common.state_dir()
-    for name, path in (("telegram", state / "telegram_watchdog.json"),
-                       ("scheduler", state / "scheduler_watchdog.json")):
+    for name, path in (("scheduler", state / "scheduler_watchdog.json"),):
         data = read_json(path)
         if data is None:
             result[name] = {"error": "watchdog state file not found"}
@@ -147,19 +106,10 @@ def get_watchdog_status():
     return result
 
 
-def get_telegram_fallback():
-    data = read_json(common.state_dir() / "telegram_fallback_used.json")
-    if data is None:
-        return {"last_used_at": None, "reason": None}
-    return {"last_used_at": data.get("last_used_at"), "reason": data.get("reason")}
-
-
 def get_status():
     """Full payload for /api/status (shape unchanged from the Flask PoC)."""
     return {
         "generated_at": now().isoformat(),
-        "uptime": get_uptime_info(),
         "task_runs": get_task_run_health(),
         "watchdogs": get_watchdog_status(),
-        "telegram_fallback": get_telegram_fallback(),
     }

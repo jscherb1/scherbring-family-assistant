@@ -1,17 +1,12 @@
 {% extends "archive/base.html" %}
 
 {% block page_header %}
-  <h1>Orchestrator Health</h1>
+  <h1>Health</h1>
   <p class="subtitle" id="generated-at">Loading…</p>
 {% endblock %}
 
 {% block content %}
   <div class="grid" id="grid">
-    <section class="card" id="card-uptime">
-      <h2>Uptime</h2>
-      <div class="card-body">Loading…</div>
-    </section>
-
     <section class="card" id="card-success">
       <h2>Task Success Rate</h2>
       <div class="card-body">Loading…</div>
@@ -19,11 +14,6 @@
 
     <section class="card" id="card-watchdogs">
       <h2>Watchdog Health</h2>
-      <div class="card-body">Loading…</div>
-    </section>
-
-    <section class="card" id="card-fallback">
-      <h2>Telegram Fallback</h2>
       <div class="card-body">Loading…</div>
     </section>
 

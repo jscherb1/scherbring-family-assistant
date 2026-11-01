@@ -136,16 +136,6 @@ def format_seed(rows: list[dict]) -> str:
             "resumed. Treat it as your memory of the recent conversation.]\n" + "\n".join(lines) + "\n[/history]\n\n")
 
 
-def _export_legacy(direction: str, chat_id: str, text: str) -> None:
-    """Keep the plugin-era conversation log current so switching back loses no context. Off until cutover
-    (test traffic must not leak into the production orchestrator's replay)."""
-    if os.environ.get("BRIDGE_EXPORT_LEGACY_LOG") != "1":
-        return
-    from telegram_context_bridge import export_legacy
-
-    export_legacy(direction, chat_id, text)
-
-
 def sd_notify(msg: str) -> None:
     addr = os.environ.get("NOTIFY_SOCKET")
     if not addr:
@@ -193,7 +183,7 @@ class SdkSession:
             resume=resume or None,
             # A background task outlives its turn and its completion has nowhere to be
             # delivered here; make the agent run things in the foreground instead.
-            env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "BRIDGE_WORKER": "1"},
+            env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"},
         )
 
     async def ensure_ready(self) -> None:
@@ -310,7 +300,7 @@ async def model_canary(model: str) -> None:
     settings): verifies auth, network and the API without touching the user's context."""
     from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
-    opts = ClaudeAgentOptions(model=model, setting_sources=[], max_turns=1, allowed_tools=[], extra_args={"strict-mcp-config": None}, env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1", "BRIDGE_WORKER": "1"})
+    opts = ClaudeAgentOptions(model=model, setting_sources=[], max_turns=1, allowed_tools=[], extra_args={"strict-mcp-config": None}, env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"})
     result = None
     async for m in query(prompt="Reply with exactly: OK", options=opts):  # drain fully; early exit leaves the generator open
         if isinstance(m, ResultMessage):
@@ -348,8 +338,6 @@ class Worker:
             self.store.fail(row["id"])
             self._reply(row, "⚠️ I couldn't process that message after several attempts. Please resend it or rephrase.", kind="notice", note=True)
             return True
-        if row["channel"] == "telegram":
-            _export_legacy("in", row["chat_ref"], row["text"])
         resolve_reply_to(self.store, row)
         session = self._session(row["session_key"])
         should_rotate = getattr(session, "should_rotate", None)
@@ -391,8 +379,6 @@ class Worker:
         # Never close a message without telling the user something.
         final = result.text if result.text.strip() else "✅ Done (I had nothing further to report)."
         self._reply(row, final)
-        if row["channel"] == "telegram":
-            _export_legacy("out", row["chat_ref"], final)
         self.store.complete(row["id"])
         self._track_daily_cost(result.cost_usd or 0.0)
         _append_jsonl(USAGE_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "session": row["session_key"], "inbox_id": row["id"], "duration_s": round(time.time() - started, 1), "cost_usd": result.cost_usd, "usage": result.usage})

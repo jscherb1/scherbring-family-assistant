@@ -317,7 +317,7 @@ def main() -> int:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    # Production token also lives in the old plugin's .env; same lookup order as telegram_send.py.
+    # Production token may still live in the old plugin's .env (until rotated); same lookup order as telegram_send.py.
     token = get_env(args.token_env, (telegram_env_path(),))
     if not token:
         print(f"telegram_bridge: {args.token_env} not set", file=sys.stderr)

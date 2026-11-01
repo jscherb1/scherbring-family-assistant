@@ -62,7 +62,6 @@
         <h3 class="mini-h">Next up</h3>
         <ul class="link-list">{% for t in b.upcoming %}<li><a href="/health/schedule">{{ t.name }}</a> <span class="muted">{{ t.next_run|fmt_dt }}</span></li>{% endfor %}</ul>
       {% endif %}
-      {% if b.uptime %}<p class="footnote">Orchestrator up {{ b.uptime.uptime_seconds|fmt_duration }} · {{ b.uptime.restarts_7d }} restart{{ 's' if b.uptime.restarts_7d != 1 }} in 7 days · <a href="/health/restarts">history</a></p>{% endif %}
     </section>
   </div>
 </div>

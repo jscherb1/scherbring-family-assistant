@@ -10,11 +10,10 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 
 | Unit | Job |
 |---|---|
-| `assistant-orchestrator.service` | **Stopped and disabled since the 2026-10-06 cutover** (rollback only): Claude Code with the Telegram plugin channel, in a tmux session named `assistant` |
 | `assistant-bridge.service` | Telegram bridge (**live, production bot**): polls Telegram into a durable inbox, delivers replies from the outbox. See "Telegram bridge" below |
 | `assistant-agent-worker.service` | agent worker (**live**): runs Claude turns for inbox messages via the Agent SDK, resumes its session on restart; systemd watchdog 30 s |
 | `assistant-scheduler.timer` | every 2 min: run due scheduled tasks (`scripts/scheduler_dispatch.py`) |
-| `assistant-watchdog.timer` | every 2 min: Telegram-health and scheduler-health checks, log pruning |
+| `assistant-watchdog.timer` | every 2 min: scheduler-health check, log pruning |
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
 | `assistant-system-health.timer` | every 2 h: integration health checks, shown on the dashboard's System status page (`python scripts/system_health_store.py status`) |
 | `assistant-insights-refresh.timer` | every 30 min, 6am-10pm: refreshes COROS sleep/recovery, weather, habits and journal answers for My Hub, day rating and Wellness (`python scripts/dayrating_store.py insights refresh --days 3 --source coros_health,weather,habits,journal`) |
@@ -27,22 +26,21 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 
 ```
 systemctl --user list-timers 'assistant-*'          # every timer should have a NEXT time
-systemctl --user status assistant-orchestrator      # active (running)
-tmux attach -t assistant                            # look at it; Ctrl-b d to leave
+scripts/agent_ctl.py status                         # bridge and worker up, queue, current turn
 python scripts/credential_check.py --status         # login ages and probes, sends nothing
-python scripts/scheduler_store.py list              # the 12 scheduled tasks
+python scripts/scheduler_store.py list              # the scheduled tasks
 ```
 
-Quick end-to-end check: send the bot a message. If there is no reply within a minute, look at
-`state/orchestrator_restarts.jsonl` (restart history) and `state/logs/orchestrator_debug.log`.
+Quick end-to-end check: send the bot a message. If there is no reply within a minute, run
+`scripts/agent_ctl.py status` and look at `journalctl --user -u assistant-bridge -u assistant-agent-worker -n 100`.
 
 ## Logs
 
 | Where | What |
 |---|---|
 | `journalctl --user -u assistant-scheduler -n 50` | dispatcher ticks (also `-u assistant-watchdog`, `-u assistant-backup`, ...) |
-| `state/logs/orchestrator_debug.log` | the orchestrator's Claude debug log (read by the Telegram watchdog) |
-| `state/logs/orchestrator_exits.log` | one line per orchestrator exit |
+| `journalctl --user -u assistant-bridge -u assistant-agent-worker` | bridge and worker logs |
+| `state/logs/agent_stream.jsonl` | the worker's live event stream (`agent_ctl.py tail`) |
 | `state/logs/watchdog_YYYY-MM-DD.log` | each watchdog pass |
 | `state/logs/scheduler_dispatch_debug/*.log` | one debug log per scheduled run |
 | `scheduled_task_runs` table | per-run status and summary (`scheduler_store.py`) |
@@ -62,36 +60,33 @@ documented command, not by widening the allow list.
 ## Start, stop, restart
 
 ```
-systemctl --user restart assistant-orchestrator     # fresh Claude session; last hour of chat is replayed
-systemctl --user stop assistant-orchestrator        # stop; it will NOT come back until started
-systemctl --user start assistant-orchestrator
+systemctl --user restart assistant-agent-worker     # picks up agent/prompt/settings changes; the session is resumed
+systemctl --user restart assistant-bridge           # picks up telegram_bridge.py changes; queued messages are kept
+systemctl --user stop assistant-agent-worker        # stop; it will NOT come back until started
+systemctl --user start assistant-agent-worker
 systemctl --user restart assistant-scheduler.timer
 ```
 
 After editing a unit in `systemd/`, run `scripts/install_systemd.sh` (it re-templates the
-paths and reloads), then restart the unit. Never run a second orchestrator by hand while the
-unit is up: two pollers on one bot token fight over Telegram updates. (The launcher refuses a
-second copy with a lock, but check `tmux ls` first.)
+paths and reloads), then restart the unit. Never run a second bridge by hand while the unit is
+up: two pollers on one bot token fight over Telegram updates.
 
-## Telegram bridge (replaces the Telegram plugin; branch `feat/telegram-bridge`)
+## Telegram bridge
 
-The plugin ran Telegram polling inside the Claude TUI and died silently. The bridge splits that in
+The bridge splits Telegram handling in
 two: `scripts/telegram_bridge.py` owns Telegram (saves every message to `state/inbox.db` *before*
 acknowledging it, delivers replies from an outbox with retry) and `scripts/agent_worker.py` runs the
 Claude turns and can be killed or restarted at any moment without losing a message or the
 conversation (the Claude session is resumed by id; if that fails it is rebuilt from the message log).
 
-**Status of the rollout:** cut over to the production bot on 2026-10-06 (the old orchestrator is
-stopped and disabled). Roll back with `scripts/agent_ctl.py mode plugin --yes`; `mode status` shows
-which stack is live. The test bot (`BRIDGE_TOKEN_ENV=TELEGRAM_TEST_BOT_TOKEN` in `.env`) is still there
-for experiments.
+The production bot is served by the bridge (cut over 2026-10-06). The test bot
+(`BRIDGE_TOKEN_ENV=TELEGRAM_TEST_BOT_TOKEN` in `.env`) is still there for experiments.
 
-**The Telegram plugin must stay disabled while the bridge runs** (`claude plugin disable
-telegram@claude-plugins-official`, done by `mode bridge`; `mode plugin` re-enables it). The plugin is a
-poller: any Claude session that loads it, even a pre-warmed spare from the Claude daemon, polls the same
-bot token and blocks the bridge with `getUpdates: Conflict`. This happened at cutover. If polling is
-blocked for more than a minute the bridge messages the user ("I'm not receiving your messages") and
-sends a recovery message afterwards; find the culprit with `ps -eo pid,ppid,etime,cmd | grep "bun run.*telegram"`.
+**Never enable the Telegram Claude plugin** (`telegram@claude-plugins-official`). It is a poller: any
+Claude session that loads it, even a pre-warmed spare from the Claude daemon, polls the same bot token and
+blocks the bridge with `getUpdates: Conflict`. If polling is blocked for more than a minute the bridge messages
+the user ("I'm not receiving your messages") and sends a recovery message afterwards; find the culprit with
+`ps -eo pid,ppid,etime,cmd | grep "bun run.*telegram"`.
 
 ```
 scripts/agent_ctl.py status            # up/down, queue, current turn, MCP problems (exit 1 if unhealthy)
@@ -117,8 +112,7 @@ system-health, task-failure, scheduler-watchdog and backup alerts, `telegram_sen
 (`source`, `kind`), its Telegram message ids (`sent_ids`), and a context note shown to the agent on
 the user's next message. When the user replies to a message in Telegram, the bridge keeps
 `reply_to_message` and the worker looks it up in `sent_ids`, so the turn carries a
-`<replying_to source=...>` block with the full original text. Scheduled runs set
-`ASSISTANT_HEADLESS=1` so the plugin-era conversation hooks stay out of them; sessions rotate above 150k context tokens or after 7 days (rebuilt from
+`<replying_to source=...>` block with the full original text. Sessions rotate above 150k context tokens or after 7 days (rebuilt from
 the last 48 h / 40 messages); a quiet-hours (03:xx) `/compact` runs if context > 40k tokens. Set
 `BRIDGE_DAILY_COST_ALERT_USD` in `.env` for a once-a-day usage alert. Per-turn usage is in
 `state/usage.jsonl`.
@@ -142,13 +136,9 @@ WSL2 only runs while its VM is up. Three pieces keep it up:
 
 Plus `sudo loginctl enable-linger $USER` so user units run with no login session.
 
-Optional: `scripts/register_attach_window.ps1` registers a logon task, `WSL-Assistant-Window`,
-that opens a window showing the live orchestrator. It only views the session; closing it never
-stops the assistant. Remove with `Unregister-ScheduledTask -TaskName WSL-Assistant-Window -Confirm:$false`.
-
 Windows sleep is not the problem on this machine: standby is set to never, and the clock-jump
 warnings in the debug log are about a second long, not sleep-sized. If replies are ever
-delayed, note when you sent and when it answered, then check `state/orchestrator_restarts.jsonl`.
+delayed, note when you sent and when it answered, then check `journalctl --user -u assistant-bridge -u assistant-agent-worker` around those times.
 
 ## Logins that expire
 
@@ -238,7 +228,7 @@ scheduled tasks and memory notes. Do this after any change to the backup and eve
 
 ### Restore
 
-1. Stop the assistant: `systemctl --user stop assistant-orchestrator assistant-scheduler.timer`
+1. Stop the assistant: `systemctl --user stop assistant-bridge assistant-agent-worker assistant-scheduler.timer`
 2. Unpack the data archive somewhere temporary: `mkdir /tmp/restore && tar -xzf data-STAMP.tar.gz -C /tmp/restore`
 3. Put things back:
    - `/tmp/restore/state/agent_results.db` to `state/agent_results.db`
@@ -257,7 +247,7 @@ scheduled tasks and memory notes. Do this after any change to the backup and eve
    | `state/hyvee_session.json`, `state/coros_session.json`, `state/google/` | the same names under the repo's `state/` |
    | `repo/.mcp.json`, `repo/settings.local.json` | repo `.mcp.json`, and repo `.claude/settings.local.json` |
 
-5. Start again: `systemctl --user start assistant-orchestrator assistant-scheduler.timer`, then run
+5. Start again: `systemctl --user start assistant-bridge assistant-agent-worker assistant-scheduler.timer`, then run
    `python scripts/scheduler_store.py list` and send the bot a message.
 
 Not in the backup because it can be rebuilt: the venv and `vendor/` (run `scripts/setup_wsl.sh`),
@@ -268,8 +258,8 @@ Also worth doing now and then: a `wsl --export` of the whole distro to a Windows
 
 ## Permissions
 
-The orchestrator runs with `--permission-mode auto` and the allow/deny rules in
-`.claude/settings.json`. The deny rules stop the agent from reading or editing credential
+The agent worker runs Claude in `--permission-mode auto` with the allow/deny rules in
+`.claude/settings.json`; scheduled runs are one-shot `claude --print` processes (`scripts/scheduler_dispatch.py`) under the same rules. The deny rules stop the agent from reading or editing credential
 files (`~/.config/scherbring-assistant`, `~/.ssh`, `~/.monarch-mcp-server`, the Telegram channel
 folder, `.env`, the session files), and from running shell commands that name them. They apply to
 every agent run, including scheduled ones. Scripts you run yourself are not affected.
@@ -282,8 +272,8 @@ an allow rule is denied. When you add an agent that needs a new script, add an a
 
 1. `git clone` the repo, then `scripts/setup_wsl.sh`.
 2. Restore from a backup (see **Restore**), or copy `~/.config/scherbring-assistant/` by hand.
-3. `claude auth login`, re-pair Telegram if the bot token changed, and redo the logins above.
+3. `claude auth login`, set `BRIDGE_ALLOWED_CHAT_IDS` for the new bot if the token changed, and redo the logins above.
 4. `sudo loginctl enable-linger $USER` and `scripts/install_systemd.sh <units>` (see `README.md`).
 
-Only one machine may run the orchestrator at a time (one bot token, one poller). The Windows
+Only one machine may run the bridge at a time (one bot token, one poller). The Windows
 keep-alive task is the only part that is specific to WSL.

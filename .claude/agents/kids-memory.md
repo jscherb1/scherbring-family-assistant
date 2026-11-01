@@ -63,7 +63,7 @@ This returns phrases previously confirmed as real triggers (`positive`) or as
 false alarms (`false_positive`). Use it to calibrate borderline cases.
 
 **Always ask the user rather than guessing** when:
-- It's unclear whether the message is a general orchestrator memory/note versus a
+- It's unclear whether the message is a general memory/note for the main agent versus a
   kid-specific memory.
 - It's unclear which child the memory is about (mentions neither by name, or the
   context doesn't make it obvious).

@@ -1,7 +1,7 @@
 # Getting Started
 
 This repo is a working personal AI assistant built on [Claude Code](https://claude.com/product/claude-code):
-one **orchestrator** you talk to over Telegram (or a terminal), which delegates to
+one agent you talk to over Telegram (or a terminal), which delegates to
 scoped **subagents** (Todoist, meal planning, finance, kids' memories, lawn & garden,
 smart home, fitness, etc.), each backed by a local SQLite store so it remembers things
 between conversations.
@@ -38,25 +38,19 @@ tasks, your finances, your kids' names). Keep your remote **private**.
 ## 2. Prerequisites
 
 - **Linux with systemd.** This was built and is run on **WSL2 Ubuntu 24.04**, and it works
-  the same on plain Ubuntu or a small VPS. The always-on part is systemd user units plus
-  tmux. On WSL2 you also need `systemd=true` in `/etc/wsl.conf` and one Windows startup
+  the same on plain Ubuntu or a small VPS. The always-on part is systemd user units. On WSL2 you also need `systemd=true` in `/etc/wsl.conf` and one Windows startup
   task that keeps the VM alive (see **Always-on** in `README.md`). macOS would need the
   units redone as launchd jobs.
 - **[Claude Code](https://claude.com/product/claude-code)** installed and logged in
   (`claude` on your PATH).
-- **[Bun](https://bun.sh)** — the Telegram channel plugin's MCP server runs on Bun,
-  not Node. Without it, the channel silently never starts.
-  ```
-  curl -fsSL https://bun.sh/install | bash
-  ```
-- **Python 3.12+, tmux, sqlite3, git, [uv](https://docs.astral.sh/uv/) and
+- **Python 3.12+, sqlite3, git, [uv](https://docs.astral.sh/uv/) and
   [age](https://github.com/FiloSottile/age).** `scripts/setup_wsl.sh` builds the virtualenv
   and installs every Python dependency, Playwright's Chromium, and the pinned Home
   Assistant and Monarch servers, so you don't `pip install` anything by hand.
 
 ## 3. Core setup (do this first, everything else is optional)
 
-This gets you the minimum working loop: Telegram → orchestrator → Todoist subagent,
+This gets you the minimum working loop: Telegram → bridge → agent worker → Todoist subagent,
 with memory. Full detail is in `README.md` under **Setup**, but the short version:
 
 0. **Build the environment**: run `scripts/setup_wsl.sh` from the repo root. Then create
@@ -65,24 +59,17 @@ with memory. Full detail is in `README.md` under **Setup**, but the short versio
    `.env.example` as the list of keys.
 1. **Create a Telegram bot** via [@BotFather](https://t.me/BotFather); copy the token.
 2. **Get your Telegram user ID** (e.g. via [@userinfobot](https://t.me/userinfobot)).
-3. **Configure the Telegram channel** (any `claude` session — this persists to
-   `~/.claude/channels/telegram/.env`, not this repo):
-   ```
-   /plugin install telegram@claude-plugins-official
-   /telegram:configure <bot-token>
-   ```
-4. **Launch the orchestrator with the channel attached:**
-   ```
-   tmux new-session -d -s assistant scripts/start_orchestrator.sh
-   tmux attach -t assistant      # to watch it; Ctrl-b d detaches
-   ```
-5. **Pair your account** — this is the step that actually lets your messages through:
-   ```
-   # From Telegram, send any message to your bot -> it replies with a pairing code.
-   # In the running Claude Code session:
-   /telegram:access pair <code>
-   /telegram:access policy allowlist   # optional but recommended: lock out everyone else
-   ```
+3. **Add the bot to your secrets file.** In `~/.config/scherbring-assistant/.env` set
+   `TELEGRAM_BOT_TOKEN=<bot-token>` and `BRIDGE_ALLOWED_CHAT_IDS=<your chat id>`
+   (comma-separated for several people). If you don't know your chat id yet, leave
+   `BRIDGE_ALLOWED_CHAT_IDS` empty: the bridge then serves nobody and replies to any sender with
+   their chat id, which you copy into `.env`. Messages from any other chat id are never served.
+   Don't install the Telegram Claude plugin; it polls the same token and blocks the bridge.
+4. **Start the bridge and the agent worker** (see the systemd step below; for a first look
+   before installing, `scripts/agent_ctl.py status` shows whether both are up and
+   `scripts/agent_ctl.py say "hello"` talks to the agent from the terminal).
+5. **Pair and check**: message the bot. If you set the chat id, it answers; if it replied
+   with a chat id instead, add that to `BRIDGE_ALLOWED_CHAT_IDS` and restart `assistant-bridge`.
 6. **Todoist MCP** — `.mcp.json.example` shows the config; copy it to `.mcp.json`. The
    Todoist entry is the official hosted server (OAuth) — the first Todoist tool call
    pops a browser sign-in. Don't also run `claude mcp add todoist ...`, it'll cause an
@@ -91,12 +78,11 @@ with memory. Full detail is in `README.md` under **Setup**, but the short versio
    shows up in Todoist and the bot replies, then ask "what did I just add?" and confirm
    it remembers — that continuity (not just the round trip) is the real test.
 
-Once that works, hand it over to systemd so it starts at boot and restarts if it crashes:
+Install the units so everything starts at boot and restarts if it crashes:
 ```
 sudo loginctl enable-linger "$USER"
-tmux kill-session -t assistant     # stop the manual one first
-scripts/install_systemd.sh assistant-orchestrator.service assistant-scheduler.timer \
-    assistant-watchdog.timer assistant-credential-check.timer assistant-backup.timer
+scripts/install_systemd.sh assistant-bridge.service assistant-agent-worker.service \
+    assistant-scheduler.timer assistant-watchdog.timer assistant-credential-check.timer assistant-backup.timer
 ```
 `docs/OPERATIONS.md` is the day-to-day runbook (status, logs, restart, backups, expiring
 logins).
@@ -106,10 +92,10 @@ logins).
 This is the part worth knowing about before you start reading agent-by-agent docs:
 **most of the remaining setup is a conversation, not a checklist.** Each subagent
 owns a small SQLite store seeded through its own CLI, and the fastest way to seed it
-correctly is to just tell the running orchestrator what's true about your life and let
+correctly is to just tell the running assistant what's true about your life and let
 it call the right subagent. You don't need to hand-edit config files or read schemas.
 
-Once your orchestrator is running, try prompts like:
+Once your assistant is running, try prompts like:
 
 - **"Remember that my wife's birthday is March 3rd, and I'm allergic to shellfish."**
   → routes to the `profile` subagent, which every other agent reads from for
@@ -136,7 +122,7 @@ that part for you — those go in your secrets file (`~/.config/scherbring-assis
 the finance agent?" and it'll walk you through exactly that agent's section rather than
 you hunting for it.
 
-**When in doubt, just ask the orchestrator directly** — "how do I set up X" or "what
+**When in doubt, just ask the assistant directly** — "how do I set up X" or "what
 do you need from me to do Y" is a legitimate way to use this thing, not a fallback.
 It has read access to its own docs and code.
 

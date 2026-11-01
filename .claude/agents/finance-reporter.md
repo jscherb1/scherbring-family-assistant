@@ -217,7 +217,7 @@ Applies identically whether triggered on-demand or by a scheduled firing (see
 
 ## Scheduled firings
 
-Three scheduled tasks fire this agent via the orchestrator:
+Three scheduled tasks fire this agent via the scheduler dispatcher:
 `weekly-spending-summary`, `monthly-spending-summary`, and
 `annual-financial-review`. All follow the workflow above exactly, with cadence-specific
 notes below.
