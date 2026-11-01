@@ -168,12 +168,12 @@ def test_main_sends_no_failure_alert_for_degraded(monkeypatch):
     monkeypatch.setattr(sd, "update_heartbeat", lambda: None)
     monkeypatch.setattr(sd, "get_due_tasks", lambda: [{"id": "t1", "name": "n", "due_run_at": "r"}])
     monkeypatch.setattr(sd, "mark_dispatched", lambda *a: True)
-    monkeypatch.setattr(sd, "dispatch_task", lambda t: ("degraded", "denied"))
+    monkeypatch.setattr(sd, "dispatch_task", lambda t, u=None: ("degraded", "denied"))
     monkeypatch.setattr(sd, "log_run", lambda *a: logged.append(a))
     monkeypatch.setattr(sd, "send_failure_alert", lambda *a: alerts.append(a))
     sd.main()
     assert logged[0][2] == "degraded" and alerts == []
-    monkeypatch.setattr(sd, "dispatch_task", lambda t: ("failed", "boom"))
+    monkeypatch.setattr(sd, "dispatch_task", lambda t, u=None: ("failed", "boom"))
     sd.main()
     assert len(alerts) == 1
 
@@ -232,3 +232,63 @@ def test_false_positive_text_with_denials_is_degraded(monkeypatch, tmp_path):
                        [{"tool_name": "Bash", "tool_input": {"command": "echo $?"}}])
     (status, _), _ = _run_dispatch(monkeypatch, tmp_path, out)
     assert status == "degraded"
+
+
+# ---- run cost capture ----
+
+def _cost_json(**extra):
+    d = {"type": "result", "subtype": "success", "is_error": False, "result": "hi", "permission_denials": [],
+         "total_cost_usd": 1.2345, "duration_ms": 91500,
+         "modelUsage": {"claude-opus-5": {"costUSD": 1.2, "inputTokens": 10}}}
+    d.update(extra)
+    return json.dumps(d)
+
+
+def test_extract_usage_reads_cost_duration_and_model_usage():
+    u = sd.extract_usage("warning line\n" + _cost_json())
+    assert u["cost_usd"] == 1.2345 and u["duration_s"] == 91.5
+    assert json.loads(u["model_usage"])["claude-opus-5"]["costUSD"] == 1.2
+
+
+def test_extract_usage_tolerates_missing_or_bad_fields():
+    assert sd.extract_usage("plain text") == {}
+    assert sd.extract_usage("") == {}
+    assert sd.extract_usage(None) == {}
+    assert sd.extract_usage(_result_json("hi")) == {}
+    assert sd.extract_usage(_cost_json(total_cost_usd="lots", duration_ms=None, modelUsage=[1])) == {}
+
+
+def test_dispatch_task_fills_usage_and_old_signature_still_works(monkeypatch, tmp_path):
+    monkeypatch.setattr(sd, "DISPATCH_DEBUG_DIR", tmp_path)
+    monkeypatch.setattr(sd.subprocess, "run",
+                        lambda args, **kw: subprocess.CompletedProcess(args, 0, stdout=_cost_json(), stderr=""))
+    task = {"id": "t1", "name": "n", "prompt": "p", "due_run_at": "r"}
+    usage: dict = {}
+    status, _ = sd.dispatch_task(task, usage)
+    assert status == "ok" and usage["cost_usd"] == 1.2345
+    assert sd.dispatch_task(task)[0] == "ok"  # callers that pass no usage dict are unaffected
+
+
+def test_log_run_persists_cost_and_stays_compatible(tmp_path, monkeypatch):
+    import scheduler_store
+    monkeypatch.setattr(scheduler_store, "DB_PATH", tmp_path / "s.db")
+    conn = scheduler_store._connect()
+    conn.execute("INSERT INTO scheduled_tasks (id, name, prompt, cron_expression, target_chat_id, enabled, created_at)"
+                 " VALUES ('t1','n','p','0 8 * * *','1',1,'2026-01-01T00:00:00')")
+    conn.commit()
+    conn.close()
+
+    def fake_run(args, **kw):  # run the real CLI in-process against the temp db
+        return subprocess.CompletedProcess(args, scheduler_store.main(args[2:]), "", "")
+
+    monkeypatch.setattr(sd.subprocess, "run", fake_run)
+    sd.log_run("t1", "2026-01-02T08:00:00", "ok", "fine",
+               {"cost_usd": 2.5, "duration_s": 12.0, "model_usage": '{"m": {}}'})
+    sd.log_run("t1", "2026-01-03T08:00:00", "ok", "old-style call")
+    sd.log_run("t1", "2026-01-04T08:00:00", "failed", "x", {})
+    conn = scheduler_store._connect()
+    rows = {r["run_at"][:10]: dict(r) for r in conn.execute("SELECT * FROM scheduled_task_runs")}
+    conn.close()
+    assert rows["2026-01-02"]["cost_usd"] == 2.5 and rows["2026-01-02"]["duration_s"] == 12.0
+    assert rows["2026-01-02"]["model_usage_json"] == '{"m": {}}'
+    assert rows["2026-01-03"]["cost_usd"] is None and rows["2026-01-04"]["model_usage_json"] is None

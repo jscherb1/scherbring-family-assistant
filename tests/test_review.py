@@ -458,3 +458,17 @@ def test_heartbeat_stops_when_the_task_raises_and_survives_write_errors(monkeypa
     assert count >= 2  # kept beating through the OSError
     time.sleep(0.05)
     assert len(beats) == count  # and stopped despite the exception
+
+
+def test_runs_migration_adds_cost_columns_and_runs_outputs_them(sched, capsys):
+    old = sqlite3.connect(sched)
+    old.executescript("""
+        CREATE TABLE scheduled_task_runs (id INTEGER PRIMARY KEY, task_id TEXT NOT NULL, run_at TEXT NOT NULL,
+            dispatched_at TEXT, status TEXT NOT NULL, summary TEXT);
+        INSERT INTO scheduled_task_runs (task_id, run_at, status) VALUES ('t1','2026-01-01T00:00:00','ok');
+    """)
+    old.commit()
+    old.close()
+    rc, out, _ = store(capsys, "runs")
+    row = json.loads(out)[0]
+    assert rc == 0 and row["cost_usd"] is None and row["duration_s"] is None and row["model_usage_json"] is None
