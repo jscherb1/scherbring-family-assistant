@@ -56,15 +56,10 @@ bridge"). The soak ended and the plugin-era path is removed from the repo: orche
 the log-grep Telegram watchdog, the context-bridge hooks, `agent_ctl.py mode`, and the dashboard restart history
 (so the "record a structured restart cause" dashboard follow-up is moot).
 
-Host steps after merging (the repo change does not touch the machine):
-- [ ] `systemctl --user disable --now assistant-orchestrator.service` if it is still enabled, then delete the
-      installed `~/.config/systemd/user/assistant-orchestrator.service` and run `systemctl --user daemon-reload`.
+Host steps after merging (the repo change does not touch the machine). Done 2026-11-01: the orchestrator unit
+was disabled and deleted, the gitignored `state/` leftovers were removed, and the worker and dashboard were
+restarted on the merged code. Still open (besides rotating the bot token, item 5):
 - [ ] Windows: `Unregister-ScheduledTask -TaskName WSL-Assistant-Window -Confirm:$false` (the attach window).
-- [ ] Delete gitignored leftovers in `state/`: `orchestrator_restarts.jsonl`, `orchestrator.lock`,
-      `telegram_conversation_log.jsonl`, `telegram_fallback_used.json`, `telegram_watchdog.json`, and
-      `state/logs/orchestrator_debug.log`, `state/logs/orchestrator_exits.log`.
-- [ ] Restart `assistant-agent-worker` (new code) and `assistant-dashboard`; the watchdog service picks up the new
-      script on its next run.
 
 Deferred by the user (do later, none urgent):
 - **Send files/photos back through the bridge** (the plugin could; the bridge only receives them
@@ -171,6 +166,16 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
   (`HassBroadcast`) when chores are still open.
 
 ## My Hub (built 2026-10-14)
+
+- [ ] **Hub refresh script cutover** (PR feat/hub-refresh-script; replaces the agent copying calendar/tasks):
+      1. Confirm `TODOIST_API_TOKEN` is in `~/.config/scherbring-assistant/.env`, then `python scripts/hub_refresh.py --dry-run`
+         (counts and diffs, writes nothing).
+      2. `scripts/install_systemd.sh assistant-hub-refresh.timer`. It runs with `--notify`, but notifications stay muted while
+         `myhub-refresh` is enabled, so nothing double-sends. Watch `systemctl --user list-timers` and the System status page.
+      3. After a day of good runs, cut over in one step: `python scripts/scheduler_store.py disable --name myhub-refresh`.
+         The next timer run starts sending the notify-check message (same dedupe, digest and quiet hours).
+      Rollback: `python scripts/scheduler_store.py enable --name myhub-refresh` mutes the script's notifications again.
+      Afterwards update the README `myhub-refresh` registration text (the task is retired). Untested live: the first notified run.
 
 - [ ] Registered `myhub-refresh` (every 2 h, 7am-9pm; replaced the morning/evening pair); it has not fired yet. Until the
       first run the page says calendar/tasks are "not synced yet". Check `scheduler_store.py runs`.
@@ -359,6 +364,20 @@ See the Backlog section of `README.md`.
   then point `review.py` at the services.
 - [ ] Finding titles show on the Today/Summary page, so they must not carry sensitive amounts. The agent file tells
   it to keep them generic; check the first runs.
+
+## Concurrent sessions and dev chat (built 2026-11-01, branch `feat/concurrent-sessions`)
+
+Unit-tested with fake sessions only; nothing below has run against Telegram or the real SDK yet.
+- [ ] Add the group id to `BRIDGE_ALLOWED_CHAT_IDS` (last), set `BRIDGE_DEV_CHAT_IDS`, `TELEGRAM_ALERT_CHAT_ID` and
+  `DASHBOARD_ASK_CHAT_ID` (exact lines in the PR), restart worker and bridge, then `agent_ctl.py status` (no WARNING).
+- [ ] Live check: start a long task in the dev group, then send "turn off the lights" in the household chat and confirm
+  it answers while the dev turn is still running (`agent_ctl.py status` should list both turns).
+- [ ] Live check: in the dev group confirm the agent says it will use a worktree; in the household chat confirm no dev note.
+- [ ] Live check: send `/status@<botname>` in the group; confirm the bridge answers it.
+- [ ] Check `agent_ctl.py sessions` / SDK memory with two live `claude` processes (cap is 4, `MAX_CONCURRENT_SESSIONS`).
+- [ ] If Telegram upgrades the basic group to a supergroup, the id changes (see OPERATIONS.md); untested live.
+- Not checked: whether anything shared on disk (for example one browser profile) misbehaves when two sessions use the
+  same tool at once; SQLite stores are fine.
 
 ## Gmail read access (added 2026-10-31)
 

@@ -1,7 +1,7 @@
 ---
 name: myhub
-description: Keeps the My Hub page current and answers "what needs my attention?". Owns the calendar and Todoist snapshot the hub shows (the dashboard can't reach Google Calendar or Todoist itself), the scheduled morning and evening refresh, and the on-demand summary. Delegate here for "what needs my attention", "what's on today / this week", "give me my hub", "refresh my hub", and the scheduled hub refresh.
-tools: Bash, Read, Write, mcp__claude_ai_Google_Calendar__list_calendars, mcp__claude_ai_Google_Calendar__list_events, mcp__todoist__find-tasks, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__llm__GetDateTime
+description: Keeps the My Hub page current and answers "what needs my attention?". Runs the on-demand refresh of the calendar and Todoist snapshot the hub shows (a script does it every 15 minutes), the connector pings, and the on-demand summary. Delegate here for "what needs my attention", "what's on today / this week", "give me my hub", "refresh my hub".
+tools: Bash, Read, mcp__claude_ai_Google_Calendar__list_calendars, mcp__todoist__find-projects, mcp__claude_ai_Gmail__list_labels, mcp__claude_ai_Home_Assistant__llm__GetDateTime
 model: sonnet
 ---
 
@@ -37,33 +37,20 @@ When the user says "reconnect drive" (or Drive shows down in the hub):
 3. Never repeat the pasted address back, and treat the link as expiring in 15 minutes: if it fails, start again.
 Hy-Vee can't be reconnected from chat: point the user to **Reconnect** on the dashboard (it has a phone-friendly sign-in browser).
 
-## Refreshing the calendar and task snapshot (scheduled morning and evening, or "refresh my hub")
+## Refreshing the calendar and task snapshot ("refresh my hub")
 
-Scripts can't reach Google Calendar or Todoist, so you copy them in:
+A script does the copying now (Home Assistant calendars and the Todoist API), on a 15-minute timer. For an
+on-demand refresh run exactly `python scripts/hub_refresh.py` and read its JSON: `event` and `task` each have a
+`status` ("updated" or "kept old snapshot") and `errors`. Confirm in one line with the stored counts. If a status
+is "kept old snapshot", say which source failed and that the old data is still shown. Do not run `notify-check`
+for a user-requested refresh, and never pass `--notify` (the timer owns notifications).
 
-1. **Events**: `list_calendars`, then `list_events` on every calendar for today through 7 days ahead (inclusive;
-   Meal Planning too, since it provides dinner). Build ONE JSON list of
-   `{"title", "day": "YYYY-MM-DD", "start_time": "HH:MM" or null for all-day, "end_time", "source": <calendar name>}`
-   and write it to a temp file under `state/myhub_tmp/` (use the Write tool). Then run
-   `python scripts/myhub_store.py snapshot set --kind event --start YYYY-MM-DD --end YYYY-MM-DD --items-file state/myhub_tmp/<file>.json`
-   for that same range. Skip holiday calendars. Use each event's local start day and time.
-2. **Tasks**: `find-tasks` for everything open with a due date (overdue included) and also undated tasks due soon;
-   write `{"title", "day": <due date>, "source": <project>, "priority": 1-4 (Todoist p1 = 1)}` for tasks that
-   HAVE a due date (the hub shows dated tasks) and run
-   `python scripts/myhub_store.py snapshot set --kind task --items-file state/myhub_tmp/<file>.json`. Always use exactly `state/myhub_tmp/events.json` and `state/myhub_tmp/tasks.json` (the Write tool refuses to overwrite a file you have not Read this session, so Read the file first if it exists, then overwrite it with Write; do not invent new names and do not delete them, you have no permission to).
-   Never build or transform these files with inline scripts (`python3 -`, `python -c`, heredocs, `jq`, `sed`): scheduled runs have no one to approve them, so they are denied and the whole run is marked failed. Compose the final JSON yourself and write it with Write.
-   Don't copy the shopping lists (projects named like "Shopping", "Costco", "Staple Groceries") into the snapshot.
-3. If `find-tasks` or `list_events` errors (a 504, timeout or dropped connection), retry that same call once or twice
-   before giving up. If it still fails, leave that snapshot as it was (stale is better than empty) and carry on to
-   `notify-check`: it adds a "could not refresh" caveat/warning itself when a snapshot is more than 4 hours old, so
-   a failed refresh is never silent. Do not fake a refresh by writing an old list back.
-4. Scheduled runs: after the snapshots are written, run `python scripts/myhub_store.py notify-check`. It decides
-   what to tell the user (new or escalated items, a 6-hourly reminder for urgent ones, one morning digest, and a
-   quiet window after 8pm) and records it as told. If `send` is true, reply with its `message` exactly as given,
-   nothing added; if false, **reply with nothing**, even when warn or urgent items exist (they were already
-   announced). If it says `send` is false, the refresh failing is still reported by `notify-check`, so add nothing. For a user-requested refresh, confirm in one
-   line with the counts (do not run notify-check).
+**Scheduled `myhub-refresh` run (only until that task is disabled; see docs/TODO.md):** after `hub_refresh.py`,
+run `python scripts/myhub_store.py notify-check`. If `send` is true reply with its `message` exactly as given,
+nothing added; if false reply with nothing. The script's own notifications stay muted while this task is enabled,
+so nothing is sent twice.
 
+If the script itself errors, report the error text; do not rebuild the snapshot by hand from Calendar or Todoist.
 You never change data in Calendar or Todoist; this agent is read-only against both.
 
 ## Pinging the connector systems (scheduled morning and evening, "ping my systems")

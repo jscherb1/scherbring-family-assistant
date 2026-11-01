@@ -403,6 +403,68 @@ def _calendar_events(entity_id: str, days: int, limit: int = 12) -> list[dict]:
     return events[:limit]
 
 
+LOCAL_TZ_NAME = "America/Chicago"
+
+
+def local_tz():
+    from zoneinfo import ZoneInfo
+    return ZoneInfo(LOCAL_TZ_NAME)
+
+
+def list_calendars() -> list[dict]:
+    """Every calendar HA exposes: [{"entity_id", "name"}]. Raises HAError when HA can't be read."""
+    raw = _get("/api/calendars", ttl=0)
+    return [{"entity_id": c["entity_id"], "name": c.get("name") or c["entity_id"]} for c in raw or []]
+
+
+def calendar_window(entity_id: str, first_day, last_day) -> list[dict]:
+    """Events of one calendar for the LOCAL (America/Chicago) days first_day..last_day inclusive.
+
+    Unlike `_calendar_events` (UTC midnight, no end time, errors swallowed) this uses local day boundaries,
+    returns end times and raises HAError on failure so a caller can tell "no events" from "couldn't read".
+    Returns [{title, day, start_time, end_time, all_day, calendar}] sorted by day and time. Timed events sit
+    on their local start day. All-day events appear on EACH day they cover (HA's all-day end is exclusive),
+    clipped to the window, with start_time/end_time None."""
+    tz = local_tz()
+    lo = datetime(first_day.year, first_day.month, first_day.day, tzinfo=tz)
+    nxt = last_day + timedelta(days=1)
+    hi = datetime(nxt.year, nxt.month, nxt.day, tzinfo=tz)
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    q = urllib.parse.urlencode({"start": lo.astimezone(timezone.utc).strftime(fmt),
+                                "end": hi.astimezone(timezone.utc).strftime(fmt)})
+    raw = _get(f"/api/calendars/{entity_id}?{q}", ttl=0)
+    out = []
+    for e in raw or []:
+        s, en = e.get("start") or {}, e.get("end") or {}
+        title = e.get("summary", "")
+        if s.get("dateTime"):
+            st = datetime.fromisoformat(s["dateTime"].replace("Z", "+00:00"))
+            st = st.astimezone(tz) if st.tzinfo else st.replace(tzinfo=tz)
+            day = st.date()
+            if not first_day <= day <= last_day:
+                continue
+            end_t = None
+            if en.get("dateTime"):
+                et = datetime.fromisoformat(en["dateTime"].replace("Z", "+00:00"))
+                et = et.astimezone(tz) if et.tzinfo else et.replace(tzinfo=tz)
+                end_t = et.strftime("%H:%M")
+            out.append({"title": title, "day": day.isoformat(), "start_time": st.strftime("%H:%M"),
+                        "end_time": end_t, "all_day": False, "calendar": entity_id})
+        elif s.get("date"):
+            d0 = datetime.strptime(s["date"], "%Y-%m-%d").date()
+            d1 = datetime.strptime(en["date"], "%Y-%m-%d").date() if en.get("date") else d0 + timedelta(days=1)
+            if d1 <= d0:
+                d1 = d0 + timedelta(days=1)
+            d = d0
+            while d < d1:
+                if first_day <= d <= last_day:
+                    out.append({"title": title, "day": d.isoformat(), "start_time": None, "end_time": None,
+                                "all_day": True, "calendar": entity_id})
+                d += timedelta(days=1)
+    out.sort(key=lambda x: (x["day"], x["start_time"] or "", x["title"]))
+    return out
+
+
 def _forecast() -> list[dict]:
     try:
         resp = _open("/api/services/weather/get_forecasts?return_response",

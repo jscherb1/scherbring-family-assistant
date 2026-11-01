@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh My Hub calendar events (Home Assistant) and Todoist tasks, then send any new-item notice
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+# --notify is held back by the script while the agent's `myhub-refresh` scheduled task is enabled.
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/hub_refresh.py --notify
+TimeoutStartSec=120

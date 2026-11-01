@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh My Hub calendar and tasks every 15 minutes, 6am through 10:45pm
+
+[Timer]
+OnCalendar=*-*-* 06..22:00,15,30,45:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

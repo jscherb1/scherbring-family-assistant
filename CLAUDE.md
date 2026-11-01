@@ -93,3 +93,5 @@ Telegram messages reach you through `scripts/telegram_bridge.py` + `scripts/agen
   current state before repeating any side effect (adding tasks, carts, tags, calendar events).
 - Run things in the foreground. Background tasks are disabled; their completion can't reach anyone.
 - Operating it: `scripts/agent_ctl.py status|tail|say|pause`.
+- Chats in `BRIDGE_DEV_CHAT_IDS` (the Telegram dev group) are development sessions: they run concurrently with the
+  household chat, and their prompt tells you to use `git worktree add` and never switch branches in the main checkout.

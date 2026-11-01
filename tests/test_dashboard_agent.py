@@ -80,3 +80,37 @@ def test_usage_page_and_context_size(state):
     assert u["days"][0]["turns"] == 1 and u["days"][0]["cache_read"] == 100
     r = TestClient(app).get("/agent/usage")
     assert r.status_code == 200 and "152" in r.text
+
+
+def test_panel_shows_two_concurrent_turns(state, monkeypatch):
+    tmp, _ = state
+    monkeypatch.setenv("BRIDGE_DEV_CHAT_IDS", "-100")
+    store = BridgeStore(tmp / "inbox.db")
+    store.set_current_turn("1", 41, time.time() - 3)
+    store.set_current_turn("-100", 42, time.time() - 300)
+    s = agent.get_agent_status()
+    assert {t["label"] for t in s["current_turns"]} == {"household", "dev chat"}
+    body = TestClient(app).get("/agent/panel").text
+    assert "message #41" in body and "message #42" in body and "dev chat" in body
+    assert "-100" not in body  # chat ids are not shown on the login-less dashboard
+
+
+def test_panel_tolerates_old_single_turn_value(state):
+    tmp, _ = state
+    BridgeStore(tmp / "inbox.db").kv_set("current_turn", '{"inbox_id": 9, "started": 1}')
+    assert "message #9" in TestClient(app).get("/agent/panel").text
+
+
+def test_api_agent_json_has_no_chat_ids(state, monkeypatch):
+    tmp, _ = state
+    monkeypatch.setenv("BRIDGE_DEV_CHAT_IDS", "-5468858630")
+    store = BridgeStore(tmp / "inbox.db")
+    store.set_current_turn("8150343517", 41, time.time() - 3)
+    store.set_current_turn("-5468858630", 42, time.time() - 300)
+    r = TestClient(app).get("/api/agent")
+    assert r.status_code == 200
+    assert "8150343517" not in r.text and "5468858630" not in r.text
+    body = r.json()
+    assert {t["label"] for t in body["status"]["current_turns"]} == {"household", "dev chat"}
+    assert all("session" not in t for t in body["status"]["current_turns"])
+    assert "session" not in body["status"]["current_turn"] and body["status"]["current_turn"]["label"] == "dev chat"

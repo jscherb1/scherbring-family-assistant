@@ -56,7 +56,8 @@ with memory. Full detail is in `README.md` under **Setup**, but the short versio
 0. **Build the environment**: run `scripts/setup_wsl.sh` from the repo root. Then create
    your secrets file, which lives **outside the repo**:
    `~/.config/scherbring-assistant/.env` (directory mode 700, file mode 600), using
-   `.env.example` as the list of keys.
+   `.env.example` as the list of keys. For the My Hub calendar and task refresh, also set
+   `TODOIST_API_TOKEN` there (Todoist Settings > Integrations > Developer), plus the Home Assistant URL and token.
 1. **Create a Telegram bot** via [@BotFather](https://t.me/BotFather); copy the token.
 2. **Get your Telegram user ID** (e.g. via [@userinfobot](https://t.me/userinfobot)).
 3. **Add the bot to your secrets file.** In `~/.config/scherbring-assistant/.env` set

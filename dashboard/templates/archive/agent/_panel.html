@@ -17,7 +17,7 @@
       <p>{{ status.inbox_pending }} waiting, {{ status.inbox_processing }} in progress</p>
       {% if status.oldest_pending_age_s %}<p>Oldest waiting {{ status.oldest_pending_age_s|round|int }}s</p>{% endif %}
       <p>Replies pending {{ status.outbox_pending }}{% if status.outbox_failed %}, <span class="pill pill-warn">{{ status.outbox_failed }} undeliverable</span>{% endif %}</p>
-      {% if status.current_turn %}<p>Working on message #{{ status.current_turn.inbox_id }}</p>{% endif %}
+      {% for t in status.current_turns %}<p>Working on message #{{ t.inbox_id }}{% if status.current_turns|length > 1 %} <span class="pill pill-muted">{{ t.label }}</span>{% endif %}</p>{% endfor %}
     </div></section>
     <section class="card"><h2>Health check</h2><div class="card-body">
       {% if status.last_canary %}
