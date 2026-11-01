@@ -4,6 +4,8 @@ Every read and write goes through the shared service in scripts/review.py (via d
 the `review` subagent's CLI uses. This router only does web plumbing. Writes are guarded by the same-origin
 check the ask box uses; access control is the network (Tailscale-only bind).
 """
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -32,5 +34,5 @@ def set_status(request: Request, finding_id: str, status: str = Form("")):
         return JSONResponse({"error": "Blocked: the request didn't come from this site."}, status_code=403)
     result = data.set_status(finding_id, status)
     if result.get("error"):
-        return RedirectResponse(f"/review?error={result['error'].replace(' ', '+')}", status_code=303)
+        return RedirectResponse(f"/review?{urlencode({'error': result['error']})}", status_code=303)
     return RedirectResponse("/review", status_code=303)

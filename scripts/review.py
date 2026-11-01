@@ -44,10 +44,17 @@ DOMAINS = ("calendar", "tasks", "money", "wellness", "habits", "chores", "home",
 MAX_FINDINGS = 5
 MAX_CHARS = 30000          # bound on the gather() digest, serialised
 PAST_FINDINGS_DAYS = 120
+PAST_FINDINGS_CAP = 30     # earlier findings listed in the digest (key, status, short title), newest first
+PAST_TITLE_CHARS = 60
 FIELD_LIMITS = {"title": 140, "why_it_matters": 700, "evidence": 900, "suggested_action": 500}
 KEY_RE = re.compile(r"^[a-z0-9][a-z0-9:_.\-]{2,79}$")
-# Agents whose stored results can hold kids' memories or profile values; never put them in the digest.
-SENSITIVE_AGENTS = ("kids-memory", "kid_memories", "kids_memory", "profile")
+# Agents whose stored summaries can hold kids' memories, profile values, journal answers or amounts. These are the
+# names the agents really write to agent_results.agent (kids-memory, profile and journal per their agent files; the
+# finance ones and retirement per the stored data). Their summaries never enter the digest, and kids-memory and
+# profile are left out entirely, even as counts.
+SENSITIVE_AGENTS = ("kids-memory", "profile", "journal", "finance", "finance-reporter", "finance-advisor",
+                    "retirement")
+HIDDEN_ENTIRELY = ("kids-memory", "profile")
 
 
 class ReviewError(Exception):
@@ -101,6 +108,15 @@ def _clean_finding(raw, index: int) -> dict:
     if domain not in DOMAINS:
         raise ReviewError(f"finding {index + 1}: domain must be one of: {', '.join(DOMAINS)}")
     out["domain"] = domain
+    changed = raw.get("changed")
+    reason = " ".join(str(raw.get("change_reason") or "").split())
+    if changed is not None and not isinstance(changed, bool):
+        raise ReviewError(f"finding {index + 1}: changed must be true or false")
+    if changed and not reason:
+        raise ReviewError(f"finding {index + 1}: change_reason is required when changed is true "
+                          "(say what materially changed since it was dismissed)")
+    out["changed"] = bool(changed)
+    out["change_reason"] = reason[:300]
     for field, limit in FIELD_LIMITS.items():
         value = " ".join(str(raw.get(field) or "").split())
         if not value:
@@ -149,17 +165,18 @@ def save_run(summary: str, findings, *, db_path=None) -> dict:
                      f["suggested_action"], now, now))
                 results.append({"id": fid, "key": f["key"], "result": "created", "status": "new"})
             else:
-                # Raised again. A dismissed or finished item coming back means the agent judged that something
-                # materially changed, so it returns to "new"; an accepted one stays accepted.
-                reopened = row["status"] in ("dismissed", "done")
+                # Raised again. A dismissal sticks unless the agent says, with a reason, that something materially
+                # changed (changed: true). A finished item coming back returns to "new"; accepted stays accepted.
+                reopened = row["status"] == "done" or (row["status"] == "dismissed" and f["changed"])
                 status = "new" if reopened else row["status"]
                 conn.execute(
                     "UPDATE review_findings SET run_id=?, domain=?, title=?, why_it_matters=?, evidence=?, "
                     "suggested_action=?, status=?, times_raised=?, updated_at=? WHERE id=?",
                     (run_id, f["domain"], f["title"], f["why_it_matters"], f["evidence"], f["suggested_action"],
                      status, row["times_raised"] + 1, now, row["id"]))
-                results.append({"id": row["id"], "key": f["key"], "result": "reopened" if reopened else "updated",
-                                "status": status})
+                result = "reopened" if reopened else (
+                    "kept_dismissed" if row["status"] == "dismissed" else "updated")
+                results.append({"id": row["id"], "key": f["key"], "result": result, "status": status})
         conn.commit()
         return {"run_id": run_id, "saved": True, "created_at": now, "findings": results}
     finally:
@@ -369,7 +386,9 @@ def _sec_wellness(db_path, today: date) -> dict:
         out["trend_30d_error"] = f"{type(exc).__name__}: {exc}"
     rep = insights.latest_report(db_path=db_path)
     if rep:
-        out["latest_insights_report"] = {"written": rep["created_at"][:10], "narrative": _clip(rep["narrative"], 1500)}
+        # Only that it exists and when: the narrative is written from the user's own day-rating notes, so its text
+        # stays out of the digest (and so out of anything on the dashboard).
+        out["latest_insights_report_written"] = rep["created_at"][:10]
     return out
 
 
@@ -401,8 +420,7 @@ def _sec_mood(db_path, today: date) -> dict:
     recent = dayrating.list_ratings(days=14, db_path=db_path, today=today)
     jh = journal.history(days=28, db_path=db_path, today=today)
     return {"rating": {k: st.get(k) for k in ("avg_7", "avg_30", "total_ratings", "logging_streak", "rated_today")},
-            "recent_ratings": [{"day": r.get("rating_date"), "score": r.get("score"),
-                                "note": _clip(r.get("note"), 90)} for r in recent][:14],
+            "recent_ratings": [{"day": r.get("date"), "score": r.get("score")} for r in recent][:14],
             "journal": {"answered_days_28": jh.get("answered_days"),
                         "questions": [{"q": _clip(q.get("label") or q.get("text"), 40), "yes": q.get("yes"),
                                        "no": q.get("no")} for q in (jh.get("questions") or []) if q.get("active")]}}
@@ -529,11 +547,12 @@ def _sec_system(db_path, today: date) -> dict:
 def _sec_agent_results(db_path, today: date) -> dict:
     since = (today - timedelta(days=7)).isoformat()
     marks = ",".join("?" for _ in SENSITIVE_AGENTS)
+    hidden = ",".join("?" for _ in HIDDEN_ENTIRELY)
     conn = connect(db_path)
     try:
         by_agent = {r["agent"]: r["n"] for r in conn.execute(
-            f"SELECT agent, COUNT(*) n FROM agent_results WHERE created_at >= ? AND agent NOT IN ({marks}) "
-            "GROUP BY agent ORDER BY n DESC", (since, *SENSITIVE_AGENTS))}
+            f"SELECT agent, COUNT(*) n FROM agent_results WHERE created_at >= ? AND agent NOT IN ({hidden}) "
+            "GROUP BY agent ORDER BY n DESC", (since, *HIDDEN_ENTIRELY))}
         recent = [dict(r) for r in conn.execute(
             f"SELECT agent, created_at, summary FROM agent_results WHERE created_at >= ? AND agent NOT IN ({marks}) "
             "ORDER BY created_at DESC LIMIT 15", (since, *SENSITIVE_AGENTS))]
@@ -597,15 +616,25 @@ def gather(*, db_path=None, today: date | None = None, max_chars: int = MAX_CHAR
                                     "open_counts": {k: last.get(k) for k in STATUSES},
                                     "findings": past},
               "sections": sections}
+    # previous_findings is capped separately (compact rows, newest first) and exempt from shrinking, so a
+    # dismissal always survives; only the sections are shrunk.
+    if isinstance(past, list):
+        digest["previous_findings"]["findings"] = [
+            {"key": f["key"], "status": f["status"], "title": _clip(f["title"], PAST_TITLE_CHARS)}
+            for f in past[:PAST_FINDINGS_CAP]]
     for items, text in ((25, 300), (15, 200), (8, 150), (4, 100), (2, 60)):
         if _size(digest) <= max_chars:
             break
-        digest = _shrink(digest, items, text)
-    # Last resort: drop the largest sections whole (named, so the agent knows what is missing).
+        digest["sections"] = _shrink(digest["sections"], items, text, 1)
+    # Last resort: replace the largest remaining sections whole (named, so the agent knows what is missing).
+    stub = {"truncated": "left out to keep the digest under the size limit"}
     while _size(digest) > max_chars:
-        name = max(digest["sections"], key=lambda n: _size(digest["sections"][n]))
-        if _size(digest["sections"][name]) <= 40:
+        left = [n for n, s in digest["sections"].items() if s != stub]
+        if not left:
             break
-        digest["sections"][name] = {"truncated": "left out to keep the digest under the size limit"}
+        name = max(left, key=lambda n: _size(digest["sections"][n]))
+        digest["sections"][name] = dict(stub)
+    # The bound holds for every max_chars above the fixed envelope (previous_findings at its cap, about 5k
+    # characters, plus the section stubs); the default MAX_CHARS is far above it.
     digest["digest_chars"] = _size(digest)
     return digest

@@ -1425,6 +1425,16 @@ def test_review_page_empty_then_accept_dismiss_done_via_ui(client, state):
     assert review.get_finding(fid["passport-expiry"], db_path=db)["status"] == "dismissed"
 
 
+def test_review_error_redirect_is_url_encoded(client, state):
+    from urllib.parse import parse_qs, urlparse
+    r = client.post("/review/x%23y&z/status", data={"status": "done"}, follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert " " not in loc and "#" not in loc.split("?", 1)[1]
+    assert parse_qs(urlparse(loc).query)["error"] == ["no finding 'x#y&z'"]
+    assert "no finding" in client.get(loc).text
+
+
 def test_review_write_blocked_cross_origin(client, state):
     review = _review_service()
     db = state / "agent_results.db"

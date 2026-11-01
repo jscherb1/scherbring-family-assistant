@@ -87,14 +87,33 @@ def test_same_key_updates_instead_of_duplicating(db):
     assert [f["id"] for f in review.latest_run(db_path=db)["findings"]] == [fid]
 
 
-def test_reraising_accepted_keeps_status_but_dismissed_and_done_reopen(db):
+def test_reraising_accepted_keeps_status_and_done_returns_to_new(db):
     fid = review.save_run("One.", [finding()], db_path=db)["findings"][0]["id"]
     review.set_status(fid, "accepted", db_path=db)
     assert review.save_run("Two.", [finding()], db_path=db)["findings"][0]["status"] == "accepted"
-    for status in ("dismissed", "done"):
-        review.set_status(fid, status, db_path=db)
-        out = review.save_run("Again.", [finding()], db_path=db)["findings"][0]
-        assert out["result"] == "reopened" and out["status"] == "new"
+    review.set_status(fid, "done", db_path=db)
+    out = review.save_run("Again.", [finding()], db_path=db)["findings"][0]
+    assert out["result"] == "reopened" and out["status"] == "new"
+
+
+def test_dismissal_sticks_unless_the_agent_marks_a_material_change(db):
+    fid = review.save_run("One.", [finding()], db_path=db)["findings"][0]["id"]
+    review.set_status(fid, "dismissed", db_path=db)
+    out = review.save_run("Forgot.", [finding(evidence="Newer evidence.")], db_path=db)["findings"][0]
+    assert out["result"] == "kept_dismissed" and out["status"] == "dismissed"
+    assert review.get_finding(fid, db_path=db)["status"] == "dismissed"
+    # an explicit false is the same as omitting it
+    assert review.save_run("x", [finding(changed=False)], db_path=db)["findings"][0]["status"] == "dismissed"
+    out = review.save_run("Changed.", [finding(changed=True, change_reason="Deadline is now 3 days away.")],
+                          db_path=db)["findings"][0]
+    assert out["result"] == "reopened" and out["status"] == "new"
+
+
+def test_changed_requires_a_reason_and_a_boolean(db):
+    for bad in ({"changed": True}, {"changed": True, "change_reason": " "}, {"changed": "yes"}):
+        with pytest.raises(review.ReviewError) as exc:
+            review.save_run("S.", [finding(**bad)], db_path=db)
+        assert exc.value.code == 2
 
 
 def test_set_status_by_id_or_key_and_errors(db):
@@ -211,6 +230,62 @@ def test_gather_shrinks_to_the_bound(db):
     conn.close()
     d = review.gather(db_path=db, today=TODAY, max_chars=6000)
     assert d["digest_chars"] <= 6000 and "more" in json.dumps(d["sections"]["calendar"]["events"][-1])
+
+
+def test_bound_holds_even_when_sections_must_be_dropped_whole(db):
+    seed(db)
+    d = review.gather(db_path=db, today=TODAY, max_chars=1500)  # far too small for any section
+    assert d["digest_chars"] <= 1500
+    assert any(s == {"truncated": "left out to keep the digest under the size limit"} for s in d["sections"].values())
+
+
+def test_previous_findings_survive_shrinking_and_are_capped(db):
+    keys = [f"topic-{i:02d}" for i in range(40)]
+    for i in range(0, 40, 4):  # runs of 4 keep each save under the 5-finding limit
+        review.save_run("r", [finding(k, title="A long title " * 8) for k in keys[i:i + 4]], db_path=db)
+    review.set_status(keys[0], "dismissed", db_path=db)
+    review.set_status(keys[1], "dismissed", db_path=db)
+    seed(db)
+    d = review.gather(db_path=db, today=TODAY, max_chars=8000)
+    rows = d["previous_findings"]["findings"]
+    assert len(rows) == review.PAST_FINDINGS_CAP
+    assert set(rows[0]) == {"key", "status", "title"} and len(rows[0]["title"]) <= review.PAST_TITLE_CHARS
+    assert d["digest_chars"] <= 8000
+    d2 = review.gather(db_path=db, today=TODAY)
+    assert {r["key"] for r in d2["previous_findings"]["findings"]} == {r["key"] for r in rows}
+    assert d2["previous_findings"]["open_counts"]["dismissed"] == 2
+
+
+def test_dismissed_finding_is_listed_even_when_everything_else_is_shrunk(db):
+    fid = review.save_run("One.", [finding()], db_path=db)["findings"][0]["id"]
+    review.set_status(fid, "dismissed", db_path=db)
+    seed(db)
+    d = review.gather(db_path=db, today=TODAY, max_chars=2500)
+    assert {"key": "sleep-vs-calendar", "status": "dismissed", "title": "Late events cut into sleep"} in \
+        d["previous_findings"]["findings"]
+
+
+def test_digest_has_no_rating_notes_insights_text_or_sensitive_agent_summaries(db):
+    seed(db)
+    conn = review.connect(db)
+    day = TODAY.isoformat()
+    conn.execute("INSERT INTO day_ratings (id,rating_date,score,note,created_at,updated_at) VALUES "
+                 "('r1',?,3,'NOTESECRET rough day',?,?)", ((TODAY - timedelta(days=1)).isoformat(), day, day))
+    conn.execute("INSERT INTO insight_reports (id,created_at,period_days,stats_json,narrative) VALUES "
+                 "('i1',?,90,'{}','NARRATIVESECRET you said rough day')", (day + "T07:00:00",))
+    for agent in ("journal", "finance", "finance-reporter", "finance-advisor", "retirement", "profile"):
+        conn.execute("INSERT INTO agent_results (agent,task,created_at,summary) VALUES (?,?,?,'AGENTSECRET')",
+                     (agent, "t", day + "T09:00:00"))
+    conn.commit()
+    conn.close()
+    d = review.gather(db_path=db, today=TODAY)
+    text = json.dumps(d)
+    for secret in ("NOTESECRET", "NARRATIVESECRET", "AGENTSECRET", "KIDSECRET", "PROFILESECRET"):
+        assert secret not in text, secret
+    ratings = d["sections"]["mood"]["recent_ratings"]
+    assert ratings == [{"day": (TODAY - timedelta(days=1)).isoformat(), "score": 3}]
+    by_agent = d["sections"]["agent_results"]["results_7d_by_agent"]
+    assert "finance" in by_agent and "kids-memory" not in by_agent and "profile" not in by_agent
 
 
 # ---- CLI ----
@@ -363,3 +438,23 @@ def test_heartbeat_keeps_beating_during_a_long_task(monkeypatch):
     assert count >= 2
     time.sleep(0.05)
     assert len(beats) == count  # stopped on exit
+
+
+def test_heartbeat_stops_when_the_task_raises_and_survives_write_errors(monkeypatch):
+    import time
+    beats = []
+
+    def flaky():
+        beats.append(1)
+        raise OSError("disk full")
+
+    monkeypatch.setattr(sd, "update_heartbeat", flaky)
+    monkeypatch.setattr(sd, "HEARTBEAT_EVERY_SECONDS", 0.01)
+    with pytest.raises(RuntimeError):
+        with sd.keep_heartbeat():
+            time.sleep(0.1)
+            raise RuntimeError("task blew up")
+    count = len(beats)
+    assert count >= 2  # kept beating through the OSError
+    time.sleep(0.05)
+    assert len(beats) == count  # and stopped despite the exception

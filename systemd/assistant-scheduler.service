@@ -10,4 +10,4 @@ Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:%h/.bun/bin:/usr/local/bin:
 ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/scheduler_dispatch.py
 # A tick runs claude tasks serially: 300 s each by default, and a task can set its own longer limit
 # (scheduled_tasks.timeout_seconds; the weekly review uses 1200 s). Keep this above the longest limit.
-TimeoutStartSec=1500
+TimeoutStartSec=3600
