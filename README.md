@@ -245,8 +245,11 @@ subagent (or a row in the registry via `scheduler_store.py`) — it never touche
 4. If tasks are due — runs each as a one-shot `claude --print --model sonnet` subprocess (fresh
    context, 300 s limit). The agent wraps its reply in `<<<TELEGRAM_SEND>>>` markers and the
    dispatcher delivers it through the Telegram Bot API.
-5. If a task fails, or ran with any tool-permission denial, the run is marked failed and a
-   direct Telegram alert goes out (no Claude involved). Missed runs after downtime collapse
+5. The run is read from `--output-format json` (falling back to raw stdout and the debug-log denial
+   count if that can't be parsed). A task that fails (non-zero exit, undelivered message, or a reply
+   saying it did not complete) is marked `failed` and a direct Telegram alert goes out (no Claude
+   involved). A run that finished and delivered but had commands denied is marked `degraded`: no
+   alert, and the summary names the denied commands. Missed runs after downtime collapse
    into one catch-up run.
 
 A separate watchdog (`scripts/watchdog_scheduler_health.py`, run every 2 minutes by
@@ -633,7 +636,7 @@ history/log debugging ("why didn't X automation run"). The `home-assistant` suba
 uses two connections:
 
 - The Anthropic-hosted Home Assistant connector (`mcp__claude_ai_Home_Assistant__*`,
-  `Hass*` tools + `GetLiveContext`) for ordinary, low-friction control/query — no setup
+  namespaced `intent__Hass*` etc. tools + `homeassistant__GetLiveContext`) for ordinary, low-friction control/query — no setup
   needed.
 - A local, vendored **`ha-mcp`** server ([`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp),
   installed from PyPI into `vendor/ha-mcp/.venv`) for everything the hosted connector
@@ -702,7 +705,7 @@ One-time setup: add `COROS_USERNAME`/`COROS_PASSWORD` to `~/.config/scherbring-a
 scripts when running them by hand on a machine with no display. Weekly trigger:
 `weekly-fitness-plan` scheduled task, Sundays 6pm — see **Scheduled tasks** above.
 
-**Workouts habit auto-log:** `scripts/fitness/workout_sync.py` reads recorded COROS activities (any type; several in a day = one workout; the plan/calendar is ignored) and logs one completion per day for the `Workouts` habit, idempotently. Registered as `workouts-habit-sync` (daily 6am, silent unless COROS login fails): `python scripts/scheduler_store.py add --name "workouts-habit-sync" --prompt "Run python scripts/fitness/workout_sync.py --days 3 ..." --cron "0 6 * * *" --target-chat-id "<chat_id>"`. Reads the COROS health MCP (history from ~9/5), falling back to the web API; `--source web` forces web for deeper backfills. Backfill: `python scripts/fitness/workout_sync.py --days 35`.
+**Workouts habit auto-log:** `scripts/fitness/workout_sync.py` reads recorded COROS activities (any type; several in a day = one workout; the plan/calendar is ignored) and logs one completion per day for the `Workouts` habit, idempotently. Registered as `workouts-habit-sync` (daily 6am, silent unless COROS login fails): `python scripts/scheduler_store.py add --name "workouts-habit-sync" --prompt "Run `python scripts/fitness/workout_sync.py --days 3` (exactly that command, via Bash, and nothing else: do not run any follow-up command to check the exit code). It logs the Workouts habit for any recent day with a COROS activity. If the command prints a normal result, reply with nothing (stay silent). If it prints an error or a traceback, reply with one short line saying the COROS workout sync failed and the error message." --cron "0 6 * * *" --target-chat-id "<chat_id>"`. Reads the COROS health MCP (history from ~9/5), falling back to the web API; `--source web` forces web for deeper backfills. Backfill: `python scripts/fitness/workout_sync.py --days 35`.
 
 See `docs/superpowers/specs/2026-08-20-fitness-agent-coros-login-design.md` and its
 two follow-on specs in the same directory for the full phased design and live

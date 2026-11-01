@@ -49,9 +49,13 @@
       <h2>Scheduled tasks</h2>
       {% if b.runs %}
         <div class="metric {{ 'fail-count' if b.runs.fail_24h }}">{{ b.runs.success_rate_24h|round|int if b.runs.success_rate_24h is not none else '–' }}% ok</div>
-        <div class="metric-sub">{{ b.runs.ok_24h }} ok / {{ b.runs.fail_24h }} failed in 24 h · {{ b.runs.fail_7d }} failed in 7 days</div>
+        <div class="metric-sub">{{ b.runs.ok_24h }} ok / {{ b.runs.fail_24h }} failed in 24 h · {{ b.runs.fail_7d }} failed in 7 days{% if b.runs.degraded_7d %} · {{ b.runs.degraded_7d }} degraded in 7 days{% endif %}</div>
         {% if b.runs.recent_failures %}
           <ul class="link-list">{% for f in b.runs.recent_failures[:3] %}<li><a href="/health/schedule">{{ f.task_name }}</a> <span class="muted">failed {{ f.run_at|fmt_dt }}</span></li>{% endfor %}</ul>
+        {% endif %}
+        {% if b.runs.recent_degraded %}
+          <h3 class="mini-h">Degraded (finished, some commands denied)</h3>
+          <ul class="link-list">{% for f in b.runs.recent_degraded[:3] %}<li><a href="/health/schedule">{{ f.task_name }}</a> <span class="muted">{{ f.run_at|fmt_dt }}</span><br><span class="muted">{{ (f.summary or '')[:220] }}</span></li>{% endfor %}</ul>
         {% endif %}
       {% endif %}
       {% if b.upcoming %}

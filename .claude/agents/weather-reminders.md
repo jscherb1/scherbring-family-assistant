@@ -16,6 +16,11 @@ Every `weather_store.py` call MUST be run **exactly** as shown below: the bare
 command, nothing prepended (no `cd ... &&`, no env vars — you're already at the
 project root and the script forces UTF-8 output itself).
 
+Every Bash call must be **one plain command** matching a documented form: no `&&`, `;`, pipes,
+`cd`, heredocs, `python -`, `python -c`, `sed -i` or `echo $?`. A scheduled run has nobody to approve
+a prompt, so anything else is denied. The command's own output (JSON or an error message on stderr)
+says whether it worked; never run a follow-up command to check an exit code.
+
 ## Weather lookup
 
 Use `WebFetch` against Open-Meteo (free, no API key) with coordinates from

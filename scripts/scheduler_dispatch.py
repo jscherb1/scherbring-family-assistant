@@ -134,6 +134,61 @@ def denied_tool_names(debug_log: Path) -> list[str]:
     return re.findall(r"(\S+) tool permission denied", text)
 
 
+def parse_claude_json(raw: str):
+    """Parse `claude --print --output-format json` stdout.
+
+    Returns (reply_text, denials) where denials is a list of {"tool_name", "tool_input"} dicts from the
+    result's `permission_denials`. Returns None when `raw` isn't the expected single JSON result object, so
+    the caller falls back to treating stdout as plain text (the agent's reply must never be lost).
+    """
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(data, list):  # some versions emit an event array; the result is the last "result" item
+        data = next((d for d in reversed(data) if isinstance(d, dict) and d.get("type") == "result"), None)
+    if not isinstance(data, dict) or not isinstance(data.get("result"), str):
+        return None
+    raw_denials = data.get("permission_denials")
+    denials = []
+    if isinstance(raw_denials, list):
+        for d in raw_denials:
+            if isinstance(d, dict):
+                denials.append({"tool_name": str(d.get("tool_name") or "unknown tool"), "tool_input": d.get("tool_input")})
+    return data["result"].strip(), denials
+
+
+def describe_denial(denial: dict, width: int = 100) -> str:
+    """One denied call as `Tool: command`, truncated. Bash shows its command; others show file_path if any."""
+    name = denial.get("tool_name") or "unknown tool"
+    inp = denial.get("tool_input")
+    detail = ""
+    if isinstance(inp, dict):
+        detail = str(inp.get("command") or inp.get("file_path") or inp.get("path") or "")
+    detail = " ".join(detail.split())
+    if len(detail) > width:
+        detail = detail[: width - 3] + "..."
+    return f"{name}: {detail}" if detail else name
+
+
+def summarize_denials(denials: list[dict], limit: int = 3) -> str:
+    shown = "; ".join(describe_denial(d) for d in denials[:limit])
+    more = len(denials) - limit
+    return shown + (f"; +{more} more" if more > 0 else "")
+
+
+# Phrases in the agent's own reply that mean the work did not finish or did not reach the user.
+FAILURE_REPLY_RE = re.compile(
+    r"did not complete|didn't complete|did NOT complete|could not complete|couldn't complete|"
+    r"failed to deliver|not delivered|unable to complete",
+    re.IGNORECASE,
+)
+
+
+def reply_says_failed(text: str) -> bool:
+    return bool(FAILURE_REPLY_RE.search(text or ""))
+
+
 def checkout_problem(repo: Path = REPO_ROOT) -> str:
     """Why the checkout isn't a clean `main`, or "" when it is (or git can't say).
 
@@ -235,8 +290,12 @@ def log_run(task_id: str, run_at: str, status: str, summary: str = "") -> None:
     subprocess.run(args, capture_output=True, text=True, encoding="utf-8", cwd=str(REPO_ROOT))
 
 
-def dispatch_task(task: dict) -> tuple[bool, str]:
-    """Run one due task via claude --print. Returns (success, summary)."""
+def dispatch_task(task: dict) -> tuple[str, str]:
+    """Run one due task via claude --print. Returns (status, summary).
+
+    status is "ok", "degraded" (exited cleanly and delivered its message, but some commands were denied)
+    or "failed".
+    """
     task_id = str(task.get("id", ""))
     name = task.get("name", task_id)
     prompt = task.get("prompt", "")
@@ -244,7 +303,7 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
     run_at = str(task.get("due_run_at", "") or "")
 
     if not prompt:
-        return False, "no prompt defined on task"
+        return "failed", "no prompt defined on task"
 
     print(f"scheduler_dispatch: dispatching '{name}' (id={task_id})", flush=True)
 
@@ -291,7 +350,7 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
         safe_run_at = run_at.replace(":", "-") or "unknown"
         debug_log = DISPATCH_DEBUG_DIR / f"{task_id or 'unknown'}_{safe_run_at}.log"
         result = subprocess.run(
-            [CLAUDE_EXE, "--print", "--model", MODEL, "--debug-file", str(debug_log), full_prompt],
+            [CLAUDE_EXE, "--print", "--output-format", "json", "--model", MODEL, "--debug-file", str(debug_log), full_prompt],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -299,8 +358,21 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
             timeout=TASK_TIMEOUT_SECONDS,
             env=env,
         )
-        output = (result.stdout or "").strip()
+        raw_output = (result.stdout or "").strip()
         process_ok = result.returncode == 0
+
+        # JSON output carries the exact denied commands. If it can't be parsed, fall back to the raw
+        # stdout as the reply and to the debug-log denial count, so the reply text is never lost.
+        parsed = parse_claude_json(raw_output)
+        if parsed is not None:
+            output, denial_list = parsed
+            denial_count = len(denial_list)
+            denial_text = summarize_denials(denial_list)
+        else:
+            output = raw_output
+            denial_count = count_permission_denials(debug_log)
+            denial_list = []
+            denial_text = ", ".join(denied_tool_names(debug_log)) or "unknown tool"
 
         message = extract_telegram_message(output) if (process_ok and chat_id) else None
         if message:
@@ -308,36 +380,37 @@ def dispatch_task(task: dict) -> tuple[bool, str]:
             success = process_ok and delivered
             summary = message[:500] if delivered else f"telegram delivery failed; message was: {message[:400]}"
         else:
+            delivered = process_ok
             success = process_ok
             summary = output[:500] if output else (result.stderr or "").strip()[:200]
 
-        denials = count_permission_denials(debug_log)
-        if denials:
-            success = False
-            tools = ", ".join(denied_tool_names(debug_log)) or "unknown tool"
-            summary = (
-                f"[{denials} tool permission denial(s) ({tools}); the run may still have finished its work, "
-                f"check the message below] {summary}"
-            )
+        status = "ok" if success else "failed"
+        if denial_count and success:
+            if reply_says_failed(output):
+                status = "failed"
+            else:
+                status = "degraded"
+            summary = f"[{denial_count} command(s) denied: {denial_text}] {summary}"
+        elif denial_count:
+            summary = f"[{denial_count} command(s) denied: {denial_text}] {summary}"
         problem = checkout_problem()
-        if problem and not success:
+        if problem and status == "failed":
             summary = f"[possible cause: {problem}] {summary}"
 
-        status_label = "ok" if success else "failed"
         print(
-            f"scheduler_dispatch: '{name}' {status_label} (exit {result.returncode})",
+            f"scheduler_dispatch: '{name}' {status} (exit {result.returncode})",
             flush=True,
         )
-        return success, summary
+        return status, summary
     except subprocess.TimeoutExpired:
         print(
             f"scheduler_dispatch: '{name}' timed out after {TASK_TIMEOUT_SECONDS}s",
             flush=True,
         )
-        return False, f"timed out after {TASK_TIMEOUT_SECONDS}s"
+        return "failed", f"timed out after {TASK_TIMEOUT_SECONDS}s"
     except Exception as exc:  # noqa: BLE001
         print(f"scheduler_dispatch: '{name}' error: {exc}", flush=True)
-        return False, str(exc)
+        return "failed", str(exc)
 
 
 def main() -> None:
@@ -372,9 +445,9 @@ def main() -> None:
             )
             continue
 
-        success, summary = dispatch_task(task)
-        log_run(task_id, run_at, "ok" if success else "failed", summary)
-        if not success:
+        status, summary = dispatch_task(task)
+        log_run(task_id, run_at, status, summary)
+        if status == "failed":
             send_failure_alert(task.get("name", task_id), run_at, summary)
 
 

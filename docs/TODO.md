@@ -37,6 +37,18 @@ update it when you finish or add something. Dates are absolute.
 8. **Check the Windows backup folder is covered.** Backups land in `C:\Users\<you>\Backups\assistant`.
    Make sure File History or OneDrive includes it, and consider a periodic `wsl --export` of the distro.
 
+## Scheduler `degraded` status and HA tool names (built 2026-10-31, branch `fix/ha-tools-and-degraded-runs`)
+
+- [ ] Live-verify after restarting nothing is needed for the dispatcher (each run is a fresh process). Check the
+      next scheduled run in `scheduler_store.py runs`: the summary should come from the JSON `result`, and a
+      run with denials should show `degraded` with the denied command. `permission_denials` was confirmed
+      from the bundled CLI schema only, not by a live model call.
+- [ ] Live-verify the `home-assistant` agent with a porch-light request: it should call
+      `mcp__claude_ai_Home_Assistant__intent__HassTurnOn` (no `ha_search`). Needs a fresh agent session
+      (restart the agent worker).
+- [ ] Watch whether `retirement-quarterly-review`, `daily-weather-check` and `workouts-habit-sync` still
+      produce denials after the prompt rule (one plain command per Bash call).
+
 ## Telegram bridge (branch `feat/telegram-bridge`, cut over 2026-10-06)
 
 `telegram_bridge.py` + `agent_worker.py` now serve the production bot (design and runbook:

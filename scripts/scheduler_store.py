@@ -26,7 +26,7 @@ Usage:
     python scripts/scheduler_store.py due [--now <iso8601>]
     python scripts/scheduler_store.py mark-dispatched --id <id> --run-at <iso8601>
     python scripts/scheduler_store.py log-run --task-id <id> --run-at <iso8601> \
-        --status dispatched|dispatch_failed|ok|failed [--summary "..."] [--dispatched-at <iso8601>]
+        --status dispatched|dispatch_failed|ok|degraded|failed [--summary "..."] [--dispatched-at <iso8601>]
     python scripts/scheduler_store.py runs [--task-id <id>] [--since <iso8601>] \
         [--status ok,failed] [--limit 20]
 
@@ -465,11 +465,11 @@ def build_parser() -> argparse.ArgumentParser:
     md.add_argument("--run-at", dest="run_at", required=True)
     md.set_defaults(func=cmd_mark_dispatched)
 
-    lr = sub.add_parser("log-run", help="Record a run's status (dispatched/dispatch_failed/ok/failed).")
+    lr = sub.add_parser("log-run", help="Record a run's status (dispatched/dispatch_failed/ok/degraded/failed).")
     lr.add_argument("--task-id", dest="task_id", required=True)
     lr.add_argument("--run-at", dest="run_at", default=None)
     lr.add_argument("--dispatched-at", dest="dispatched_at", default=None)
-    lr.add_argument("--status", required=True, choices=["dispatched", "dispatch_failed", "ok", "failed"])
+    lr.add_argument("--status", required=True, choices=["dispatched", "dispatch_failed", "ok", "degraded", "failed"])
     lr.add_argument("--summary", default=None)
     lr.set_defaults(func=cmd_log_run)
 
