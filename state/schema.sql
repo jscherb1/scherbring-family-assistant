@@ -67,7 +67,10 @@ CREATE TABLE IF NOT EXISTS scheduled_task_runs (
     run_at        TEXT NOT NULL,   -- nominal scheduled fire time (ISO-8601 UTC)
     dispatched_at TEXT,            -- actual wall-clock POST time, NULL if dispatch_failed
     status        TEXT NOT NULL,   -- 'dispatched' | 'dispatch_failed' | 'ok' | 'degraded' | 'failed'
-    summary       TEXT
+    summary       TEXT,
+    cost_usd      REAL,            -- claude total_cost_usd; NULL when unknown
+    duration_s    REAL,
+    model_usage_json TEXT          -- claude modelUsage (per-model tokens/cost), JSON
 );
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_task_run

@@ -26,7 +26,8 @@ Usage:
     python scripts/scheduler_store.py due [--now <iso8601>]
     python scripts/scheduler_store.py mark-dispatched --id <id> --run-at <iso8601>
     python scripts/scheduler_store.py log-run --task-id <id> --run-at <iso8601> \
-        --status dispatched|dispatch_failed|ok|degraded|failed [--summary "..."] [--dispatched-at <iso8601>]
+        --status dispatched|dispatch_failed|ok|degraded|failed [--summary "..."] [--dispatched-at <iso8601>] \
+        [--cost-usd N] [--duration-s N] [--model-usage-json '{...}']
     python scripts/scheduler_store.py runs [--task-id <id>] [--since <iso8601>] \
         [--status ok,failed] [--limit 20]
 
@@ -66,12 +67,20 @@ def _connect() -> sqlite3.Connection:
 TASK_MIGRATIONS = {"timeout_seconds": "INTEGER"}
 
 
+RUN_MIGRATIONS = {"cost_usd": "REAL", "duration_s": "REAL", "model_usage_json": "TEXT"}
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
-    have = {r["name"] for r in conn.execute("PRAGMA table_info(scheduled_tasks)")}
-    for col, decl in TASK_MIGRATIONS.items():
+    for table, migrations in (("scheduled_tasks", TASK_MIGRATIONS), ("scheduled_task_runs", RUN_MIGRATIONS)):
+        _add_missing_columns(conn, table, migrations)
+
+
+def _add_missing_columns(conn: sqlite3.Connection, table: str, migrations: dict) -> None:
+    have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    for col, decl in migrations.items():
         if col not in have:
             try:
-                conn.execute(f"ALTER TABLE scheduled_tasks ADD COLUMN {col} {decl}")
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
                 conn.commit()
             except sqlite3.OperationalError as exc:  # another connection added it first
                 if "duplicate column" not in str(exc):
@@ -415,10 +424,12 @@ def cmd_log_run(args: argparse.Namespace) -> int:
     try:
         cur = conn.execute(
             """
-            INSERT INTO scheduled_task_runs (task_id, run_at, dispatched_at, status, summary)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO scheduled_task_runs
+                (task_id, run_at, dispatched_at, status, summary, cost_usd, duration_s, model_usage_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (args.task_id, args.run_at or _utc_now_iso(), args.dispatched_at, args.status, args.summary),
+            (args.task_id, args.run_at or _utc_now_iso(), args.dispatched_at, args.status, args.summary,
+             args.cost_usd, args.duration_s, args.model_usage_json),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM scheduled_task_runs WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -515,6 +526,9 @@ def build_parser() -> argparse.ArgumentParser:
     lr.add_argument("--dispatched-at", dest="dispatched_at", default=None)
     lr.add_argument("--status", required=True, choices=["dispatched", "dispatch_failed", "ok", "degraded", "failed"])
     lr.add_argument("--summary", default=None)
+    lr.add_argument("--cost-usd", dest="cost_usd", type=float, default=None, help="total_cost_usd from the claude result.")
+    lr.add_argument("--duration-s", dest="duration_s", type=float, default=None)
+    lr.add_argument("--model-usage-json", dest="model_usage_json", default=None, help="Per-model usage/cost, JSON.")
     lr.set_defaults(func=cmd_log_run)
 
     runs = sub.add_parser("runs", help="Query run history.")
