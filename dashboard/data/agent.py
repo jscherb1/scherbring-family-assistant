@@ -7,6 +7,7 @@ from collections import defaultdict
 from . import common
 
 sys.path.insert(0, str(common.SCRIPTS_DIR))
+import fastlane  # noqa: E402
 from bridge_store import BridgeStore  # noqa: E402
 from paths import dev_chat_ids  # noqa: E402
 
@@ -64,6 +65,21 @@ def get_stream(limit: int = STREAM_TAIL):
     return {"events": events[::-1], "content_visible": show}
 
 
+def get_fastlane(days: int = 7):
+    """Fast lane switch, task liveness, and counts / median latency per tier. No message text, no chat ids."""
+    out = fastlane.usage_summary(common.state_dir() / "usage.jsonl", days)
+    out["enabled"], out["alive"] = None, False
+    path = common.state_dir() / "inbox.db"
+    if path.exists():
+        try:
+            store = BridgeStore(path, read_only=True)
+            out["enabled"] = store.kv_get("fastlane") == "on"
+            out["alive"] = store.fastlane_gate_active()
+        except Exception:  # noqa: BLE001 - the page still shows the numbers
+            pass
+    return out
+
+
 def get_usage():
     path = common.state_dir() / "usage.jsonl"
     days = defaultdict(lambda: {"turns": 0, "cost_usd": 0.0, "output_tokens": 0, "uncached_input": 0,
@@ -78,6 +94,9 @@ def get_usage():
             r = json.loads(line)
         except ValueError:
             continue
+        fl = r.get("fastlane")
+        if isinstance(fl, dict) and fl.get("tier") in (0, 1):
+            continue  # answered by the fast lane: no agent turn, counted under get_fastlane
         u = r.get("usage") or {}
         d = days[(r.get("t") or "")[:10]]
         d["turns"] += 1
