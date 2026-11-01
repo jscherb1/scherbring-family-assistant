@@ -347,7 +347,8 @@ See the Backlog section of `README.md`.
   not padded.
 - [ ] **Register the task** (not registered by the build): the `scheduler_store.py add --name "weekly-review" ...`
   command is in the README "Weekly step-back review" section (Saturday 10 AM, `--timeout-seconds 1200`, so it does not queue behind the 9 AM finance tasks).
-- [ ] **Record the cost** of the first 2-3 runs here (Opus; dispatcher debug log and `/agent/usage`): date, cost,
+- [x] **Cost capture mechanism**: the dispatcher stores each run's cost in `scheduled_task_runs`; cost shown in `scheduler_store.py runs` (`cost_usd`, `duration_s`, `model_usage_json`). Takes effect on the next scheduler tick after merge.
+- [ ] **Record the cost** of the first 2-3 runs here (Opus; read it with `scheduler_store.py runs --task-id <id>`): date, cost,
   findings kept. Drop back to Sonnet or trim the digest if the value does not justify it. The Opus exception in
   `CLAUDE.md` is for this agent only.
 - [ ] **Reinstall the scheduler unit** (`scripts/install_systemd.sh`): `TimeoutStartSec` went from 360 to 3600 so a

@@ -146,15 +146,8 @@ def _json_candidates(raw: str):
         yield raw[first:last + 1]
 
 
-def parse_claude_json(raw: str):
-    """Parse `claude --print --output-format json` stdout.
-
-    Returns (reply_text, denials, is_error), where denials is a list of {"tool_name", "tool_input"} dicts
-    from the result's `permission_denials` and is_error is the result's own error flag. Returns None when no
-    JSON result object can be found (a warning line before it is tolerated), so the caller falls back to
-    treating stdout as plain text (the agent's reply must never be lost).
-    """
-    data = None
+def _find_result(raw: str):
+    """The result object from `claude --print --output-format json` stdout, or None."""
     for cand in _json_candidates(raw or ""):
         try:
             loaded = json.loads(cand)
@@ -163,8 +156,41 @@ def parse_claude_json(raw: str):
         if isinstance(loaded, list):  # some versions emit an event array; the result is the last "result" item
             loaded = next((d for d in reversed(loaded) if isinstance(d, dict) and d.get("type") == "result"), None)
         if isinstance(loaded, dict) and ("result" in loaded or loaded.get("type") == "result"):
-            data = loaded
-            break
+            return loaded
+    return None
+
+
+def extract_usage(raw: str) -> dict:
+    """Cost fields from the claude JSON result: {"cost_usd", "duration_s", "model_usage"} (keys only when
+    present and well-formed). Never raises: cost capture must not fail a run."""
+    try:
+        data = _find_result(raw)
+        if not data:
+            return {}
+        out: dict = {}
+        cost = data.get("total_cost_usd")
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+            out["cost_usd"] = float(cost)
+        ms = data.get("duration_ms")
+        if isinstance(ms, (int, float)) and not isinstance(ms, bool):
+            out["duration_s"] = round(ms / 1000.0, 1)
+        mu = data.get("modelUsage")
+        if isinstance(mu, dict) and mu:
+            out["model_usage"] = json.dumps(mu, ensure_ascii=False, sort_keys=True)
+        return out
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def parse_claude_json(raw: str):
+    """Parse `claude --print --output-format json` stdout.
+
+    Returns (reply_text, denials, is_error), where denials is a list of {"tool_name", "tool_input"} dicts
+    from the result's `permission_denials` and is_error is the result's own error flag. Returns None when no
+    JSON result object can be found (a warning line before it is tolerated), so the caller falls back to
+    treating stdout as plain text (the agent's reply must never be lost).
+    """
+    data = _find_result(raw)
     if data is None:
         return None
     raw_denials = data.get("permission_denials")
@@ -332,7 +358,7 @@ def mark_dispatched(task_id: str, run_at: str) -> bool:
     return result.returncode == 0
 
 
-def log_run(task_id: str, run_at: str, status: str, summary: str = "") -> None:
+def log_run(task_id: str, run_at: str, status: str, summary: str = "", usage: dict | None = None) -> None:
     args = [
         sys.executable,
         str(SCRIPTS_DIR / "scheduler_store.py"),
@@ -343,6 +369,13 @@ def log_run(task_id: str, run_at: str, status: str, summary: str = "") -> None:
     ]
     if summary:
         args += ["--summary", summary[:500]]
+    usage = usage or {}
+    if usage.get("cost_usd") is not None:
+        args += ["--cost-usd", str(usage["cost_usd"])]
+    if usage.get("duration_s") is not None:
+        args += ["--duration-s", str(usage["duration_s"])]
+    if usage.get("model_usage"):
+        args += ["--model-usage-json", usage["model_usage"]]
     subprocess.run(args, capture_output=True, text=True, encoding="utf-8", cwd=str(REPO_ROOT))
 
 
@@ -355,7 +388,7 @@ def task_timeout(task: dict) -> int:
     return value if value > 0 else TASK_TIMEOUT_SECONDS
 
 
-def dispatch_task(task: dict) -> tuple[str, str]:
+def dispatch_task(task: dict, usage: dict | None = None) -> tuple[str, str]:
     """Run one due task via claude --print. Returns (status, summary).
 
     status is "ok", "degraded" (exited cleanly and delivered its message, but some commands were denied)
@@ -427,6 +460,8 @@ def dispatch_task(task: dict) -> tuple[str, str]:
         # JSON output carries the exact denied commands. If it can't be parsed, fall back to the raw
         # stdout as the reply and to the debug-log denial count, so the reply text is never lost.
         parsed = parse_claude_json(raw_output)
+        if usage is not None:
+            usage.update(extract_usage(raw_output))
         reported_error = False
         if parsed is not None:
             output, denial_list, reported_error = parsed
@@ -510,8 +545,9 @@ def main() -> None:
             continue
 
         with keep_heartbeat():
-            status, summary = dispatch_task(task)
-        log_run(task_id, run_at, status, summary)
+            usage: dict = {}
+            status, summary = dispatch_task(task, usage)
+        log_run(task_id, run_at, status, summary, usage)
         if status == "failed":
             send_failure_alert(task.get("name", task_id), run_at, summary)
 

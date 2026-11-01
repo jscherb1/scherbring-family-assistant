@@ -44,7 +44,7 @@ Quick end-to-end check: send the bot a message. If there is no reply within a mi
 | `state/logs/agent_stream.jsonl` | the worker's live event stream (`agent_ctl.py tail`) |
 | `state/logs/watchdog_YYYY-MM-DD.log` | each watchdog pass |
 | `state/logs/scheduler_dispatch_debug/*.log` | one debug log per scheduled run |
-| `scheduled_task_runs` table | per-run status and summary (`scheduler_store.py`) |
+| `scheduled_task_runs` table | per-run status, summary and cost (`cost_usd`, `duration_s`, `model_usage_json`; NULL when the run gave none); `python scripts/scheduler_store.py runs --task-id <id>` |
 
 Logs older than 14 days are pruned by the watchdog.
 

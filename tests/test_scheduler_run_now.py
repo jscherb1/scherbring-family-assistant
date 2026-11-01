@@ -19,7 +19,7 @@ def test_main_exit_code_follows_dispatch_status(monkeypatch, capsys, status, cod
 
     logged, alerts = [], []
     monkeypatch.setattr(rn, "_store", lambda *a: _R())
-    monkeypatch.setattr(rn.sd, "dispatch_task", lambda t: (status, "summary"))
+    monkeypatch.setattr(rn.sd, "dispatch_task", lambda t, u=None: (status, "summary"))
     monkeypatch.setattr(rn.sd, "log_run", lambda *a: logged.append(a))
     monkeypatch.setattr(rn.sd, "send_failure_alert", lambda *a: alerts.append(a))
     monkeypatch.setattr(sys, "argv", ["scheduler_run_now.py", "--name", "n"])
