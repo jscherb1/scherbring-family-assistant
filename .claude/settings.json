@@ -12,7 +12,6 @@
       "mcp__todoist__update-tasks",
       "mcp__todoist__complete-tasks",
       "mcp__todoist__add-projects",
-      "mcp__plugin_telegram_telegram__reply",
       "mcp__claude_ai_Google_Calendar__list_calendars",
       "mcp__claude_ai_Google_Calendar__list_events",
       "mcp__claude_ai_Google_Calendar__create_event",
@@ -104,52 +103,6 @@
       "Bash(printenv*)",
       "Bash(env)",
       "Bash(env *)"
-    ]
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "mcp__plugin_telegram_telegram__reply",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$CLAUDE_PROJECT_DIR/scripts/telegram_context_bridge.py\" hook-post-reply",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$CLAUDE_PROJECT_DIR/scripts/telegram_context_bridge.py\" hook-post-bash",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$CLAUDE_PROJECT_DIR/scripts/telegram_context_bridge.py\" hook-user-prompt",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR/.venv/bin/python\" \"$CLAUDE_PROJECT_DIR/scripts/telegram_context_bridge.py\" hook-session-start",
-            "timeout": 10
-          }
-        ]
-      }
     ]
   },
   "enabledPlugins": {

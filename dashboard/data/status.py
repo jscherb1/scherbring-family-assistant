@@ -1,7 +1,7 @@
 """System Status reader: one "is everything OK?" board for the System tab.
 
 Pure composition of the existing readers (health, agent, ops, schedule); each check below only restates a flag
-those readers already compute, so the deep pages (Scheduled tasks, Restarts, Logins & backups, Agent) stay the
+those readers already compute, so the deep pages (Scheduled tasks, Logins & backups, Agent) stay the
 source of detail.
 """
 from . import agent, health, ops, schedule
@@ -55,7 +55,6 @@ def get_status_board():
         "integrations": integrations,
         "logins": logins,
         "runs": st.get("task_runs") if "error" not in st else None,
-        "uptime": st.get("uptime") if "error" not in st else None,
         "upcoming": upcoming,
         "generated_at": st.get("generated_at"),
     }

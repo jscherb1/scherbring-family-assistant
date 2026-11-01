@@ -77,7 +77,6 @@ SECTIONS = [
         "pages": [
             {"group": "Health", "label": "Status", "href": "/health", "src": "health:overview"},
             {"label": "Scheduled tasks", "href": "/health/schedule", "src": "health:schedule"},
-            {"label": "Restarts", "href": "/health/restarts", "src": "health:restarts"},
             {"label": "Logins & backups", "href": "/health/system", "src": "health:system"},
             {"label": "Reconnect", "href": "/reconnect", "src": "health:reconnect"},
             {"group": "Agent", "label": "Live", "href": "/agent", "src": "agent:live"},
@@ -104,12 +103,11 @@ LEGACY_SECTIONS = [
     },
     {
         "key": "health",
-        "label": "Orchestrator Health",
+        "label": "System Health",
         "href": "/health",
         "pages": [
             {"key": "overview", "label": "Overview", "href": "/health"},
             {"key": "schedule", "label": "Scheduled Tasks", "href": "/health/schedule"},
-            {"key": "restarts", "label": "Restart History", "href": "/health/restarts"},
             {"key": "system", "label": "Logins & Backups", "href": "/health/system"},
             {"key": "reconnect", "label": "Reconnect", "href": "/reconnect"},
         ],

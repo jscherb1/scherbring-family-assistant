@@ -1,19 +1,20 @@
-# Personal AI Assistant — Phase 1 (Telegram → Orchestrator → Todoist subagent)
+# Personal AI Assistant (Telegram → bridge → agent worker → subagents)
 
 A personal multi-agent assistant orchestrated through Claude Code, running locally on
-Linux (built on WSL2 Ubuntu 24.04, run by systemd). One orchestrator is the single point of contact; it delegates to scoped
+Linux (built on WSL2 Ubuntu 24.04, run by systemd). One agent (run by the agent worker) is the single point of contact; it delegates to scoped
 subagents. Phase 1 proves the core loop end-to-end with one real subagent (**Todoist**)
 and a shared state store that gives follow-up questions continuity.
 
 ```
-You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
-                                                   │ delegates via Task tool
-                                                   ▼
-                                          Todoist subagent  ── Todoist MCP (tasks/lists)
-                                                   │
-                                                   ▼ writes/reads
-                                          Shared state store (SQLite)  → orchestrator replies in Telegram
+You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Claude Agent SDK)
+                                                              │ delegates via Task tool
+                                                              ▼
+                                                     Todoist subagent  ── Todoist MCP (tasks/lists)
+                                                              │
+                                                              ▼ writes/reads
+                                                     Shared state store (SQLite)  → reply sent by the bridge
 ```
+
 
 ## Layout
 
@@ -66,14 +67,14 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `scripts/recipes_store.py` | Zero-dep CLI for the recipe library (list/get/add/update/delete/feedback/mark-cooked), a thin wrapper over `recipes.py` |
 | `scripts/scheduler_store.py` | Zero-dep CLI for the scheduled-tasks registry (add/list/enable/disable/delete/due/log-run); called by `scheduler_dispatch.py` to find and dispatch due tasks |
 | `scripts/scheduler_dispatch.py` | Zero-token external poller — writes a heartbeat tick, checks for due tasks, and dispatches each via `claude --print` as a one-shot subprocess. Exits silently when nothing is due. |
-| `systemd/` | systemd **user** unit templates (`@REPO_ROOT@` placeholder): orchestrator, scheduler, watchdog, ha-mcp, dashboard, credential check, backup |
+| `systemd/` | systemd **user** unit templates (`@REPO_ROOT@` placeholder): Telegram bridge, agent worker, scheduler, watchdog, ha-mcp, dashboard, credential check, backup |
 | `scripts/install_systemd.sh` | Installs the units into `~/.config/systemd/user/` and optionally enables named ones |
 | `scripts/setup_wsl.sh` | Builds `.venv`, installs Python deps + Playwright Chromium, the pinned `ha-mcp` and Monarch servers |
 | `scripts/paths.py` | Shared locations and secrets loading (`~/.config/scherbring-assistant/.env`); every script goes through this, nothing hardcodes a home directory |
-| `scripts/start_orchestrator.sh` | The orchestrator loop run inside tmux — single instance (flock), restarts 10 s after any exit, logs starts/exits |
-| `scripts/attach_orchestrator.sh`, `scripts/register_attach_window.ps1` | Optional: a window that shows the live orchestrator session (the only Windows-side script) |
-| `scripts/run_watchdog.sh` | One watchdog pass (both checks + log pruning); run every 2 minutes by `assistant-watchdog.timer` |
-| `scripts/watchdog_telegram_health.py` | Detects a stuck Telegram MCP connection and kills `claude` so the loop restarts it |
+| `scripts/telegram_bridge.py` | Telegram bridge: polls Telegram into a durable inbox (`state/inbox.db`) and delivers replies from the outbox with retry |
+| `scripts/agent_worker.py` | Agent worker: runs Claude turns for inbox messages via the Agent SDK, resumes its session after a restart |
+| `scripts/agent_ctl.py` | Operate the bridge and worker: `status`, `tail`, `say`, `pause`/`resume`, `sessions`, `drill` |
+| `scripts/run_watchdog.sh` | One watchdog pass (scheduler health + log pruning); run every 2 minutes by `assistant-watchdog.timer` |
 | `scripts/watchdog_scheduler_health.py` | Detects a stalled scheduler dispatcher (via the heartbeat file), restarts the timer, and sends a direct Telegram alert |
 | `scripts/scheduler_run_now.py` | Runs one scheduled task immediately through the real dispatch path, for testing |
 | `scripts/credential_check.py` | Daily real-request check that messages on Telegram only when a Google Drive or Monarch login is really down (Hy-Vee is owned by `hyvee_connection.py`) |
@@ -142,30 +143,14 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
    - Verify: `claude mcp list` should show `todoist` connected.
    - Use a Todoist **test project** if you want to avoid touching your real lists — the
      subagent can create and complete tasks.
-5. **Install Bun** — the Telegram channel's MCP server runs on **Bun** (not Node). Without
-   it the channel silently never starts. Install it, then reopen your terminal:
-   ```
-   curl -fsSL https://bun.sh/install | bash
-   ```
-   Verify: `bun --version`.
-6. **Telegram channel** — configure the bot (any `claude` session, persists to
-   `~/.claude/channels/telegram/.env`):
-   ```
-   /plugin install telegram@claude-plugins-official
-   /telegram:configure <bot-token>
-   ```
-   Then **launch with the channel** (Step "Launch" below), and **pair your account** —
-   this is the step that actually adds you to the allowlist:
-   ```
-   # 1. From Telegram, send any message to your bot → it replies with a pairing code.
-   # 2. In the running Claude Code session:
-   /telegram:access pair <code>
-   # 3. Optionally lock down so only paired users get through:
-   /telegram:access policy allowlist
-   ```
-   > `policy allowlist` alone does NOT add you — you must `pair` first, or every message
-   > is silently dropped. Telegram channels are a research-preview feature; confirm command
-   > names against the live docs: https://code.claude.com/docs/en/channels.md
+5. **Telegram bot** — create a bot with [@BotFather](https://t.me/BotFather) and add its token to
+   `~/.config/scherbring-assistant/.env` as `TELEGRAM_BOT_TOKEN` (use `TELEGRAM_TEST_BOT_TOKEN` plus
+   `BRIDGE_TOKEN_ENV=TELEGRAM_TEST_BOT_TOKEN` to try it on a separate bot first). Then allowlist yourself:
+   set `BRIDGE_ALLOWED_CHAT_IDS` to your Telegram chat id (comma-separated for several). While it is empty
+   the bridge is in pairing mode: it serves nobody and replies to any sender with their chat id, so message
+   the bot once, copy the id from the reply, put it in `.env`, and restart `assistant-bridge`. Messages from
+   any chat id not on the list never reach the agent. Do **not** install the Telegram Claude plugin: it polls
+   the same bot token and blocks the bridge.
 
 ### B. Already built (in this repo — no action needed)
 
@@ -180,23 +165,15 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
   `kids-memory` subagent) — see the dedicated **Kids memory keeper** section below. Needs
   the Google Drive MCP connector authorized (already done) and no further setup.
 
-## Launch (the orchestrator)
+## Launch (bridge + worker)
 
-The orchestrator is `claude --model sonnet --permission-mode auto --channels
-plugin:telegram@claude-plugins-official`, an interactive terminal program, so it runs inside a
-detached **tmux** session named `assistant`. `scripts/start_orchestrator.sh` is the loop inside
-that session: it allows only one instance (flock), restarts `claude` 10 seconds after every exit,
-and logs each start and exit.
-
-Normally systemd starts it (see below). By hand, for debugging:
-
-```
-tmux new-session -d -s assistant scripts/start_orchestrator.sh   # start
-tmux attach -t assistant                                         # watch it (Ctrl-b d detaches)
-```
-
-Message your bot from Telegram. Every start is a fresh Claude session; a hook
-(`telegram_context_bridge.py`) replays the last hour of conversation into it.
+Two systemd user units serve Telegram. `assistant-bridge.service` (`scripts/telegram_bridge.py`) owns
+the Telegram connection: it saves every message to `state/inbox.db` before acknowledging it and sends
+replies from an outbox. `assistant-agent-worker.service` (`scripts/agent_worker.py`) runs the Claude turns
+with `--permission-mode auto` and resumes its session by id after a restart, so either can be restarted
+without losing a message. Both start from systemd (see below); message your bot to use it.
+`scripts/agent_ctl.py status` shows whether both are up; `docs/OPERATIONS.md` ("Telegram bridge") has the
+runbook.
 
 ## Always-on: systemd user units
 
@@ -205,34 +182,34 @@ Everything runs as **systemd user units**, templated in `systemd/` and installed
 
 | Unit | What it does |
 |---|---|
-| `assistant-orchestrator.service` | The Claude Code orchestrator, in tmux. Restarts whenever it exits. |
+| `assistant-bridge.service` | Telegram bridge: polls Telegram into the inbox, delivers replies. Restarts on failure. |
+| `assistant-agent-worker.service` | Agent worker: runs Claude turns for inbox messages (systemd watchdog 30 s). |
 | `assistant-scheduler.timer` / `.service` | Scheduled-task dispatcher, every 2 minutes. |
-| `assistant-watchdog.timer` / `.service` | Telegram-health and scheduler-health checks, every 2 minutes, plus log pruning. |
+| `assistant-watchdog.timer` / `.service` | Scheduler-health check, every 2 minutes, plus log pruning. |
 | `assistant-ha-mcp.service` | Local Home Assistant MCP server on 127.0.0.1:8086. |
 | `assistant-system-health.timer` / `.service` | Every 2 h: script-side integration health checks (`system_health_store.py check`); no model tokens. Enable with `scripts/install_systemd.sh assistant-system-health.timer` |
 | `assistant-credential-check.timer` / `.service` | Daily 09:30 warning before Drive or Monarch logins expire. |
 | `assistant-backup.timer` / `.service` | Daily 03:15 backup of the database, memory notes and encrypted secrets. |
-| `assistant-dashboard.service` | Optional Scherbring Family Assistant web dashboard (FastAPI; orchestrator health, scheduled tasks, restart history, recipes). Binds 127.0.0.1 unless a drop-in sets another address. |
+| `assistant-dashboard.service` | Optional Scherbring Family Assistant web dashboard (FastAPI; system status, agent, scheduled tasks, recipes). Binds 127.0.0.1 unless a drop-in sets another address. |
 
 First-time install on a fresh machine:
 
 ```
 scripts/setup_wsl.sh                    # venv, Python deps, Playwright, ha-mcp, Monarch server
 sudo loginctl enable-linger "$USER"     # user units run without a login session
-scripts/install_systemd.sh assistant-orchestrator.service assistant-scheduler.timer \
-    assistant-watchdog.timer assistant-ha-mcp.service assistant-credential-check.timer \
+scripts/install_systemd.sh assistant-bridge.service assistant-agent-worker.service \
+    assistant-scheduler.timer assistant-watchdog.timer assistant-ha-mcp.service assistant-credential-check.timer \
     assistant-backup.timer
 ```
 
 **On WSL2** the VM must also stay up on its own: `/etc/wsl.conf` needs `[boot] systemd=true`,
 `%UserProfile%\.wslconfig` needs `vmIdleTimeout=-1` under `[wsl2]`, and one Windows startup task
-keeps the VM alive (`wsl.exe -d Ubuntu-24.04 -u <user> -- sleep infinity`). An optional logon task
-that opens a window showing the live session is in `scripts/register_attach_window.ps1`.
+keeps the VM alive (`wsl.exe -d Ubuntu-24.04 -u <user> -- sleep infinity`).
 `docs/OPERATIONS.md` has the full day-to-day runbook: status, logs, restart, backup, restore.
 
 ## Scheduled tasks (proactive, recurring prompts)
 
-Lets you ask the orchestrator to do something on a schedule — "every Sunday at 9am,
+Lets you ask the assistant to do something on a schedule — "every Sunday at 9am,
 plan next week's dinners and post it" — and have the result posted into this same
 Telegram chat. Adding a new scheduled task is just a conversation with the `scheduler`
 subagent (or a row in the registry via `scheduler_store.py`) — it never touches systemd.
@@ -281,7 +258,7 @@ advance the task's schedule): `python scripts/scheduler_run_now.py --name <task>
 
 ## Kids memory keeper
 
-Tell the orchestrator (in chat, or via Telegram) a quick memory, anecdote, or note
+Tell the assistant (in chat, or via Telegram) a quick memory, anecdote, or note
 about the kids — Ruth (4) and Claire (7) — natural-language ("Claire said the
 funniest thing today...") or explicit ("remember this for Ruth"). The `kids-memory`
 subagent:
@@ -919,19 +896,19 @@ python scripts/state_store.py query --agent todoist --limit 5
 Run this exact sequence — **Phase 1 is not done until step 7 works**:
 
 1. Text the bot: **"add 'buy milk' to my shopping list"**
-2. Orchestrator delegates to the `todoist` subagent.
+2. The agent delegates to the `todoist` subagent.
 3. Subagent creates the task in Todoist (creating the list if needed) and writes a row
    to the state store.
-4. Orchestrator replies in the same Telegram chat.
+4. The agent replies in the same Telegram chat.
 5. Send a follow-up: **"what did I just add, and to which list?"**
-6. Orchestrator re-delegates to the `todoist` subagent.
+6. The agent re-delegates to the `todoist` subagent.
 7. Subagent reads its own saved record and answers **with continuity** — not a generic
    restatement, not "I don't have that context."
 
 Also confirm:
 - `git status` shows no secrets tracked (drop a dummy secret in `.env` / `state/*.db` —
   it must not appear).
-- Messaging from a non-allowlisted Telegram account does **not** reach the orchestrator.
+- Messaging from a non-allowlisted Telegram account does **not** reach the agent.
 
 ## Out of scope for Phase 1
 

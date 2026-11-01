@@ -72,7 +72,6 @@ other family members.
 |---|---|---|---|
 | System | Status | `/health`, `/api/system/status` | One "is everything OK?" board: services (bridge, worker, MCP, health check, reply delivery, scheduler, backups), each integration's last connection check, login expiry, task success rate, recent failures and what runs next (refreshes every minute). Composes `data/health.py`, `data/agent.py`, `data/ops.py`, `data/schedule.py` (`data/status.py`) |
 | | Scheduled Tasks | `/health/schedule` | Every scheduled task: what it does, schedule in plain English, next run, last run, 7-day ok/failed, recent runs |
-| | Restart History | `/health/restarts` | Every orchestrator launch with the inferred cause, previous exit code, downtime, and the raw log records behind it |
 | | Reconnect | `/reconnect`, `/reconnect/hyvee` | Refresh an expired Drive login (paste flow); shows Hy-Vee status and points at the desktop "Hy-Vee Login" shortcut (the only Hy-Vee sign-in). Write routes use the same-origin guard; same `scripts/reauth.py` service as the agent |
 | | Logins & Backups | `/health/system` | Days until the Hy-Vee/Drive/Monarch logins expire, newest backup age and files, scheduler heartbeat |
 | Agent | Live Status | `/agent` | Telegram bridge and agent worker liveness (heartbeats, Telegram polling, MCP servers, health-check result), queue depth, current turn, live event stream (refreshes every 5 s). Message text, tool inputs and results are **hidden** unless `DASHBOARD_SHOW_AGENT_CONTENT=1`; use `scripts/agent_ctl.py tail` for the full stream |
@@ -112,7 +111,7 @@ Everything is view-only except the Habits page (see Notes). Because there is no 
 finance report text and advisor/retirement profile values) show summaries only. The Money overview and the live review lists do
 show dollar amounts and merchants (decided 2026-10-21: the dashboard is only reachable on localhost/Tailscale).
 
-JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/restarts`, `/api/system`,
+JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/system`,
 `/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/ha/*`, `/api/wellness*`, `/api/journal/*`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.
 
 ## Run it
@@ -147,7 +146,7 @@ dashboard/
   data/           read-only data layer (no web-framework imports; unit-tested)
   routers/        one router per section (HTML pages + /api/* JSON)
   templates/      base.html shell + one folder per section; archive/ = frozen pre-redesign templates
-  static/         style.css (dark HUD design tokens), htmx.min.js, dashboard.js; archive/ = frozen old CSS/JS
+  static/         style.css (dark HUD design tokens), htmx.min.js; archive/ (also holds the old dashboard.js) = frozen old CSS/JS
 ```
 
 To add a section: create a router in `routers/`, include it in `app.py`, add templates, and add
@@ -164,9 +163,6 @@ a page entry (with `src` = the router's `"section:page"`) under the right tab in
 - Mobile: below 760px the tabs move to a bottom tab bar, the sub-nav scrolls
   sideways, and `.tbl` tables stack into labelled cards (a small script in `base.html` copies
   each column header onto its cells).
-- Restart causes are inferred. Only the launch type (`wrapper-start` / `loop-restart`) is
-  recorded directly; the cause comes from matching timestamps in the exit log and the watchdog
-  logs. Logs are pruned after 14 days, so older restarts show no watchdog detail.
 - The scheduler's "ok" status means the run process exited successfully, not that the Telegram
   message was delivered.
 - Tests: `.venv/bin/python -m pytest tests/test_dashboard.py`.

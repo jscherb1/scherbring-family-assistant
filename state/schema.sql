@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS recipes (
 
 CREATE INDEX IF NOT EXISTS idx_recipes_meal_type ON recipes (meal_type);
 
--- Scheduled tasks: proactive prompts the orchestrator runs on a cron schedule,
+-- Scheduled tasks: proactive prompts the scheduler dispatcher runs on a cron schedule,
 -- delivered via the local scheduler channel (scripts/scheduler_channel/) and fired
 -- by the shared poller (scripts/scheduler_poll.py). Adding a new task is just a row
 -- here - no code change or new Windows Scheduled Task needed.
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks (enabled);
 
 -- One row per dispatch attempt / completion of a scheduled task. The poller inserts
--- a 'dispatched' row when it fires the event; the orchestrator flips it to 'ok' or
+-- a 'dispatched' row when it fires the event; the run flips it to 'ok' or
 -- 'failed' after actually completing the work, so the heartbeat task can tell
 -- "ran fine" apart from "silently dropped". 'degraded' = exited cleanly and delivered its
 -- message but some commands were denied (summary names them); not a failure, no alert.

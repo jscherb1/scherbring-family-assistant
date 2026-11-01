@@ -4,7 +4,7 @@
 scheduler_dispatch.py stamps
 state/scheduler_loop_state.json `last_tick` on every run (every 2 minutes via
 systemd/assistant-scheduler.timer). A stale or missing tick means the timer
-stopped firing; a stale tick is not evidence that the orchestrator is broken.
+stopped firing; a stale tick is not evidence that the agent is broken.
 
 An unhealthy reading must persist for 5 minutes (state/scheduler_watchdog.json)
 before acting. Recovery:

@@ -433,7 +433,7 @@ def cmd_add(args) -> int:
                         "cart_qty": after,
                         "requested_qty": qty,
                         "delta": delta,
-                        # The orchestrator (`.claude/agents/hyvee.md`) uses
+                        # The hyvee agent (`.claude/agents/hyvee.md`) uses
                         # this as its signal for whether the exact requested
                         # quantity landed — a partial/no increase (e.g. the
                         # stepper never appeared and the fallback re-click

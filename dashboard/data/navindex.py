@@ -11,7 +11,7 @@ ACTIONS = [
     {"label": "Add a recipe", "href": "/meals/new", "keywords": "new recipe meal"},
     {"label": "Kid chart", "href": "/kids", "keywords": "chores kids ruth claire"},
     {"label": "Reconnect a login", "href": "/reconnect", "keywords": "drive hyvee login expired auth"},
-    {"label": "Old pages (archive)", "href": "/archive", "keywords": "summary my hub orchestrator"},
+    {"label": "Old pages (archive)", "href": "/archive", "keywords": "summary my hub"},
 ]
 
 

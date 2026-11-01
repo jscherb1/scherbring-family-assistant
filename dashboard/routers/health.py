@@ -1,7 +1,7 @@
-"""System tab: the status board (/health), scheduled tasks, restart history, logins & backups."""
+"""System tab: the status board (/health), scheduled tasks, logins & backups."""
 from fastapi import APIRouter, Request
 
-from ..data import health, ops, restarts, schedule, status
+from ..data import health, ops, schedule, status
 from ..web import render
 
 router = APIRouter()
@@ -24,13 +24,6 @@ def schedule_page(request: Request):
                   data=data)
 
 
-@router.get("/health/restarts", include_in_schema=False)
-def restarts_page(request: Request):
-    data = restarts.get_restart_history()
-    return render(request, "health/restarts.html", "health", "restarts", "Restart History",
-                  data=data)
-
-
 @router.get("/api/status")
 def api_status():
     return health.get_status()
@@ -39,11 +32,6 @@ def api_status():
 @router.get("/api/schedule")
 def api_schedule():
     return schedule.list_tasks()
-
-
-@router.get("/api/restarts")
-def api_restarts():
-    return restarts.get_restart_history()
 
 
 @router.get("/health/system", include_in_schema=False)

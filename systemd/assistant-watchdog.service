@@ -1,5 +1,5 @@
 [Unit]
-Description=Scherbring assistant health watchdog (Telegram and scheduler)
+Description=Scherbring assistant health watchdog (scheduler)
 
 [Service]
 Type=oneshot

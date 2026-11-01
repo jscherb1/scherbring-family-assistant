@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""External scheduler dispatcher — runs every 2 minutes via Windows Task Scheduler.
+"""External scheduler dispatcher — runs every 2 minutes via assistant-scheduler.timer.
 
 Writes a heartbeat tick to state/scheduler_loop_state.json, then queries for due
 scheduled tasks. If nothing is due, exits immediately with zero Claude API calls.
 When tasks are due, dispatches each via a one-shot `claude --print` subprocess.
 
-This replaces the in-session CronCreate poll loop that previously ran inside the
-orchestrator session, which was burning ~720 idle Claude turns per day (one every
+This replaced an in-session CronCreate poll loop that previously ran inside the
+agent session, which was burning ~720 idle Claude turns per day (one every
 2 minutes even when nothing was scheduled). The poll logic now lives entirely
 outside Claude; tokens are consumed only when a task actually fires.
 
@@ -46,7 +46,7 @@ MODEL = "sonnet"
 # The local `monarch` MCP server is a stdio server spawned fresh per process
 # (Python venv cold start + heavy monarchmoney/gql imports + a live Windows
 # keyring round-trip probe). Observed cold-start connect times in
-# state/logs/orchestrator_debug.log range from ~3s to ~24.5s, with at least one
+# an earlier agent debug log ranged from ~3s to ~24.5s, with at least one
 # documented outright failure at Claude Code's default ~30000ms MCP connect
 # timeout ("Connection timeout triggered after 30022ms (limit: 30000ms)"). A
 # one-shot `claude --print` dispatch process races against that same default
@@ -371,9 +371,6 @@ def dispatch_task(task: dict) -> tuple[str, str]:
         env = os.environ.copy()
         env["MCP_TIMEOUT_MS"] = MCP_TIMEOUT_MS
         env["MCP_CONNECT_TIMEOUT_MS"] = MCP_TIMEOUT_MS
-        # Headless run: keep the plugin-era conversation hooks out (they tell the session to reply
-        # via the Telegram tool, which is wrong here; delivery is the markers above).
-        env["ASSISTANT_HEADLESS"] = "1"
 
         DISPATCH_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         safe_run_at = run_at.replace(":", "-") or "unknown"

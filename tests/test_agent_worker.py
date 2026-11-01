@@ -157,14 +157,6 @@ def test_recover_in_flight_on_start(tmp_path):
     assert asyncio.run(w.process_one()) is True
 
 
-def test_context_bridge_hooks_noop_for_bridge_worker(monkeypatch, capsys):
-    import telegram_context_bridge as tcb
-
-    monkeypatch.setenv("BRIDGE_WORKER", "1")
-    assert tcb.main(["hook-session-start"]) == 0
-    assert capsys.readouterr().out == ""
-
-
 class PingSession(FakeSession):
     def __init__(self, results):
         super().__init__()
@@ -319,22 +311,6 @@ def test_compact_accepts_result_without_assistant_message(tmp_path):
     s.ensure_ready = ready
     asyncio.run(asyncio.wait_for(s.compact(), 5))  # would hang forever before the fix
     assert store.kv_get("session_id:1") == "new-sid"
-
-
-def test_legacy_export_is_gated_by_env(tmp_path, monkeypatch):
-    import telegram_context_bridge as tcb
-
-    monkeypatch.setattr(tcb, "LOG_FILE", tmp_path / "legacy.jsonl")
-    store, w, _ = make(tmp_path)
-    store.add_inbound("telegram", "1", "hello", external_id="1")
-    monkeypatch.delenv("BRIDGE_EXPORT_LEGACY_LOG", raising=False)
-    asyncio.run(w.process_one())
-    assert not (tmp_path / "legacy.jsonl").exists()  # test traffic must not leak
-    store.add_inbound("telegram", "1", "again", external_id="2")
-    monkeypatch.setenv("BRIDGE_EXPORT_LEGACY_LOG", "1")
-    asyncio.run(w.process_one())
-    text = (tmp_path / "legacy.jsonl").read_text()
-    assert "again" in text and "the answer" in text
 
 
 def test_brand_new_session_is_seeded_from_message_log(tmp_path):

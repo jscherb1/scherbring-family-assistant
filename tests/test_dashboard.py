@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from dashboard.app import app  # noqa: E402
-from dashboard.data import activity, family, finance, home, ops, recipes, restarts, schedule, shopping_fitness  # noqa: E402
+from dashboard.data import activity, family, finance, home, ops, recipes, schedule, shopping_fitness  # noqa: E402
 
 
 @pytest.fixture
@@ -128,22 +128,6 @@ def seed_home(conn):
                  (datetime.now().strftime("%Y-%m-%d"), ts))
 
 
-def write_restart_fixtures(state, kill=True):
-    launch1 = datetime(2026, 10, 6, 13, 0, 0, tzinfo=timezone.utc)
-    launch2 = launch1 + timedelta(hours=2)
-    exit_local = (launch2 - timedelta(seconds=10)).astimezone()
-    (state / "orchestrator_restarts.jsonl").write_text(
-        json.dumps({"ts": launch1.strftime("%Y-%m-%dT%H:%M:%SZ"), "session_name": "S1", "reason": "wrapper-start"}) + "\n"
-        + json.dumps({"ts": launch2.strftime("%Y-%m-%dT%H:%M:%SZ"), "session_name": "S2", "reason": "loop-restart"}) + "\n")
-    (state / "logs" / "orchestrator_exits.log").write_text(
-        f"[{exit_local.strftime('%Y-%m-%d %H:%M:%S')}] session=S1 exit_code=137\n")
-    if kill:
-        pass_ts = (exit_local - timedelta(seconds=30)).strftime("%Y-%m-%d %H:%M:%S")
-        (state / "logs" / "watchdog_2026-10-06.log").write_text(
-            f"[{pass_ts}] --- watchdog pass ---\n"
-            "watchdog: unhealthy signal seen via log grep, starting 3-minute confirmation window\n"
-            "watchdog: persistent broken Telegram connection confirmed - killed orchestrator (pid 42)\n")
-
 
 # ---- describe_cron ----
 
@@ -182,32 +166,6 @@ def test_list_tasks_missing_db(tmp_path, monkeypatch):
     assert "error" in schedule.list_tasks()
 
 
-# ---- restarts ----
-
-def test_restart_history_watchdog_cause(state):
-    write_restart_fixtures(state)
-    result = restarts.get_restart_history()
-    assert result["summary"]["total"] == 2
-    assert result["summary"]["watchdog_caused"] == 1
-    newest, oldest = result["events"]
-    assert newest["cause_kind"] == "watchdog" and "log grep" in newest["cause"]
-    assert newest["exit_code"] == 137 and newest["exit_code_note"] == "SIGKILL"
-    assert newest["downtime_seconds"] == pytest.approx(10, abs=1)
-    assert any("killed orchestrator" in line for line in newest["watchdog_lines"])
-    assert oldest["cause_kind"] == "wrapper"
-
-
-def test_restart_history_unexplained_kill(state):
-    write_restart_fixtures(state, kill=False)
-    newest = restarts.get_restart_history()["events"][0]
-    assert newest["cause_kind"] == "killed" and newest["watchdog_lines"] == []
-
-
-def test_restart_history_no_log(tmp_path, monkeypatch):
-    monkeypatch.setenv("ASSISTANT_STATE_DIR", str(tmp_path))
-    assert "error" in restarts.get_restart_history()
-
-
 # ---- recipes ----
 
 def test_recipe_ingredient_shapes(state):
@@ -238,13 +196,12 @@ def test_recipe_filters(state):
 
 @pytest.fixture
 def client(state):
-    write_restart_fixtures(state)
     return TestClient(app)
 
 
 @pytest.mark.parametrize("path", [
-    "/health", "/health/schedule", "/health/restarts", "/meals", "/meals/r1", "/meals/r2",
-    "/meals/results?q=chicken", "/api/status", "/api/schedule", "/api/restarts",
+    "/health", "/health/schedule", "/meals", "/meals/r1", "/meals/r2",
+    "/meals/results?q=chicken", "/api/status", "/api/schedule",
     "/api/recipes", "/api/recipes/r1", "/api/docs",
     "/home", "/home/lawn", "/home/weather", "/home/ha", "/home/ha/health", "/api/ha/board", "/api/ha/health",
     "/api/home/maintenance", "/api/home/lawn", "/api/home/weather",
@@ -353,7 +310,7 @@ def test_unknown_recipe(client):
 
 def test_api_status_shape(client):
     assert set(client.get("/api/status").json()) == {
-        "generated_at", "uptime", "task_runs", "watchdogs", "telegram_fallback"}
+        "generated_at", "task_runs", "watchdogs"}
 
 
 def test_branding_and_content(client):
@@ -1276,9 +1233,9 @@ def test_archive_serves_every_legacy_page_with_links_kept_inside(client):
 
 def test_archive_uses_frozen_templates_and_old_nav(client):
     old = client.get("/archive/habits").text
-    assert "/static/archive/style.css" in old and "Orchestrator Health" in old
+    assert "/static/archive/style.css" in old and "System Health" in old
     new = client.get("/habits").text
-    assert "/static/style.css" in new and "Orchestrator Health" not in new and "Archived version" not in new
+    assert "/static/style.css" in new and "System Health" not in new and "Archived version" not in new
 
 
 def test_archive_writes_go_through_the_same_routes_and_stay_in_archive(client):
@@ -1298,7 +1255,7 @@ def test_retired_pages_redirect_and_stay_in_archive(client):
         assert r.status_code == 302 and r.headers["location"] == new, old
     assert "Rate a day" in client.get("/archive/rating").text
     assert "Ask or tell the assistant" in client.get("/archive/").text
-    assert "Orchestrator Health" in client.get("/archive/health").text
+    assert "System Health" in client.get("/archive/health").text
 
 
 def test_today_merges_hub_and_summary_attention(client, state, monkeypatch):

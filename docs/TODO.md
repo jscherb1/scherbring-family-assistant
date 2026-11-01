@@ -26,7 +26,7 @@ update it when you finish or add something. Dates are absolute.
    (`PersonalAssistant{Orchestrator,Scheduler,Watchdog,HaMcp}`) must stay disabled, or two pollers will
    fight over one Telegram bot token.
 5. **Rotate secrets after wiping the old machine.** The Telegram bot token (BotFather, then update
-   `~/.config/scherbring-assistant/.env` and the channel plugin's own copy), and revoke old Google/Monarch
+   `~/.config/scherbring-assistant/.env` and the old channel plugin's copy in `~/.claude/channels/telegram/`, which `backup.py` and `paths.telegram_env_path` still read until the token is rotated), and revoke old Google/Monarch
    sessions. Timing is the user's call.
 6. **Decide whether to ask GitHub support to purge cached old commits.** The repo is public, and
    history was scrubbed with `git filter-repo`, but the old commits can stay reachable through cached views
@@ -49,12 +49,22 @@ update it when you finish or add something. Dates are absolute.
 - [ ] Watch whether `retirement-quarterly-review`, `daily-weather-check` and `workouts-habit-sync` still
       produce denials after the prompt rule (one plain command per Bash call).
 
-## Telegram bridge (branch `feat/telegram-bridge`, cut over 2026-10-06)
+## Plugin path removed (2026-10-31, branch `chore/remove-plugin-path`)
 
-`telegram_bridge.py` + `agent_worker.py` now serve the production bot (design and runbook:
-`docs/OPERATIONS.md`, "Telegram bridge"). Roll back any time with
-`scripts/agent_ctl.py mode plugin --yes` (restarts the old orchestrator; the bridge keeps the old
-conversation log current so context survives). The user is soak-testing it for real use.
+`telegram_bridge.py` + `agent_worker.py` serve the production bot (runbook: `docs/OPERATIONS.md`, "Telegram
+bridge"). The soak ended and the plugin-era path is removed from the repo: orchestrator launch scripts and unit,
+the log-grep Telegram watchdog, the context-bridge hooks, `agent_ctl.py mode`, and the dashboard restart history
+(so the "record a structured restart cause" dashboard follow-up is moot).
+
+Host steps after merging (the repo change does not touch the machine):
+- [ ] `systemctl --user disable --now assistant-orchestrator.service` if it is still enabled, then delete the
+      installed `~/.config/systemd/user/assistant-orchestrator.service` and run `systemctl --user daemon-reload`.
+- [ ] Windows: `Unregister-ScheduledTask -TaskName WSL-Assistant-Window -Confirm:$false` (the attach window).
+- [ ] Delete gitignored leftovers in `state/`: `orchestrator_restarts.jsonl`, `orchestrator.lock`,
+      `telegram_conversation_log.jsonl`, `telegram_fallback_used.json`, `telegram_watchdog.json`, and
+      `state/logs/orchestrator_debug.log`, `state/logs/orchestrator_exits.log`.
+- [ ] Restart `assistant-agent-worker` (new code) and `assistant-dashboard`; the watchdog service picks up the new
+      script on its next run.
 
 Deferred by the user (do later, none urgent):
 - **Send files/photos back through the bridge** (the plugin could; the bridge only receives them
@@ -67,9 +77,7 @@ Deferred by the user (do later, none urgent):
   login). The one-shot "ask" box shipped 2026-10-07 (see `dashboard/README.md`). `agent_ctl say` /
   `tail` cover the rest for now.
 
-After the soak (about a week of normal use): remove the plugin path (`start_orchestrator.sh`,
-`assistant-orchestrator.service`, the log-grep watchdog, the context-bridge hooks in
-`.claude/settings.json`), merge `feat/telegram-bridge`, and rotate the bot token (item 5 above).
+Rotate the bot token when ready (item 5 above).
 Known small gap: the dashboard's context-size figure reads 0 until the first turn after a compaction.
 
 ## Agent follow-ups
@@ -131,9 +139,6 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
     out of COROS elsewhere.
 
 15. **Dashboard follow-ups** (the FastAPI dashboard shipped 2026-10-06, see `dashboard/README.md`):
-    - Restart causes are inferred by matching the exit log to the watchdog logs, and those logs are pruned
-      after 14 days. Recording a structured cause (for example a `cause` field in
-      `state/orchestrator_restarts.jsonl` written by the watchdog) would make the history exact and permanent.
     - Every dashboard page is view-only (insights for home, family, finance, Hy-Vee, fitness, meals, activity
       added 2026-10-06). Recipes can now be added, edited and
       deleted (2026-10-12); the other sections are still view-only (habits and chores aside).
