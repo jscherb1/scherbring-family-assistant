@@ -268,8 +268,10 @@ def test_coros_health_collect_drops_partial_today(monkeypatch):
     from insight_sources import coros_health
 
     def fake(calls):
-        if [c[0] for c in calls] == ["querySleepHrv", "queryTrainingLoadAssessment"]:
-            return [SLEEP_HRV, LOAD]
+        if calls[0][0] == "querySleepHrv":
+            return [SLEEP_HRV]
+        if calls[0][0] == "queryTrainingLoadAssessment":
+            return [LOAD]
         return ([SLEEP, HEALTH, STRESS] if len(calls) == 3
                 else [WELLNESS] + ["No complete health check data."] * (len(calls) - 2) + [RECOVERY])
     monkeypatch.setattr(coros_mcp, "call_tools", fake)
@@ -301,3 +303,38 @@ def test_hub_freshness_flags_stale_sources(db, monkeypatch):
     from datetime import datetime
     monkeypatch.setattr(insights, "freshness", lambda **kw: {"habits": datetime.now().isoformat(timespec="seconds")})
     assert not {r["key"]: r for r in myhub.freshness(db_path=db)}["habits"]["stale"]
+
+
+@pytest.mark.parametrize("failing", [{"querySleepHrv"}, {"queryTrainingLoadAssessment"},
+                                     {"querySleepHrv", "queryTrainingLoadAssessment"}])
+def test_hrv_or_load_failure_keeps_other_metrics(monkeypatch, failing):
+    import coros_mcp
+    from insight_sources import coros_health
+
+    def fake(calls):
+        name = calls[0][0]
+        if name in failing:
+            raise coros_mcp.CorosMcpError(f"{name} boom", 2)
+        if name == "querySleepHrv":
+            return [SLEEP_HRV]
+        if name == "queryTrainingLoadAssessment":
+            return [LOAD]
+        return ([SLEEP, HEALTH, STRESS] if len(calls) == 3
+                else [WELLNESS] + ["No complete health check data."] * (len(calls) - 2) + [RECOVERY])
+    monkeypatch.setattr(coros_mcp, "call_tools", fake)
+    out = coros_health.collect(None, TODAY - timedelta(days=7), TODAY, TODAY)
+    assert out["coros:sleep_hours"]["2026-10-08"] == 5.8 and out["coros:recovery_pct"] and "coros:wellness_hrv" in out
+    assert ("coros:hrv_ms" in out) == ("querySleepHrv" not in failing)
+    assert ("coros:mcp_load_ratio" in out) == ("queryTrainingLoadAssessment" not in failing)
+    assert len(coros_health.WARNINGS) == len(failing) and all("boom" in w for w in coros_health.WARNINGS)
+
+
+def test_refresh_reports_source_warnings(db, monkeypatch):
+    from insight_sources import coros_health, coros_wellness, weather
+
+    def partial(conn, start, end, today):
+        coros_health.WARNINGS[:] = ["querySleepHrv failed: boom"]
+        return {"coros:steps": {"2026-10-13": 5.0}}
+    monkeypatch.setattr(coros_health, "collect", partial)
+    report = insights.refresh(only="coros_health", days=3, db_path=db, today=TODAY)
+    assert report["coros_health"]["warnings"] == ["querySleepHrv failed: boom"] and report["coros_health"]["values"] == 1

@@ -251,6 +251,11 @@ def test_load_freshness_shows_weekly_and_live_load(db):
     lf = wellness.today_view(now=MORNING, db_path=db)["load_freshness"]
     assert lf["live"] == {"day": TODAY.isoformat(), "age_days": 0, "short": 32.0, "long": 47.0, "ratio": 0.68}
     assert lf["weekly"]["day"] == back(6).isoformat()
+    put(db, "coros:load_7d", {back(9): 240}, source="coros_wellness")  # outside the 7-day window the view reads
+    db2 = db.parent / "old.db"
+    put(db2, "coros:load_7d", {back(9): 240}, source="coros_wellness")
+    old = wellness.today_view(now=MORNING, db_path=db2)["load_freshness"]["weekly"]
+    assert old == {"day": back(9).isoformat(), "age_days": 9}
     assert wellness.METRICS["mcp_load_short"]["metric"] == "coros:mcp_load_short"
 
 

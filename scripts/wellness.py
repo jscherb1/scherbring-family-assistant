@@ -393,6 +393,7 @@ def today_view(*, now: datetime | None = None, db_path=None) -> dict:
         load7 = _raw(conn, "load_7d", _iso(today - timedelta(days=7)), t)
         rec_lo = _raw(conn, "load_rec_min", _iso(today - timedelta(days=14)), t)
         rec_hi = _raw(conn, "load_rec_max", _iso(today - timedelta(days=14)), t)
+        weekly_day = _newest(conn, "load_7d")
         live = {k: _raw(conn, k, _iso(today - timedelta(days=14)), t)
                 for k in ("mcp_load_short", "mcp_load_long", "mcp_load_ratio")}
     finally:
@@ -434,8 +435,8 @@ def today_view(*, now: datetime | None = None, db_path=None) -> dict:
     # How current each load series is: the web one (7-day load and its recommended range) refreshes weekly, the
     # MCP one on the 30-minute timer.
     live_day = max(live["mcp_load_short"], default=None)
-    load_fresh = {"weekly": {"day": max(load7, default=None),
-                             "age_days": (today - date.fromisoformat(max(load7))).days if load7 else None},
+    load_fresh = {"weekly": {"day": weekly_day,
+                             "age_days": (today - date.fromisoformat(weekly_day)).days if weekly_day else None},
                   "live": {"day": live_day, "age_days": (today - date.fromisoformat(live_day)).days if live_day else None,
                            **{k.removeprefix("mcp_load_"): live[k].get(live_day) for k in live}}}
 

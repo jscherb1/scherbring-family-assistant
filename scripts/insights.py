@@ -150,6 +150,8 @@ def refresh(*, days: int = 90, only: str | None = None, db_path=None, today: dat
                     count += 1
             conn.commit()
             report[name] = {"metrics": len(data), "values": count}
+            if getattr(mod, "WARNINGS", None):  # a source that kept going after a partial failure
+                report[name]["warnings"] = list(mod.WARNINGS)
         if wanted and wanted - set(report):
             raise InsightError(f"no source named {sorted(wanted - set(report))[0]!r}", 1)
         return report

@@ -5,6 +5,7 @@ Sleep is dated by wake-up day, so a day's sleep is the night before it. Bedtime 
 Needs the one-time sign-in (`python scripts/fitness/coros_mcp.py auth-url`); if the token can't be
 renewed this source reports an error and the rest of the refresh carries on.
 """
+import logging
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -15,6 +16,9 @@ SOURCE = {"name": "coros_health", "kind": "auto",
           "description": "COROS sleep (hours, bed/wake time, score, deep/REM), overnight HRV with its normal range, "
                          "steps, exercise minutes, stress, wellness-check readings (sparse), recovery and live "
                          "training load (acute/chronic/ratio) per day"}
+
+log = logging.getLogger(__name__)
+WARNINGS: list[str] = []  # partial failures of the last collect(); insights.refresh adds them to its report
 
 WELLNESS_LOOKBACK = 60  # the server returns one check per query, so each day is its own call
 
@@ -61,9 +65,20 @@ def collect(conn, start, end, today):
     wellness_days = [today - timedelta(days=i) for i in range(min(days, WELLNESS_LOOKBACK))]
     extra = coros_mcp.call_tools([("queryHealthCheckTimeSeries", {"startDate": d.strftime("%Y%m%d")})
                                   for d in wellness_days] + [("queryRecoveryStatus", {})])
-    hrv, load = coros_mcp.call_tools([
-        ("querySleepHrv", {"startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d")}),
-        ("queryTrainingLoadAssessment", {"days": days})])
+    # HRV and load are fetched on their own: a failure in either must not cost the sleep, steps, stress,
+    # recovery and wellness values above, so it is logged and reported as a warning instead of raised.
+    WARNINGS.clear()
+    texts = {}
+    for key, call in (("hrv", ("querySleepHrv", {"startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d")})),
+                      ("load", ("queryTrainingLoadAssessment", {"days": days}))):
+        try:
+            texts[key] = coros_mcp.call_tools([call])[0]
+        except Exception as exc:
+            msg = f"{call[0]} failed: {type(exc).__name__}: {exc}"
+            log.warning(msg)
+            WARNINGS.append(msg)
+            texts[key] = ""
+    hrv, load = texts["hrv"], texts["load"]
     out = to_metrics(sleep, health, stress, "\n".join(extra[:-1]), extra[-1], today, hrv, load)
     for name in ("steps", "exercise_min", "stress_avg"):  # today is still in progress, so these are partial
         out.get(f"coros:{name}", {}).pop(today.isoformat(), None)
