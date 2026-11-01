@@ -333,6 +333,20 @@ See the Backlog section of `README.md`.
 
 - [ ] Live-test the **Monarch Login** and **Google Drive Login** desktop shortcuts through a real expiry (only the "already working" path was exercised). The `.bat` copies are already on the Windows desktop.
 
+## Concurrent sessions and dev chat (built 2026-11-01, branch `feat/concurrent-sessions`)
+
+Unit-tested with fake sessions only; nothing below has run against Telegram or the real SDK yet.
+- [ ] Add the group id to `BRIDGE_ALLOWED_CHAT_IDS` (last), set `BRIDGE_DEV_CHAT_IDS`, `TELEGRAM_ALERT_CHAT_ID` and
+  `DASHBOARD_ASK_CHAT_ID` (exact lines in the PR), restart worker and bridge, then `agent_ctl.py status` (no WARNING).
+- [ ] Live check: start a long task in the dev group, then send "turn off the lights" in the household chat and confirm
+  it answers while the dev turn is still running (`agent_ctl.py status` should list both turns).
+- [ ] Live check: in the dev group confirm the agent says it will use a worktree; in the household chat confirm no dev note.
+- [ ] Live check: send `/status@<botname>` in the group; confirm the bridge answers it.
+- [ ] Check `agent_ctl.py sessions` / SDK memory with two live `claude` processes (cap is 4, `MAX_CONCURRENT_SESSIONS`).
+- [ ] If Telegram upgrades the basic group to a supergroup, the id changes (see OPERATIONS.md); untested live.
+- Not checked: whether anything shared on disk (for example one browser profile) misbehaves when two sessions use the
+  same tool at once; SQLite stores are fine.
+
 ## Gmail read access (added 2026-10-31)
 
 - [ ] Read-only `gmail` agent added (`.claude/agents/gmail.md`; search_threads, get_thread, get_message, list_labels). Use cases are undecided, so no triage, digest, schedule or dashboard section exists. Needs a live check: ask it to find a recent email and confirm the tools resolve (a fresh agent session may be needed to pick up the new agent). It is an infrastructure exception to the agent + UI standard.

@@ -16,6 +16,8 @@ Env (process env or ~/.config/scherbring-assistant/.env):
     BRIDGE_ALLOWED_CHAT_IDS     comma-separated chat ids; empty = pairing mode
                                 (nobody is enqueued; the bot replies with their chat id)
     BRIDGE_SESSION_MAP          optional JSON {"chat_id": "session_key"} to share sessions
+    BRIDGE_DEV_CHAT_IDS         optional comma-separated subset of the allowed ids that are dev chats (groups);
+                                read by the worker, not here. Each chat is its own session, so no mapping needed
 """
 
 from __future__ import annotations
@@ -123,6 +125,9 @@ def parse_update(update: dict) -> dict | None:
         }
     return {
         "chat_id": str(msg["chat"]["id"]),
+        "chat_type": msg["chat"].get("type", ""),  # private | group | supergroup
+        "migrate_to_chat_id": msg.get("migrate_to_chat_id"),  # service message: this group became a supergroup
+        "migrate_from_chat_id": msg.get("migrate_from_chat_id"),
         "message_id": msg["message_id"],
         "text": msg.get("text") or msg.get("caption") or "",
         "user": frm.get("username") or frm.get("first_name") or "",
@@ -152,13 +157,23 @@ class Bridge:
         if parsed is None:
             return
         chat = parsed["chat_id"]
+        if parsed["migrate_to_chat_id"]:
+            # Telegram gives a basic group a NEW id when it becomes a supergroup; the old id stops working.
+            # Config is never rewritten automatically: say exactly what to change.
+            new = parsed["migrate_to_chat_id"]
+            log.warning("chat %s was upgraded to a supergroup with NEW chat id %s. Replace %s with %s in "
+                        "BRIDGE_ALLOWED_CHAT_IDS (and BRIDGE_DEV_CHAT_IDS if it is the dev chat), then restart "
+                        "the bridge and agent worker. Messages from the new id are rejected until you do.", chat, new, chat, new)
+            return
+        if parsed["migrate_from_chat_id"] or not (parsed["text"].strip() or parsed["attachments"]):
+            return  # service messages (migration, member joined...) carry nothing to answer
         if chat not in self.allowed:
             # Pairing aid: tell the sender their chat id; never enqueue.
             log.warning("message from non-allowlisted chat %s", chat)
             self._safe(lambda: self.api.call("sendMessage", {"chat_id": chat, "text": f"Not authorized. Your chat id is {chat}. Ask the owner to add it to BRIDGE_ALLOWED_CHAT_IDS."}))
             return
         text = parsed["text"].strip()
-        if text.split("@")[0] == "/status":
+        if (text.split() or [""])[0].split("@")[0] == "/status":  # also "/status@botname" as groups send it
             status = self.status_text(store)
 
             def send_status() -> None:

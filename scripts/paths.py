@@ -103,6 +103,26 @@ def load_env() -> dict[str, str]:
     return merged
 
 
+def dev_chat_ids() -> set[str]:
+    """Telegram chats used for development work (BRIDGE_DEV_CHAT_IDS, comma-separated; may be empty).
+
+    These get the dev-session prompt, and household defaults (alerts, dashboard ask box,
+    `agent_ctl say`) must never fall back to them.
+    """
+    return {c.strip() for c in (get_env("BRIDGE_DEV_CHAT_IDS") or "").split(",") if c.strip()}
+
+
+def household_chat_id() -> str:
+    """First BRIDGE_ALLOWED_CHAT_IDS entry that is not a dev chat ('' if none): the fallback
+    destination when no explicit alert/ask chat is configured."""
+    dev = dev_chat_ids()
+    for c in (get_env("BRIDGE_ALLOWED_CHAT_IDS") or "").split(","):
+        c = c.strip()
+        if c and c not in dev:
+            return c
+    return ""
+
+
 def alert_chat_id() -> str | None:
     """Telegram chat id for alerts and fallback sends.
 

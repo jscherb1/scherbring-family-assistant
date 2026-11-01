@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bridge_store import BridgeStore  # noqa: E402
-from paths import REPO_ROOT, get_env  # noqa: E402
+from paths import REPO_ROOT, dev_chat_ids, get_env, household_chat_id  # noqa: E402
 
 DB = REPO_ROOT / "state" / "inbox.db"
 STREAM_LOG = REPO_ROOT / "state" / "logs" / "agent_stream.jsonl"
@@ -50,13 +50,31 @@ def cmd_status(args) -> int:
     print(f"worker : {mark(snap['worker_up'])}{' [PAUSED]' if snap['paused'] else ''} (heartbeat {snap['worker_heartbeat_age_s']}s ago, unit {snap['units'][WORKER_UNIT]})")
     print(f"queue  : {snap['inbox_pending']} pending, {snap['inbox_processing']} in progress, oldest {snap['oldest_pending_age_s']}")
     print(f"outbox : {snap['outbox_pending']} pending, {snap['outbox_failed']} failed")
-    if snap["current_turn"]:
-        print(f"turn   : message {snap['current_turn']['inbox_id']} running {int(time.time() - snap['current_turn']['started'])}s")
+    for t in snap["current_turns"]:
+        started = t.get("started")
+        print(f"turn   : {t['session']}: message {t['inbox_id']} running {int(time.time() - started) if started else '?'}s")
+    for w in dev_chat_warnings():
+        print(f"WARNING: {w}")
     token_env = _effective_token_env()
     print(f"token  : {token_env} ({'PRODUCTION bot' if token_env == 'TELEGRAM_BOT_TOKEN' else 'test bot'})")
     if snap["mcp_down"]:
         print(f"mcp    : not connected: {', '.join(snap['mcp_down'])}")
     return 0 if snap["bridge_up"] and snap["worker_up"] else 1
+
+
+def dev_chat_warnings() -> list[str]:
+    """A configured dev chat is dangerous when alert/ask destinations are left to fall back to
+    'the first allowed chat': the worker/dashboard would then guess. Require them to be explicit."""
+    if not dev_chat_ids():
+        return []
+    out = []
+    for var in ("TELEGRAM_ALERT_CHAT_ID", "DASHBOARD_ASK_CHAT_ID"):
+        val = (get_env(var) or "").strip()
+        if not val:
+            out.append(f"BRIDGE_DEV_CHAT_IDS is set but {var} is not; set it explicitly to the household chat id")
+        elif val in dev_chat_ids():
+            out.append(f"{var} points at a dev chat; it must be the household chat id")
+    return out
 
 
 def cmd_pause(args) -> int:
@@ -67,9 +85,9 @@ def cmd_pause(args) -> int:
 
 def cmd_say(args) -> int:
     store = BridgeStore(DB)
-    chat = args.chat or (get_env("BRIDGE_ALLOWED_CHAT_IDS") or "").split(",")[0].strip()
+    chat = args.chat or household_chat_id()  # default skips dev chats; pass --as to talk to one
     if not chat:
-        print("no --as CHAT_ID and BRIDGE_ALLOWED_CHAT_IDS is empty", file=sys.stderr)
+        print("no --as CHAT_ID and BRIDGE_ALLOWED_CHAT_IDS has no household chat", file=sys.stderr)
         return 2
     inbox_id = store.add_inbound("terminal", "terminal", args.text, external_id=f"say-{time.time_ns()}", session_key=chat, payload={"user": "terminal", "message_id": ""})
     deadline = time.time() + args.timeout
@@ -103,7 +121,8 @@ def cmd_tail(_args) -> int:
             body = ev.get("text") or ev.get("name") or ev.get("error") or ""
             if ev.get("type") == "tool_use":
                 body = f"{ev['name']} {json.dumps(ev.get('input'))[:200]}"
-            print(f"{ev.get('t', '')[11:]} #{ev.get('inbox_id')} {ev.get('type'):<12} {str(body)[:300]}", flush=True)
+            sess = f" [{ev['session']}]" if ev.get("session") else ""
+            print(f"{ev.get('t', '')[11:]} #{ev.get('inbox_id')}{sess} {ev.get('type'):<12} {str(body)[:300]}", flush=True)
 
 
 def cmd_sessions(_args) -> int:

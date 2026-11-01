@@ -162,3 +162,64 @@ def test_poll_alert_is_not_retried_after_failed_send(env):
     assert b.flush_outbox_once(store) == 0
     assert store.stats()["outbox_pending"] == 0  # abandoned, not rescheduled
     assert store.stats()["outbox_failed"] == 1
+
+
+# ---------------------------------------------------------------- groups / dev chat
+
+def group_upd(uid, chat, text, mid=1, **extra):
+    msg = {"message_id": mid, "chat": {"id": chat, "type": "group"}, "from": {"username": "j", "id": 7}, "date": 1}
+    if text is not None:
+        msg["text"] = text
+    msg.update(extra)
+    return {"update_id": uid, "message": msg}
+
+
+def test_group_message_is_enqueued_under_its_own_session(env):
+    api, store, b = env
+    b.allowed.add("-100")
+    b.handle_update(store, group_upd(1, -100, "refactor the scheduler"))
+    row = store.claim_next()
+    assert row["chat_ref"] == "-100" and row["session_key"] == "-100" and row["text"] == "refactor the scheduler"
+    assert parse_update(group_upd(2, -100, "x"))["chat_type"] == "group"
+
+
+def test_status_command_with_botname_suffix_in_group(env):
+    api, store, b = env
+    b.allowed.add("-100")
+    b.handle_update(store, group_upd(1, -100, "/status@scherbring_bot"))
+    assert store.stats()["inbox_pending"] == 0  # handled by the bridge, not the agent
+    assert api.sent() and "Agent worker" in api.sent()[0]
+
+
+def test_group_migration_logs_new_id_and_enqueues_nothing(env, caplog):
+    api, store, b = env
+    b.allowed.add("-100")
+    with caplog.at_level("WARNING", logger="bridge"):
+        b.handle_update(store, group_upd(1, -100, None, migrate_to_chat_id=-1001234))
+        b.handle_update(store, group_upd(2, -1001234, None, migrate_from_chat_id=-100))
+    assert store.stats()["inbox_pending"] == 0
+    warn = " ".join(r.getMessage() for r in caplog.records)
+    assert "-1001234" in warn and "BRIDGE_ALLOWED_CHAT_IDS" in warn and "BRIDGE_DEV_CHAT_IDS" in warn
+    assert "-1001234" not in b.allowed  # config is never rewritten automatically
+
+
+def test_service_message_without_text_is_ignored(env):
+    api, store, b = env
+    b.allowed.add("-100")
+    b.handle_update(store, group_upd(1, -100, None, new_chat_members=[{"id": 9}]))
+    assert store.stats()["inbox_pending"] == 0
+
+
+def test_unlisted_group_is_refused_with_its_id(env):
+    api, store, b = env
+    b.handle_update(store, group_upd(1, -555, "hi"))
+    assert store.stats()["inbox_pending"] == 0 and "-555" in api.sent()[0]
+
+
+def test_long_dev_turn_does_not_trigger_restart_notice_while_worker_alive(env):
+    api, store, b = env
+    store.add_inbound("telegram", "-100", "long dev task", external_id="1", now=time.time() - 600)
+    store.claim_next()  # processing for 10 minutes
+    store.kv_set("worker_heartbeat", str(time.time()))  # heartbeat runs on its own task, so it stays fresh
+    b.check_agent_notice(store)
+    assert store.stats()["outbox_pending"] == 0

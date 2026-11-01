@@ -182,6 +182,54 @@ class BridgeStore:
             (key, value),
         )
 
+    # ---- per-session turn state (several sessions can run turns at once) ----
+    def set_current_turn(self, session_key: str, inbox_id, started: float) -> None:
+        self.kv_set(f"current_turn:{session_key}", json.dumps({"inbox_id": inbox_id, "started": started}))
+
+    def clear_current_turn(self, session_key: str) -> None:
+        self.kv_set(f"current_turn:{session_key}", "")
+
+    def clear_all_current_turns(self) -> None:
+        """Worker start: nothing is running yet, so any leftover marker (incl. the old single-turn key) is stale."""
+        self._conn.execute("DELETE FROM kv WHERE key='current_turn' OR key LIKE 'current_turn:%'")
+
+    def current_turns(self) -> dict[str, dict]:
+        """{session_key: {inbox_id, started}} for turns running now. Tolerates the pre-concurrency
+        single `current_turn` value (shown as session 'legacy') and unparseable values."""
+        out: dict[str, dict] = {}
+        for r in self._conn.execute("SELECT key, value FROM kv WHERE (key='current_turn' OR key LIKE 'current_turn:%') AND value<>''"):
+            try:
+                v = json.loads(r["value"])
+            except ValueError:
+                continue
+            if not isinstance(v, dict):
+                continue
+            key = r["key"].split(":", 1)[1] if ":" in r["key"] else "legacy"
+            out[key] = {"inbox_id": v.get("inbox_id"), "started": v.get("started")}
+        return out
+
+    def set_mcp_down(self, session_key: str, names: list[str]) -> None:
+        """Record one session's disconnected MCP servers; the global `mcp_down` is the union over
+        sessions, so two sessions with momentarily different views don't flip it back and forth."""
+        self.kv_set(f"mcp_down:{session_key}", json.dumps(names))
+        union: set[str] = set()
+        for r in self._conn.execute("SELECT value FROM kv WHERE key LIKE 'mcp_down:%'"):
+            try:
+                union.update(json.loads(r["value"]))
+            except ValueError:
+                pass
+        self.kv_set("mcp_down", json.dumps(sorted(union)))
+
+    def pending_session_keys(self) -> list[str]:
+        """Sessions with a claimable message, oldest waiting first."""
+        return [r["session_key"] for r in self._conn.execute(
+            "SELECT session_key FROM inbox WHERE status='pending' AND kind='message' GROUP BY session_key ORDER BY MIN(id)")]
+
+    def active_session_keys(self) -> set[str]:
+        """Sessions with a message pending or in progress."""
+        return {r["session_key"] for r in self._conn.execute(
+            "SELECT DISTINCT session_key FROM inbox WHERE status IN ('pending','processing') AND kind='message'")}
+
     # ---- inbox ----
     def add_inbound(
         self,
@@ -412,7 +460,8 @@ class BridgeStore:
             return round(ts - float(v), 1) if v else None
 
         bridge_age, worker_age, poll_age = age("bridge_heartbeat"), age("worker_heartbeat"), age("last_poll_ok")
-        turn = self.kv_get("current_turn") or ""
+        turns = self.current_turns()
+        oldest = min(turns.items(), key=lambda kv: kv[1].get("started") or ts, default=None)
         return {
             "bridge_up": bridge_age is not None and bridge_age <= stale_s,
             "bridge_heartbeat_age_s": bridge_age,
@@ -422,7 +471,8 @@ class BridgeStore:
             "worker_heartbeat_age_s": worker_age,
             "paused": self.kv_get("paused") == "1",
             "mcp_down": [n for n in json.loads(self.kv_get("mcp_down") or "[]") if n not in IGNORED_MCP],
-            "current_turn": json.loads(turn) if turn else None,
+            "current_turns": [{"session": k, **v} for k, v in sorted(turns.items())],
+            "current_turn": {"session": oldest[0], **oldest[1]} if oldest else None,  # longest-running one
             "last_canary": json.loads(self.kv_get("last_canary") or "null"),
             **self.stats(ts),
         }

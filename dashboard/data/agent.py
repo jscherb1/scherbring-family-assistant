@@ -8,6 +8,7 @@ from . import common
 
 sys.path.insert(0, str(common.SCRIPTS_DIR))
 from bridge_store import BridgeStore  # noqa: E402
+from paths import dev_chat_ids  # noqa: E402
 
 STREAM_TAIL = 80
 USAGE_DAYS = 14
@@ -26,6 +27,9 @@ def get_agent_status():
         raise FileNotFoundError("inbox.db not found")
     snap = BridgeStore(path, read_only=True).health_snapshot()
     snap["content_visible"] = _show_content()
+    dev = dev_chat_ids()
+    for t in snap["current_turns"]:  # a label instead of the chat id: this page has no login
+        t["label"] = "dev chat" if t["session"] in dev else "household"
     return snap
 
 
