@@ -6,17 +6,23 @@ and emits a self-contained, user-editable `.xlsx`:
   - Summary        headline, success %, ending balances, narrative, chart
   - Assumptions    master editable inputs + a source column (Monarch/user/default)
   - Base Case      year-by-year projection as LIVE Excel formulas referencing the
-                   Assumptions cells — edit an assumption, Excel recalculates
-  - Monte Carlo    static p10/p50/p90 trajectory table + confidence-band chart
+                   Assumptions cells — edit an assumption, Excel recalculates. The
+                   per-year median return column comes from the engine (it follows the
+                   allocation's glide path) and is editable too.
+  - Monte Carlo    static p10/p50/p90 trajectory table (nominal and today's dollars) + chart
+  - Accounts       each retirement account's bucket, balance and allocation
   - <scenario>     one tab per what-if, each with its own local (live) inputs
   - Data Sources   which values came from Monarch, when pulled, whether overridden
 
 The Base Case formulas mirror retirement_model.deterministic_projection exactly:
-    end = MAX(0, start + start*return + contribution*infl - (spend*infl - ss*infl))
+    growth = (start - (withdrawal - ss)) * r + contribution * (SQRT(1 + r) - 1)
+    end    = MAX(0, start - (withdrawal - ss) + growth + contribution)
+(withdrawals at the start of the year, contributions mid-year, r = that year's median return)
 so the sheet and the engine agree on the deterministic path.
 
 Usage (CLI):
     python scripts/retirement_workbook.py --data-file <payload.json> --out <out.xlsx>
+(The retirement agent builds the payload with `retirement_store.py workbook` instead.)
 
 Payload shape:
 {
@@ -26,6 +32,7 @@ Payload shape:
   "result": <retirement_model.run_all output: {"base": {...}, "scenarios": [...]}>,
   "result_file": "state/retirement/result-2026-07-23.json"   (use instead of "result";
                  the engine output is ~140KB, too big to write inline)
+  "accounts": [{"name", "bucket", "balance", "allocation": {...}, "allocation_source"}],  (optional)
   "narrative": {"headline": "...", "body": "..."},
   "data_sources": [{"item": "...", "value": "...", "source": "...",
                     "pulled": "2026-07-23", "overridden": "No"}]
@@ -43,6 +50,8 @@ from pathlib import Path
 
 import xlsxwriter
 
+import retirement_model as rm
+
 for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8")
@@ -57,14 +66,13 @@ FIELDS = [
     ("annual_contribution", "Annual contribution (today's $)", "$#,##0"),
     ("retirement_spend", "Retirement spending / yr (today's $)", "$#,##0"),
     ("inflation", "Inflation", "0.0%"),
-    ("expected_return", "Expected return (nominal)", "0.0%"),
-    ("volatility", "Return volatility", "0.0%"),
     ("ss_start_age", "Social Security start age", "0"),
     ("ss_annual_amount", "Social Security / yr (today's $)", "$#,##0"),
 ]
 
-PROJ_HEADERS = ["Age", "Year", "Start Balance", "Contribution", "Growth",
-                "Withdrawal", "Social Security", "End Balance"]
+PROJ_HEADERS = ["Age", "Year", "Start Balance", "Contribution", "Median Return", "Growth",
+                "Withdrawal", "Social Security", "End Balance", "End (today's $)"]
+END_COL = 8
 
 
 def _sanitize_sheet_name(name: str) -> str:
@@ -118,16 +126,52 @@ def _write_assumption_block(ws, assumptions, sources, fmts, sheet_name, title, t
         if sources:
             ws.write(r, 2, sources.get(key, "default"))
         cell_map[key] = f"$B${r + 1}"
-    ws.set_column(0, 0, 32)
+    r = data_start + len(FIELDS)
+    alloc = assumptions.get("allocation")
+    if alloc:
+        ws.write(r + 1, 0, "Returns (from the allocation; informational)", fmts["h2"])
+        rows = [("Stocks today", alloc["us_equity"] + alloc["intl_equity"]),
+                ("  of which international", alloc["intl_equity"]),
+                ("Bonds today", alloc["bonds"]), ("Cash today", alloc["cash"])]
+        glide = assumptions.get("glide_path") or {}
+        if "retirement_equity" in glide:
+            rows.append(("Stocks at retirement (glide path)", glide["retirement_equity"]))
+        if "end_equity" in glide:
+            rows.append(("Stocks at plan end (glide path)", glide["end_equity"]))
+        if assumptions.get("fee") is not None:
+            rows.append(("Fund fees", assumptions["fee"]))
+        for i, (lab, val) in enumerate(rows):
+            ws.write(r + 2 + i, 0, lab, fmts["label"])
+            ws.write_number(r + 2 + i, 1, float(val), fmts["pct"])
+        r = r + 2 + len(rows)
+    elif assumptions.get("expected_return") is not None:
+        ws.write(r + 1, 0, "Expected return (nominal, arithmetic)", fmts["label"])
+        ws.write_number(r + 1, 1, float(assumptions["expected_return"]), fmts["pct"])
+        ws.write(r + 2, 0, "Return volatility", fmts["label"])
+        ws.write_number(r + 2, 1, float(assumptions.get("volatility", 0)), fmts["pct"])
+        r += 3
+    ws.set_column(0, 0, 36)
     ws.set_column(1, 1, 16)
     ws.set_column(2, 2, 38)
-    return cell_map, data_start + len(FIELDS)
+    return cell_map, r
 
 
-def _write_projection(ws, wb, assumptions, cell_map, prefix, fmts, base_year, header_row):
+def _median_returns(res: dict) -> list[float]:
+    """Per-year median return for the projection: the engine's, or (older results without it)
+    derived from the scalar expected return and volatility."""
+    det = res.get("deterministic") or []
+    if det and "median_return" in det[0]:
+        return [row["median_return"] for row in det]
+    a = res["assumptions"]
+    g = rm.median_factor(float(a.get("expected_return", 0.0)), float(a.get("volatility", 0.0))) - 1.0
+    return [g] * len(det)
+
+
+def _write_projection(ws, wb, assumptions, cell_map, prefix, fmts, base_year, header_row, returns):
     """Write the live-formula projection table. `prefix` is prepended to every
     cell_map ref (e.g. "'Assumptions'!" for Base Case, "" for on-sheet scenario
-    blocks). Returns (first_data_row0, last_data_row0) as 0-based indices."""
+    blocks). `returns` is the per-year median return (editable cells).
+    Returns (first_data_row0, last_data_row0) as 0-based indices."""
     for c, h in enumerate(PROJ_HEADERS):
         ws.write(header_row, c, h, fmts["hdr"])
 
@@ -154,25 +198,28 @@ def _write_projection(ws, wb, assumptions, cell_map, prefix, fmts, base_year, he
         if i == 0:
             ws.write_formula(r, 2, f"={P('current_balance')}", fmts["money"])
         else:
-            ws.write_formula(r, 2, f"=H{R - 1}", fmts["money"])
-        # Contribution (accumulation only)
+            ws.write_formula(r, 2, f"=I{R - 1}", fmts["money"])
+        # Contribution (accumulation only, arrives mid-year)
         ws.write_formula(r, 3,
             f"=IF({age}<{P('retirement_age')},{P('annual_contribution')}*{infl},0)",
             fmts["money"])
-        # Growth
-        ws.write_formula(r, 4, f"=C{R}*{P('expected_return')}", fmts["money"])
+        # Median return for the year (from the engine's glide path; editable)
+        ws.write_number(r, 4, float(returns[i]) if i < len(returns) else 0.0, fmts["pct_in"])
+        # Growth: start-of-year withdrawal, half a year of growth on the contribution
+        ws.write_formula(r, 5, f"=(C{R}-(G{R}-H{R}))*E{R}+D{R}*(SQRT(1+E{R})-1)", fmts["money"])
         # Withdrawal (retirement only)
-        ws.write_formula(r, 5,
+        ws.write_formula(r, 6,
             f"=IF({age}>={P('retirement_age')},{P('retirement_spend')}*{infl},0)",
             fmts["money"])
         # Social Security (once eligible)
-        ws.write_formula(r, 6,
+        ws.write_formula(r, 7,
             f"=IF({age}>={P('ss_start_age')},{P('ss_annual_amount')}*{infl},0)",
             fmts["money"])
-        # End balance
-        ws.write_formula(r, 7, f"=MAX(0,C{R}+E{R}+D{R}-(F{R}-G{R}))", fmts["money"])
+        # End balance, nominal and in today's dollars
+        ws.write_formula(r, 8, f"=MAX(0,C{R}-(G{R}-H{R})+F{R}+D{R})", fmts["money"])
+        ws.write_formula(r, 9, f"=I{R}/(1+{P('inflation')})^({age}-{P('current_age')}+1)", fmts["money"])
     ws.set_column(0, 1, 8)
-    ws.set_column(2, 7, 16)
+    ws.set_column(2, 9, 16)
     return first, first + n - 1
 
 
@@ -225,20 +272,25 @@ def build_workbook(payload: dict, out_path: str) -> str:
         "separate simulation — re-run the retirement agent to refresh them.",
         fmts["note"])
     first, last = _write_projection(
-        ws_base, wb, assumptions, cell_map, "'Assumptions'!", fmts, base_year, header_row=3)
-    ws_base.insert_chart(3, 9,
-        _add_balance_chart(wb, "Base Case", first, last, 7, "Projected balance (base case)"))
+        ws_base, wb, assumptions, cell_map, "'Assumptions'!", fmts, base_year, header_row=3,
+        returns=_median_returns(base))
+    ws_base.insert_chart(3, 11,
+        _add_balance_chart(wb, "Base Case", first, last, 9, "Projected balance, today's dollars (base case)"))
 
     # --- Monte Carlo (static engine output + confidence bands) ---
     ws_mc.write(0, 0, "Monte Carlo simulation", fmts["title"])
     ws_mc.write(1, 0, "Success probability", fmts["h2"])
     ws_mc.write(1, 2, base["success_probability"] / 100.0, fmts["pct"])
+    se = base.get("success_se")
     ws_mc.write(2, 0,
-        f"Share of {len(base['percentiles'])>0 and 'simulated'} futures that fund "
-        "spending through the plan-through age. Static snapshot from the last run.",
+        f"Share of {base.get('n_paths', 'the')} simulated futures that fund spending through the "
+        f"plan-through age{f' (plus or minus {se:.1f} points of simulation noise)' if se else ''}. "
+        "Balances are at the start of each age. Static snapshot from the last run.",
         fmts["note"])
     mc_hdr = 4
-    for c, h in enumerate(["Age", "10th percentile", "Median", "90th percentile"]):
+    real = base.get("percentiles_real") or []
+    for c, h in enumerate(["Age", "10th percentile", "Median", "90th percentile",
+                           "10th (today's $)", "Median (today's $)", "90th (today's $)"][:4 + 3 * bool(real)]):
         ws_mc.write(mc_hdr, c, h, fmts["hdr"])
     for i, row in enumerate(base["percentiles"]):
         r = mc_hdr + 1 + i
@@ -246,6 +298,10 @@ def build_workbook(payload: dict, out_path: str) -> str:
         ws_mc.write_number(r, 1, row["p10"], fmts["money"])
         ws_mc.write_number(r, 2, row["p50"], fmts["money"])
         ws_mc.write_number(r, 3, row["p90"], fmts["money"])
+        if real:
+            ws_mc.write_number(r, 4, real[i]["p10"], fmts["money"])
+            ws_mc.write_number(r, 5, real[i]["p50"], fmts["money"])
+            ws_mc.write_number(r, 6, real[i]["p90"], fmts["money"])
     mc_first = mc_hdr + 1
     mc_last = mc_hdr + len(base["percentiles"])
     band = wb.add_chart({"type": "line"})
@@ -261,8 +317,8 @@ def build_workbook(payload: dict, out_path: str) -> str:
     band.set_x_axis({"name": "Age"})
     band.set_y_axis({"name": "Balance ($)", "num_format": "$#,##0"})
     band.set_size({"width": 720, "height": 400})
-    ws_mc.insert_chart(mc_hdr, 5, band)
-    ws_mc.set_column(0, 3, 16)
+    ws_mc.insert_chart(mc_hdr, 8, band)
+    ws_mc.set_column(0, 6, 16)
 
     # --- Scenario tabs (each self-contained + live) ---
     for sc in result.get("scenarios", []):
@@ -275,9 +331,32 @@ def build_workbook(payload: dict, out_path: str) -> str:
         ws.write(next_row + 1, 0, "Monte Carlo success probability", fmts["h2"])
         ws.write(next_row + 1, 2, sc["success_probability"] / 100.0, fmts["pct"])
         proj_hdr = next_row + 3
-        f0, l0 = _write_projection(ws, wb, sc_assum, smap, "", fmts, base_year, header_row=proj_hdr)
-        ws.insert_chart(proj_hdr, 9,
-            _add_balance_chart(wb, name, f0, l0, 7, f"Projected balance ({sc.get('name', name)})"))
+        f0, l0 = _write_projection(ws, wb, sc_assum, smap, "", fmts, base_year, header_row=proj_hdr,
+                                   returns=_median_returns(sc))
+        ws.insert_chart(proj_hdr, 11,
+            _add_balance_chart(wb, name, f0, l0, 9, f"Projected balance, today's $ ({sc.get('name', name)})"))
+
+    # --- Accounts ---
+    accounts = payload.get("accounts") or []
+    if accounts:
+        ws_ac = wb.add_worksheet("Accounts")
+        ws_ac.write(0, 0, "Retirement accounts", fmts["title"])
+        ws_ac.write(1, 0, "Kids' (529/UTMA) and cash accounts are excluded from the projection.", fmts["note"])
+        hdrs = ["Account", "Bucket", "Balance", "US stocks", "Intl stocks", "Bonds", "Cash", "Allocation source"]
+        for c, h in enumerate(hdrs):
+            ws_ac.write(3, c, h, fmts["hdr"])
+        for i, acct in enumerate(accounts):
+            r = 4 + i
+            al = acct.get("allocation") or {}
+            ws_ac.write(r, 0, acct.get("name", ""))
+            ws_ac.write(r, 1, acct.get("bucket", ""))
+            ws_ac.write_number(r, 2, float(acct.get("balance") or 0), fmts["money"])
+            for c, k in enumerate(("us_equity", "intl_equity", "bonds", "cash"), start=3):
+                ws_ac.write_number(r, c, float(al.get(k, 0.0)), fmts["pct"])
+            ws_ac.write(r, 7, acct.get("allocation_source", ""))
+        ws_ac.set_column(0, 0, 40)
+        ws_ac.set_column(1, 6, 13)
+        ws_ac.set_column(7, 7, 36)
 
     # --- Data Sources ---
     ws_ds = wb.add_worksheet("Data Sources")
@@ -291,7 +370,9 @@ def build_workbook(payload: dict, out_path: str) -> str:
         ws_ds.write(r, 2, row.get("source", ""))
         ws_ds.write(r, 3, row.get("pulled", ""))
         ws_ds.write(r, 4, row.get("overridden", ""))
-    ws_ds.set_column(0, 4, 24)
+    ws_ds.set_column(0, 1, 24)
+    ws_ds.set_column(2, 2, 90)
+    ws_ds.set_column(3, 4, 12)
 
     # --- Summary (author-facing headline; built last, references others) ---
     ws_summary.write(0, 0, "Retirement Plan — Summary", fmts["title"])
@@ -299,10 +380,20 @@ def build_workbook(payload: dict, out_path: str) -> str:
         ws_summary.write(1, 0, f"Generated {gen_date}", fmts["note"])
     ws_summary.write(3, 0, "Probability of success", fmts["h2"])
     ws_summary.write(4, 0, base["success_probability"] / 100.0, fmts["big"])
+    if base.get("success_se") is not None:
+        ws_summary.write(5, 0, f"plus or minus {base['success_se']:.1f} points (simulation noise)", fmts["note"])
     ws_summary.write(6, 0, "Ending balance (age {})".format(assumptions["plan_through_age"]), fmts["h2"])
+    ending_real = base.get("ending_balance_real")
+    if ending_real:
+        ws_summary.write(6, 1, "Today's $", fmts["hdr"])
+        ws_summary.write(6, 2, "Nominal", fmts["hdr"])
     for i, (lab, key) in enumerate([("10th percentile", "p10"), ("Median", "p50"), ("90th percentile", "p90")]):
         ws_summary.write(7 + i, 0, lab, fmts["label"])
-        ws_summary.write_number(7 + i, 1, base["ending_balance"][key], fmts["money"])
+        if ending_real:
+            ws_summary.write_number(7 + i, 1, ending_real[key], fmts["money"])
+            ws_summary.write_number(7 + i, 2, base["ending_balance"][key], fmts["money"])
+        else:
+            ws_summary.write_number(7 + i, 1, base["ending_balance"][key], fmts["money"])
     if narrative.get("headline"):
         ws_summary.write(11, 0, narrative["headline"], fmts["h2"])
     if narrative.get("body"):
@@ -310,19 +401,19 @@ def build_workbook(payload: dict, out_path: str) -> str:
     # confidence-band chart on the summary too
     summary_chart = wb.add_chart({"type": "line"})
     for col, (nm, color) in enumerate(
-            [("10th", "#C0504D"), ("Median", "#1F6F43"), ("90th", "#4F81BD")], start=1):
+            [("10th", "#C0504D"), ("Median", "#1F6F43"), ("90th", "#4F81BD")], start=4 if real else 1):
         summary_chart.add_series({
             "name": nm,
             "categories": ["Monte Carlo", mc_first, 0, mc_last, 0],
             "values": ["Monte Carlo", mc_first, col, mc_last, col],
             "line": {"color": color, "width": 1.5},
         })
-    summary_chart.set_title({"name": "Projected balance — confidence bands"})
+    summary_chart.set_title({"name": "Projected balance — confidence bands" + (" (today's $)" if real else "")})
     summary_chart.set_y_axis({"num_format": "$#,##0"})
     summary_chart.set_size({"width": 560, "height": 320})
-    ws_summary.insert_chart(3, 3, summary_chart)
+    ws_summary.insert_chart(3, 7, summary_chart)
     ws_summary.set_column(0, 0, 22)
-    ws_summary.set_column(1, 1, 16)
+    ws_summary.set_column(1, 2, 16)
 
     wb.close()
     return out_path

@@ -9,7 +9,7 @@ saved login (same as scripts/monarch_probe.py):
 Modes:
   quick   current month's transactions, the needs-review list, budget and balances (Refresh button)
   window  quick + the last 120 days, net-worth history (year to date) and bills due in 14 days
-  full    window + every transaction since the WHO start date (2025-06-01)
+  full    window + every transaction since the WHO start date (2025-06-01) and investment holdings
   auto    full when the last good full sync is over 20 hours old, otherwise window (the timer uses this)
 
 Prints one JSON line: {"status": "ok"|"error"|"auth_failed", ...}. Exit 0 on ok, 1 otherwise.
@@ -174,6 +174,27 @@ def normalize_recurring(data: dict) -> list[dict]:
     return out
 
 
+def normalize_holdings(account_id: str, data: dict) -> list[dict]:
+    """One row per aggregate holding from get_account_holdings."""
+    edges = (((data or {}).get("portfolio") or {}).get("aggregateHoldings") or {}).get("edges") or []
+    out = []
+    for e in edges:
+        node = e.get("node") or {}
+        sec = node.get("security") or {}
+        first = (node.get("holdings") or [{}])[0] or {}
+        out.append({
+            "account_id": str(account_id),
+            "holding_id": str(node.get("id")),
+            "ticker": sec.get("ticker") or first.get("ticker"),
+            "name": sec.get("name") or first.get("name"),
+            "security_type": sec.get("type") or first.get("type"),
+            "quantity": node.get("quantity"),
+            "value": node.get("totalValue"),
+            "basis": node.get("basis"),
+        })
+    return out
+
+
 # ---------------------------------------------------------------------------
 # fetching
 # ---------------------------------------------------------------------------
@@ -189,6 +210,22 @@ async def _all_transactions(client, start: str, end: str, **filters) -> list[dic
         offset += len(batch)
         if not batch or offset >= total:
             return results
+
+
+async def _holdings(client, accounts: list[dict]) -> dict:
+    """Holdings for every visible brokerage account with a balance. An account whose call fails is
+    left out (its old rows stay) so one bad connection never fails the whole sync."""
+    fetched, items = [], []
+    for a in accounts:
+        if a.get("type") != "brokerage" or a.get("hidden") or not a.get("balance"):
+            continue
+        try:
+            data = await client.get_account_holdings(int(a["id"]))
+        except Exception:  # noqa: BLE001
+            continue
+        fetched.append(a["id"])
+        items.extend(normalize_holdings(a["id"], data))
+    return {"accounts": fetched, "items": items}
 
 
 async def fetch(mode: str, today: date, who_start: str) -> dict:
@@ -225,6 +262,8 @@ async def fetch(mode: str, today: date, who_start: str) -> dict:
         r_start, r_end = today.isoformat(), (today + timedelta(days=RECURRING_DAYS)).isoformat()
         rec = await client.get_recurring_transactions(start_date=r_start, end_date=r_end)
         payload["recurring"] = {"start": r_start, "end": r_end, "items": normalize_recurring(rec)}
+    if mode == "full":
+        payload["holdings"] = await _holdings(client, payload["accounts"])
     return payload
 
 

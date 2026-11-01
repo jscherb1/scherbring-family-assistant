@@ -28,6 +28,9 @@ def sample_payload():
             "expected_return": "Derived from Monarch holdings (80/20)",
         },
         "result": result,
+        "accounts": [{"name": "Rollover IRA", "bucket": "pretax", "balance": 500000.0,
+                      "allocation": {"us_equity": 0.6, "intl_equity": 0.3, "bonds": 0.1, "cash": 0.0},
+                      "allocation_source": "holdings"}],
         "narrative": {
             "headline": "80% chance of funding retirement to 95.",
             "body": "At the current savings rate the plan succeeds in 4 of 5 simulated futures.",
@@ -75,6 +78,56 @@ class TestWorkbook(unittest.TestCase):
         values = [c.value for row in ws.iter_rows() for c in row]
         self.assertIn(62, values)      # retirement age
         self.assertIn(500000.0, values)  # current balance
+
+    def test_accounts_sheet_and_real_dollar_columns(self):
+        wb = load_workbook(self.path)
+        self.assertIn("Accounts", wb.sheetnames)
+        headers = [c.value for c in wb["Base Case"][4]]
+        self.assertIn("Median Return", headers)
+        self.assertIn("End (today's $)", headers)
+
+
+def _evaluate(wb, sheet, ref, cache=None):
+    """Tiny evaluator for the Base Case formula subset (IF, MAX, SQRT, ^, cell refs)."""
+    import math
+    import re
+    cache = {} if cache is None else cache
+    key = (sheet, ref.replace("$", ""))
+    if key in cache:
+        return cache[key]
+    val = wb[sheet][key[1]].value
+    if isinstance(val, str) and val.startswith("="):
+        expr = val[1:]
+
+        def sub(m):
+            sh = m.group(1) or sheet
+            return repr(_evaluate(wb, sh.strip("'"), m.group(2), cache))
+        expr = re.sub(r"(?:('[^']+')!)?(\$?[A-Z]+\$?[0-9]+)", sub, expr)
+        expr = expr.replace("^", "**").replace("IF(", "_if(").replace("MAX(", "max(").replace("SQRT(", "math.sqrt(")
+        expr = re.sub(r"(?<![<>=!])=(?!=)", "==", expr)
+        val = eval(expr, {"_if": lambda c, a, b: a if c else b, "math": math, "max": max})
+    cache[key] = val
+    return val
+
+
+class FormulaParityTests(unittest.TestCase):
+    def test_base_case_formulas_match_engine(self):
+        payload = sample_payload()
+        payload["assumptions"]["allocation"] = {"us_equity": 0.55, "intl_equity": 0.2, "bonds": 0.2, "cash": 0.05}
+        payload["assumptions"]["glide_path"] = {"retirement_equity": 0.6, "end_equity": 0.4}
+        payload["assumptions"].pop("expected_return")
+        payload["assumptions"].pop("volatility")
+        payload["result"] = rm.run_all(payload["assumptions"], n_paths=100, seed=1)
+        with tempfile.TemporaryDirectory() as d:
+            out = str(Path(d) / "wb.xlsx")
+            rw.build_workbook(payload, out)
+            wb = load_workbook(out)
+            det = payload["result"]["base"]["deterministic"]
+            cache = {}
+            for i, row in enumerate(det):
+                r = 5 + i  # header on row 4 (1-based), data from row 5
+                self.assertAlmostEqual(_evaluate(wb, "Base Case", f"I{r}", cache), row["end_balance"], delta=1.0)
+                self.assertAlmostEqual(_evaluate(wb, "Base Case", f"J{r}", cache), row["end_balance_real"], delta=1.0)
 
 
 if __name__ == "__main__":

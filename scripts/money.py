@@ -223,6 +223,7 @@ def apply_snapshot(payload: dict, db_path=None) -> dict:
       budget:       {"month": "YYYY-MM-01", "totals": [...], "lines": [...]}  replaces that month
       networth:     [{"date", "value"}...]  upserted
       recurring:    {"start": d, "end": d, "items": [...]}  replaces that date range
+      holdings:     {"accounts": [ids], "items": [...]}  replaces the holdings of each listed account
     Returns counts, plus what the tagging-log reconcile changed.
     """
     synced_at = _now_iso()
@@ -303,6 +304,18 @@ def apply_snapshot(payload: dict, db_path=None) -> dict:
                       r.get("account"), r.get("frequency"), int(bool(r.get("is_past"))), r.get("transaction_id"))
                      for r in recurring.get("items") or []])
                 counts["recurring"] = len(recurring.get("items") or [])
+
+            holdings = payload.get("holdings")
+            if holdings is not None:
+                conn.executemany("DELETE FROM money_holdings WHERE account_id = ?",
+                                 [(str(i),) for i in holdings.get("accounts") or []])
+                conn.executemany(
+                    "INSERT OR REPLACE INTO money_holdings(account_id, holding_id, ticker, name, security_type, "
+                    "quantity, value, basis, synced_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [(str(h["account_id"]), str(h["holding_id"]), h.get("ticker"), h.get("name"),
+                      h.get("security_type"), h.get("quantity"), h.get("value"), h.get("basis"), synced_at)
+                     for h in holdings.get("items") or []])
+                counts["holdings"] = len(holdings.get("items") or [])
 
             counts["reconciled"] = _reconcile_tag_log(conn)
     finally:

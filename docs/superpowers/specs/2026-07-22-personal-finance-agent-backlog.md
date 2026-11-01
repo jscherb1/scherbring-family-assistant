@@ -114,6 +114,16 @@ Both are low-risk to iterate on since every value is already an editable
 Assumptions cell + config field; this is a "make the numbers trustworthy" pass,
 not new architecture. Logged 2026-07-23.
 
+**2026-10-31 update:** a full review found more issues (kids' money counted, no taxes,
+net-pay savings figure, optimistic historical returns, arithmetic-mean "median" path,
+year-end withdrawal timing, no real-dollar outputs, plan-vs-actual comparing net worth to net
+worth). Phase 1 of the fix shipped: inputs are derived in code from the Monarch snapshot
+(`scripts/retirement.py` / `retirement_store.py`, holdings in `money_holdings`), the allocation
+comes from real holdings and is priced with forward-looking capital-market assumptions plus a
+glide path, and the engine's timing and median path are corrected. The allocation placeholder
+above is resolved; Social Security is still a placeholder (Phase 2). Remaining phases are
+tracked in `docs/TODO.md` item 9a.
+
 **Original spec** (kept for reference):
 
 **Recommended architecture:** a **Monte Carlo simulation engine**, not

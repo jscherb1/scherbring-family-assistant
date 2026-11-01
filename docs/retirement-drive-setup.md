@@ -63,7 +63,7 @@ python -m pip install google-api-python-client google-auth google-auth-oauthlib 
    # -> {"status": "ok", ...}
    ```
 
-That's it. The `retirement` agent will now upload/update the workbook on its own.
+That's it. The `retirement` agent will now upload each run's workbook on its own, as a new date-stamped file.
 If the token is ever revoked or expires without a refresh token, re-run
 `python scripts/drive_upload.py auth`.
 
@@ -71,11 +71,11 @@ If the token is ever revoked or expires without a refresh token, re-run
 
 ```
 python scripts/drive_upload.py find-folder --parent <folderId> --name Retirement
-python scripts/drive_upload.py upload --file <path>.xlsx --parent <folderId> --name "Retirement-Model.xlsx"
-python scripts/drive_upload.py update --file <path>.xlsx --file-id <fileId>   # in-place, keeps version history
+python scripts/drive_upload.py upload --file <path>.xlsx --parent <folderId> --name "Retirement-Model-<date>.xlsx"   # one new file per run
+python scripts/drive_upload.py update --file <path>.xlsx --file-id <fileId>   # in-place; the retirement agent no longer uses this
 python scripts/drive_upload.py status
 ```
 
 Scope is full `drive` (needed to write into the pre-existing shared finance
-folder and to update the canonical file in place). Everything runs against your
+folder). Everything runs against your
 own Google account.

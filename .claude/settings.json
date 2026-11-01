@@ -27,6 +27,7 @@
       "Bash(python scripts/finance_report.py *)",
       "Bash(python scripts/retirement_model.py *)",
       "Bash(python scripts/retirement_workbook.py *)",
+      "Bash(python scripts/retirement_store.py *)",
       "Bash(python scripts/drive_upload.py find-folder *)",
       "Bash(python scripts/drive_upload.py upload *)",
       "Bash(python scripts/drive_upload.py update *)",

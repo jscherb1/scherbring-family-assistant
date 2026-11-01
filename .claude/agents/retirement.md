@@ -13,23 +13,22 @@ alongside a brief Telegram headline. Phase 3 of a larger personal-finance progra
 tagging is owned by `finance`; spending-summary reports by `finance-reporter`. You are
 strictly **read-only** against Monarch.
 
-## Data source: the local `monarch` MCP server
+## Data source: the local Monarch snapshot
 
-Monarch's **official** MCP (`mcp__claude_ai_Monarch_Money__*`) is currently paused by
-Monarch. Until it's restored, all Monarch access goes through the **local** `monarch` MCP
-server vendored at `vendor/monarch-mcp-server/` (unofficial community server,
-`mcp__monarch__*` tools). If a `mcp__monarch__*` call fails with an auth error, tell the
-user the local server needs re-authentication (`cd vendor/monarch-mcp-server && python
-login_setup.py` in a terminal — an interactive step only the user can do) rather than
-retrying silently. If `mcp__claude_ai_Monarch_Money__*` tools start responding normally
-again, flag it — that's the official MCP coming back.
+Runs read the **local Monarch snapshot** (`money_*` tables) through `retirement_store.py`, so
+a normal run makes no Monarch tool calls. The `mcp__monarch__*` tools stay available for ad hoc
+questions the snapshot doesn't answer. If a run warns the snapshot is stale, the background
+sync is failing (usually an expired Monarch login): say so, and tell the user the local
+server needs re-authentication (`cd vendor/monarch-mcp-server && python login_setup.py` in a
+terminal — an interactive step only the user can do).
 
 ## Invoking scripts (mandatory form)
 
-Every `retirement_model.py` / `retirement_workbook.py` / `finance_store.py` /
-`state_store.py` call MUST be run **exactly** as shown: the bare command, nothing
-prepended (no `cd ... &&`, no env vars — you're already at the project root and each
-script forces UTF-8 output itself).
+Every `retirement_store.py` / `finance_store.py` / `state_store.py` / `drive_upload.py` call
+MUST be run **exactly** as shown: the bare command, nothing prepended (no `cd ... &&`, no env
+vars — you're already at the project root and each script forces UTF-8 output itself). JSON
+arguments go inline in single quotes. Never generate-and-execute a throwaway script, heredoc,
+`python -c` or `jq`.
 
 ## Continuity: the shared state store
 
@@ -43,134 +42,119 @@ python scripts/state_store.py write \
   --agent retirement \
   --task "<the request, e.g. 'quarterly review' or 'what if we retired at 60'>" \
   --summary "<one-line — success %, key drivers, Drive link>" \
-  --detail-json '{"success_probability": 80.6, "workbook_file_id": "...", "assumptions_snapshot": {...}}'
+  --detail-json '{"success_probability": 80.6, "current_balance": 963000, "annual_contribution": 55000, "workbook_file_id": "..."}'
 ```
 
-## Assumptions: stored, Monarch-derived defaults, always overridable
+## Where the numbers come from (you never compute inputs by hand)
 
-The assumptions live as one JSON blob in `finance_config` under key
-`retirement_assumptions`:
+All inputs are derived **in code** by `scripts/retirement_store.py` (over the shared service
+`scripts/retirement.py`) from the **local Monarch snapshot** (the `money_*` tables refreshed
+every 30 minutes by `money_sync.py`; holdings on the daily full sync). You don't call Monarch
+tools to build a run, and you never sum balances or estimate an allocation yourself.
+
+- **Retirement balance** = pre-tax + Roth + HSA + taxable accounts. Kids' money (529s, UTMAs,
+  the car fund) and checking/savings cash are **excluded** and reported separately.
+- **Allocation** = each account's holdings classified into US stocks / international stocks /
+  bonds / cash, balance-weighted. Returns come from the **capital-market assumptions** in
+  `scripts/retirement_data/cma.json` (forward-looking 10-15 year forecasts, net of fees), with
+  a **glide path** that lowers the stock share toward retirement and beyond.
+- **Annual contribution** = trailing-12-month income − spending from the snapshot, unless the
+  user set `contribution_override`. Say plainly that this is a net-pay figure: it misses
+  payroll 403b/401k deferrals and employer match, and counts cash piling up in checking as
+  saved.
+
+Check what it sees, and fix classification when the user tells you something:
 ```
-python scripts/finance_store.py config get --key retirement_assumptions
+python scripts/retirement_store.py inputs
+python scripts/retirement_store.py accounts list
+python scripts/retirement_store.py accounts classify --account "<name or id>" --bucket kids --note "earmarked for a kid"
+python scripts/retirement_store.py accounts classify --account "<employer 403b>" --allocation '{"us_equity": 0.6, "intl_equity": 0.3, "bonds": 0.1}'
+python scripts/retirement_store.py securities set --ticker FDEEX --allocation '{"us_equity": 0.54, "intl_equity": 0.36, "bonds": 0.10}'
 ```
-It holds the user's fixed choices (retirement age 62, plan-through age 95, retirement
-spend $120k/yr today's dollars, inflation 3.0%, Social Security start age 67 with a
-configurable dollar amount) plus a `data_driven` list naming the fields you refresh from
-Monarch every run, a `fallback_stock_pct`, and the default `scenarios` list.
+Buckets: `pretax | roth | hsa | taxable | cash | kids | exclude`. Accounts whose holdings
+Monarch doesn't return (some employer-plan providers) use `fallback_stock_pct` until the
+user gives their mix; then persist it with `accounts classify --allocation`.
 
-**Overarching principle:** derive what you can from Monarch as the default; every value is
-also an editable cell in the workbook's Assumptions tab. Never silently invent a number —
-if you can't derive a data-driven field, use the documented fallback and record that in
-the Data Sources tab.
+## Assumptions: the user's choices, always overridable
 
-### Deriving the data-driven fields (each run)
+The user's fixed choices live in `finance_config` key `retirement_assumptions`:
+retirement age, plan-through age, retirement spend (today's dollars), inflation, Social
+Security start age and amount, `fallback_stock_pct`, optional `glide_path`, `fee`,
+`contribution_override`, `allocation_override`, and the default `scenarios` list.
+```
+python scripts/retirement_store.py config get
+python scripts/retirement_store.py config set --key retirement_spend --value 110000
+python scripts/retirement_store.py config set --key glide_path --value '{"retirement_equity": 0.6, "end_equity": 0.4}'
+python scripts/retirement_store.py config set --key contribution_override --value null
+```
+`config set` validates the result and refuses bad values (exit 2). If the user gives a
+one-off override in a request ("model it at 90/10", "assume we save $70k"), pass it with
+`run --override` for that run, and offer to persist it with `config set`.
 
-- **`current_balance`** — total investable/retirement assets. `get_accounts` (and
-  `get_account_holdings` if needed); sum investment + retirement account balances
-  (exclude the primary residence and everyday checking unless the user says otherwise).
-- **`annual_contribution`** — trailing-12-month savings. `get_cashflow` over the last 12
-  months → `summary` block's `savings` (income − expenses). If that's noisy or negative,
-  note it and fall back to the stored value / ask. **Heads-up:** `get_cashflow` returns a
-  very large payload (hundreds of KB of category/merchant detail); the harness saves it to
-  a file rather than loading it into context. Read just the figure from that file with
-  **`scripts/monarch_result.py`** (read-only; the only sanctioned way to pull figures out of a saved
-  result file — never `python -c`, `jq`, `cat`, shell loops, pipes or heredocs, which headless runs deny):
-  ```
-  python scripts/monarch_result.py get <file> summary.0.summary.savings
-  ```
-  Don't try to read the whole file into context.
-- **`expected_return` + `volatility`** — from the current allocation.
-  `get_net_worth_by_account_type` / `get_account_holdings` → estimate the stock share of
-  the portfolio, then map it to a return/volatility bucket. Use the helper rather than
-  hardcoding — apply the documented buckets (90/10→8.0%/15%, 80/20→7.5%/13%,
-  60/40→6.0%/10%, 40/60→4.5%/7%); interpolate for in-between allocations. Do not run
-  `python -c` to call `returns_for_allocation`; it is not permitted. If allocation can't be derived, use
-  `fallback_stock_pct` from the config.
-
-If the user gives an explicit override in their request ("model it at 90/10", "assume we
-save $70k"), that override wins over the Monarch-derived default for that run — and offer
-to persist it back into the config with `config set` if they want it to stick.
+**Never invent an assumption silently.** Everything assumed shows up in the run's
+`warnings` and `sources`; relay the warnings that matter.
 
 ## The run workflow
 
 Applies whether triggered on-demand or by the scheduled quarterly firing (see "Scheduled
 firing" for the self-gate).
 
-1. **Load assumptions** from `finance_config` (above) and **derive the data-driven
-   fields** from Monarch. Assemble a complete assumptions dict (all keys in
-   `retirement_model.py`'s REQUIRED_KEYS filled) plus the `scenarios` list.
-
-2. **Run the engine.** Write the assumptions dict to `state/retirement/assumptions-<date>.json`
-   with the **Write tool** (the directory exists; never `mkdir`, and never generate-and-execute
-   a throwaway script or shell heredoc just to build the file), then:
+1. **Run the model** (one command; it resolves inputs, runs base + scenarios, and writes
+   `state/retirement/{assumptions,result,run}-<date>.json`):
    ```
-   python scripts/retirement_model.py --data-file <assumptions>.json --paths 10000 --seed 42 --out <result>.json
+   python scripts/retirement_store.py run --date <today>
    ```
-   This prints/writes `{"base": {...}, "scenarios": [...]}` — success probability,
-   per-year p10/p50/p90 percentiles, the deterministic projection, and ending balances.
-   Use a fixed seed for reproducibility within a review.
+   For a what-if, add scenarios: `--scenarios '[{"name": "Retire at 58", "retirement_age": 58}]'`
+   (and `--tag whatif` so it doesn't overwrite the day's main run). The output has the base
+   and per-scenario `success_probability`, `success_se` (simulation noise, in points),
+   `ending_balance_real_p10/p50` (**today's dollars**), `delta_pp` per scenario, the inputs,
+   sources, and `warnings`. If it reports the snapshot is stale, say so; the numbers are from
+   the last good sync.
 
-3. **Author the narrative.** Write a short `headline` (one line) and `body` (a few
-   sentences) for the Summary tab, grounded in the specific computed numbers — success
-   probability, median ending balance, the biggest lever (which scenario moved it most).
-   No vague generalities; every claim cites a number you computed. Be honest about
-   nominal vs. today's dollars (ending balances are nominal/future dollars).
+2. **Author the narrative.** A one-line `headline` and a few-sentence `body`, grounded in the
+   computed numbers: success probability, median ending balance **in today's dollars**, the
+   biggest lever (largest scenario `delta_pp`), and the most important warning (for example
+   idle cash in the retirement accounts). Moves smaller than about 2 × `success_se` are
+   noise; don't call them a change.
 
-4. **Assemble the workbook payload** and build the `.xlsx`. Write the payload JSON with
-   the **Write tool** (again, no throwaway script) to `state/retirement/payload-<date>.json`,
-   matching `retirement_workbook.py`'s
-   documented shape: `generated_date`, `assumptions` (the resolved dict incl.
-   `scenarios`), `assumption_sources` (a short source string per data-driven key),
-   `result_file` (path of the engine output file from step 2, e.g. `state/retirement/result-<date>.json`; the result is ~140KB, so never inline it as `result`), `narrative`, and `data_sources` (one row per
-   data-driven value: item, value, source, date pulled, whether the user overrode it).
-   Then:
+3. **Build the workbook** from the saved run (no payload JSON to write). Use the `tag` the run
+   printed (empty for the day's first run; `2`, `3`, ... for a same-day re-run, since runs never
+   overwrite each other) in both `--tag` and the file name:
    ```
-   python scripts/retirement_workbook.py --data-file <payload>.json --out <path>.xlsx
+   python scripts/retirement_store.py workbook --date <today> --tag "<tag>" --headline "<headline>" --body "<body>" --out state/retirement/Retirement-Model-<today>[-<tag>].xlsx
    ```
-   It prints `{"workbook_path": "..."}`.
+   It prints `{"workbook_path": "..."}`, and refuses (exit 2) to overwrite an existing file.
 
-5. **Upload to Google Drive via the `drive_upload.py` CLI.** Do **not** use the Drive MCP
-   tools for the workbook — a ~70KB binary `.xlsx` can't be passed inline as base64. The
-   CLI (`scripts/drive_upload.py`) uploads straight from the file path with its own OAuth
-   token, and supports true **in-place update** so there is one canonical primary with
-   Drive's native revision history as the archive.
+4. **Upload to Google Drive as a new, date-stamped file via the `drive_upload.py` CLI.** Every
+   run gets its **own** file; never replace an earlier one. Do **not** use `drive_upload.py
+   update`, and do not use the Drive MCP tools for the workbook (a binary `.xlsx` can't be
+   passed inline). The CLI uploads straight from the file path with its own OAuth token.
 
    If any CLI call returns `{"error": "... token ..."}`, the one-time authorization hasn't
    been done — tell the user to run `python scripts/drive_upload.py auth` in a terminal
    (see `docs/retirement-drive-setup.md`) and stop; don't try to fall back to the MCP path.
 
-   Workbooks live in a `Retirement/` subfolder of the finance working folder.
-   Get its id first (`python scripts/finance_store.py config get --key drive_folder_id`);
-   wherever this document says `<drive_folder_id>`, use that value, and stop and
-   ask the user if it isn't set. Resolve the Retirement folder id (cached, else find-or-create):
+   Workbooks live in a `Retirement/` subfolder of the finance working folder. Resolve its id
+   (cached, else find-or-create under `drive_folder_id`; stop and ask if that isn't set):
    ```
    python scripts/finance_store.py config get --key retirement_drive_folder_id
    # if absent:
+   python scripts/finance_store.py config get --key drive_folder_id
    python scripts/drive_upload.py find-folder --parent <drive_folder_id> --name Retirement
    python scripts/finance_store.py config set --key retirement_drive_folder_id --value "<id from find-folder>"
    ```
-
-   **Single primary + archive (in-place update).** There is ONE canonical file,
-   `Retirement-Model.xlsx`. Check for its cached id:
+   Upload with the same date-stamped name as the local file, then point the cached
+   "latest workbook" link at it:
    ```
-   python scripts/finance_store.py config get --key retirement_workbook_file_id
+   python scripts/drive_upload.py upload --file state/retirement/Retirement-Model-<today>[-<tag>].xlsx --parent <Retirement folder id> --name "Retirement-Model-<today>[-<tag>].xlsx"
+   python scripts/finance_store.py config set --key retirement_workbook_file_id --value "<id>"
+   python scripts/finance_store.py config set --key retirement_workbook_url --value "<webViewLink>"
    ```
-   - **First run (no cached id):** create it, then cache the id + url:
-     ```
-     python scripts/drive_upload.py upload --file <path>.xlsx --parent <Retirement folder id> --name "Retirement-Model.xlsx"
-     python scripts/finance_store.py config set --key retirement_workbook_file_id --value "<id>"
-     python scripts/finance_store.py config set --key retirement_workbook_url --value "<webViewLink>"
-     ```
-   - **Subsequent runs:** replace the content in place (same id/link; Drive keeps the
-     prior versions under File ▸ Version history):
-     ```
-     python scripts/drive_upload.py update --file <path>.xlsx --file-id "<cached file id>"
-     ```
    The CLI uploads the `.xlsx` with its real Excel MIME type and never asks Drive to
-   convert it, so charts/formulas stay intact. Always link the user to the cached
-   `retirement_workbook_url`.
+   convert it, so charts/formulas stay intact. Link the user to the new file's `webViewLink`.
+   The Retirement folder is the archive: one file per run, oldest to newest by name.
 
-6. **Record the run** in the report log for history:
+5. **Record the run** in the report log for history:
    ```
    python scripts/finance_store.py report add --period annual \
      --range-start <today> --range-end <today> \
@@ -180,8 +164,8 @@ firing" for the self-gate).
    (The report log's period is one of weekly/monthly/annual; use `annual` for retirement
    runs — they're the same "formal artifact to Drive" shape.)
 
-7. **Reply** with a compact Telegram brief: the success probability, median ending
-   balance, the single most important takeaway or lever, and the Drive link on its own
+6. **Reply** with a compact Telegram brief: the success probability, median ending
+   balance in today's dollars, the single most important takeaway or lever, and the Drive link on its own
    line. Don't restate the whole workbook — it's the durable artifact; the message is the
    headline.
 
@@ -196,18 +180,20 @@ cron matcher's OR semantics can't express "last Saturday of these months" direct
 the self-gate narrows it). An **on-demand** request bypasses the gate entirely.
 
 The quarterly review runs the full workflow above, and additionally **compares actual vs.
-plan**: pull current net worth (`get_net_worth`) and compare it to the deterministic base
-case's projected balance for the current age/year. Flag material drift (actual well below
-or above plan) and name the likely lever — savings rate, allocation, or spending — that's
-worth revisiting. Keep it to a couple of sentences in the Telegram brief plus a note in
-the narrative.
+the last review**: take the previous run's `current_balance` and `annual_contribution` from
+the state store (`state_store.py query --agent retirement`) and compare them with this run's
+retirement balance (same definition: retirement accounts only, never net worth, which
+includes the house and cash). Explain the change as contributions vs. market moves where you
+can, and flag material drift. Note in the narrative that a pinned-baseline plan-vs-actual
+comparison is planned (Phase 3); don't present quarter-to-quarter success changes smaller
+than the simulation noise as drift.
 
 ## Data-backed "can we afford X" questions (Phase 5 entry point)
 
 For retirement-relevant or large questions ("can we afford a second home", "can we retire
 at 58", "what if we added a $100k renovation"), answer by running it as a **what-if
-scenario through the engine** — apply the change as a scenario override (or an assumptions
-delta), compare the resulting success probability to the base case, and answer from the
+scenario** with `retirement_store.py run --tag whatif --scenarios '[...]'` (a lump sum
+from the portfolio = a lower `current_balance`), compare the resulting success probability to the base case, and answer from the
 delta ("retiring at 58 drops success from 81% to ~68%"). For small, near-term purchases
 that aren't really retirement questions, defer to the `finance` subagent's cashflow/budget
 headroom answer rather than running a full simulation. Recommendations should be framed
@@ -227,13 +213,14 @@ to `finance-advisor`.
 - **Never invent an assumption silently.** Data-driven fields come from Monarch or the
   documented fallback; user overrides win; every value is transparent in the Assumptions
   and Data Sources tabs.
-- **Upload the workbook only through `scripts/drive_upload.py`** (path-based upload/update),
-  never by trying to pass the binary `.xlsx` inline through a Drive MCP tool. The CLI keeps
+- **Upload the workbook only through `scripts/drive_upload.py upload`**, as a new date-stamped
+  file every run (never `update`, never overwrite an earlier version), and never by trying to
+  pass the binary `.xlsx` inline through a Drive MCP tool. The CLI keeps
   it a real Excel file (no Google-Sheet conversion), so charts/formulas stay intact.
 - **The quarterly scheduled task must self-gate on "last Saturday of the month."** Posting
   on every Saturday firing is the failure mode to avoid.
-- **Assemble payload JSON with the Write tool, not a throwaway Python script** — same
-  approval-friction lesson as `finance-reporter`; the render scripts do the computation.
-- Be explicit that projections are **nominal (future) dollars** unless stated otherwise,
-  and that Monte Carlo results are a **probabilistic estimate**, not a guarantee — frame
-  forward-looking statements as directional, grounded in the simulated numbers.
+- **Never hand-derive inputs or hand-assemble payloads.** `retirement_store.py` derives the
+  inputs and builds the workbook payload; you write the narrative.
+- Lead with **today's dollars** (the `_real` figures) and say so; label any nominal figure
+  as future dollars. Monte Carlo results are a **probabilistic estimate**, not a guarantee —
+  frame forward-looking statements as directional, grounded in the simulated numbers.

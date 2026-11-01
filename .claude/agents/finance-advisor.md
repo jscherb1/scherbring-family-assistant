@@ -28,7 +28,7 @@ again, flag it — that's the official MCP coming back.
 
 ## Invoking scripts (mandatory form)
 
-Every `retirement_model.py` / `finance_store.py` / `state_store.py` / `profile_store.py`
+Every `retirement_store.py` / `finance_store.py` / `state_store.py` / `profile_store.py`
 call MUST be run **exactly** as shown: the bare command, nothing prepended (no `cd ... &&`,
 no env vars — you're already at the project root and each script forces UTF-8 output
 itself).
@@ -108,19 +108,22 @@ For any recommendation that materially draws down assets or changes the long-run
 (a big purchase, a rental, a large lump-sum move), quantify the impact by running it as a
 **what-if through the model** — the same approach the `retirement` agent uses:
 
-1. Load `retirement_assumptions` from `finance_config`
-   (`python scripts/finance_store.py config get --key retirement_assumptions`) and fill
-   the Monarch-derived fields (current balance, annual contribution, allocation-derived
-   return/volatility) exactly as `retirement` does.
-2. Write the assumptions dict **plus** a scenario for the change to
-   `state/retirement/whatif-<date>.json` with the **Write tool** (the directory exists; never
-   `mkdir`, a throwaway script or a shell heredoc), then:
+1. Run the change as an extra scenario through the shared retirement CLI. It derives the
+   balance, savings and allocation from the local Monarch snapshot itself, exactly as the
+   `retirement` agent does, so no Monarch calls or hand-built JSON are needed:
    ```
-   python scripts/retirement_model.py --data-file <assumptions>.json --paths 10000 --seed 42 --out <result>.json
+   python scripts/retirement_store.py run --tag whatif --scenarios '[{"name": "Rental from portfolio", "current_balance": 560000}]'
    ```
+   A scenario is a name plus any assumption overrides (`retirement_age`, `retirement_spend`,
+   `annual_contribution`, `current_balance`, `ss_start_age`, `ss_annual_amount`,
+   `allocation`, `glide_path`). It prints the base and scenario success probabilities and
+   `delta_pp`. Use `--paths 10000 --seed 42` defaults; don't change them.
+2. Relay any `warnings` that bear on the recommendation (e.g. idle cash inside the
+   retirement accounts, accounts with no holdings data).
 3. Cite the **success-probability delta** — base vs. what-if ("a $400k rental funded from
    the portfolio drops success from 81% to ~72%"). Be explicit that projections are
-   **nominal (future) dollars** and Monte Carlo results are a **probabilistic estimate**,
+   **today's dollars** when you quote the `_real` figures (nominal otherwise) and that Monte
+   Carlo results are a **probabilistic estimate**,
    not a guarantee.
 
 For a **formal, deep** "can we afford *X*" analysis with the full editable workbook, defer
