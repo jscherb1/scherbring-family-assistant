@@ -5,8 +5,8 @@ already safe to show (no finance amounts, no memory text).
 """
 from datetime import timedelta
 
-from . import (activity, agent, chores, common, family, golf, habits, health, home, money, ops, schedule, shopping_fitness,
-               wellness)
+from . import (activity, agent, chores, common, family, golf, habits, health, home, money, ops, review, schedule,
+               shopping_fitness, wellness)
 from .. import dismissals
 from ..web import fmt_dt
 
@@ -238,6 +238,21 @@ def _family_tile():
     return {"title": "Family", "href": "/family", "headline": headline, "sub": sub, "state": "ok", "small": True}
 
 
+def _review_tile(attention):
+    """Weekly step-back review: each new finding is one needs-attention item (key review:<finding id>), so
+    accepting, finishing or dismissing it on /review (or dismissing it here) clears it."""
+    new = review.get_new_findings()
+    if not isinstance(new, list):
+        return {"title": "Review", "href": "/review", "headline": "Unknown", "sub": "", "state": "warn", "small": True}
+    for f in new:
+        _flag(attention, f"review:{f['id']}", f"Review: {f['title']}", "/review", "Review")
+    if new:
+        return {"title": "Review", "href": "/review", "headline": f"{_plural(len(new), 'new finding')}",
+                "sub": new[0]["title"][:60], "state": "warn", "small": True}
+    return {"title": "Review", "href": "/review", "headline": "Nothing new", "sub": "Weekly step-back review",
+            "state": "ok", "small": True}
+
+
 def _hyvee_tile(systems):
     h = shopping_fitness.get_hyvee()
     login = next((s for s in systems if s.get("key") == "hyvee"), None)
@@ -258,7 +273,7 @@ def get_summary():
     tiles = [
         agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _golf_tile(), _wellness_tile(), _chores_tile(),
         _meals_tile(), _finance_tile(),
-        _fitness_tile(), _family_tile(), _hyvee_tile(systems),
+        _fitness_tile(), _family_tile(), _hyvee_tile(systems), _review_tile(attention),
     ]
     dismissed = dismissals.load()
     live = [a for a in attention if a["key"] not in dismissed]

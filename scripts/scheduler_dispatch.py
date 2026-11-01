@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -262,6 +263,32 @@ def update_heartbeat() -> None:
     LOOP_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+HEARTBEAT_EVERY_SECONDS = 60
+
+
+class keep_heartbeat:
+    """Refresh the heartbeat every minute while a long task runs, so the watchdog (which treats a tick older than
+    20 minutes as a dead loop) doesn't fire during a task that has a long timeout_seconds."""
+
+    def __enter__(self):
+        self._stop = threading.Event()
+
+        def beat():
+            while not self._stop.wait(HEARTBEAT_EVERY_SECONDS):
+                try:
+                    update_heartbeat()
+                except OSError:
+                    pass
+
+        self._thread = threading.Thread(target=beat, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        return False
+
+
 def get_due_tasks() -> list[dict]:
     result = subprocess.run(
         [sys.executable, str(SCRIPTS_DIR / "scheduler_store.py"), "due"],
@@ -319,6 +346,15 @@ def log_run(task_id: str, run_at: str, status: str, summary: str = "") -> None:
     subprocess.run(args, capture_output=True, text=True, encoding="utf-8", cwd=str(REPO_ROOT))
 
 
+def task_timeout(task: dict) -> int:
+    """This task's run limit: its own timeout_seconds when set (NULL/0/garbage = the default)."""
+    try:
+        value = int(task.get("timeout_seconds") or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return value if value > 0 else TASK_TIMEOUT_SECONDS
+
+
 def dispatch_task(task: dict) -> tuple[str, str]:
     """Run one due task via claude --print. Returns (status, summary).
 
@@ -330,6 +366,7 @@ def dispatch_task(task: dict) -> tuple[str, str]:
     prompt = task.get("prompt", "")
     chat_id = str(task.get("target_chat_id", "") or "")
     run_at = str(task.get("due_run_at", "") or "")
+    timeout = task_timeout(task)
 
     if not prompt:
         return "failed", "no prompt defined on task"
@@ -381,7 +418,7 @@ def dispatch_task(task: dict) -> tuple[str, str]:
             text=True,
             encoding="utf-8",
             cwd=str(REPO_ROOT),
-            timeout=TASK_TIMEOUT_SECONDS,
+            timeout=timeout,
             env=env,
         )
         raw_output = (result.stdout or "").strip()
@@ -431,10 +468,10 @@ def dispatch_task(task: dict) -> tuple[str, str]:
         return status, summary
     except subprocess.TimeoutExpired:
         print(
-            f"scheduler_dispatch: '{name}' timed out after {TASK_TIMEOUT_SECONDS}s",
+            f"scheduler_dispatch: '{name}' timed out after {timeout}s",
             flush=True,
         )
-        return "failed", f"timed out after {TASK_TIMEOUT_SECONDS}s"
+        return "failed", f"timed out after {timeout}s"
     except Exception as exc:  # noqa: BLE001
         print(f"scheduler_dispatch: '{name}' error: {exc}", flush=True)
         return "failed", str(exc)
@@ -472,7 +509,8 @@ def main() -> None:
             )
             continue
 
-        status, summary = dispatch_task(task)
+        with keep_heartbeat():
+            status, summary = dispatch_task(task)
         log_run(task_id, run_at, status, summary)
         if status == "failed":
             send_failure_alert(task.get("name", task_id), run_at, summary)

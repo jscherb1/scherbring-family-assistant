@@ -333,6 +333,28 @@ See the Backlog section of `README.md`.
 
 - [ ] Live-test the **Monarch Login** and **Google Drive Login** desktop shortcuts through a real expiry (only the "already working" path was exercised). The `.bat` copies are already on the Windows desktop.
 
+## Weekly step-back review (built 2026-11-01, branch `feat/weekly-review`)
+
+- [ ] **Live run pending.** Built and tested with unit and dashboard tests plus `review_store.py gather` against a copy
+  of the real database (no failed sections). The agent itself (`.claude/agents/review.md`, model `claude-opus-5-5`)
+  has not been run. A fresh agent session is needed to see the new agent; then run
+  `python scripts/scheduler_run_now.py --name weekly-review` once and judge whether the findings are useful and
+  not padded.
+- [ ] **Register the task** (not registered by the build): the `scheduler_store.py add --name "weekly-review" ...`
+  command is in the README "Weekly step-back review" section (Saturday 9 AM, `--timeout-seconds 1200`).
+- [ ] **Record the cost** of the first 2-3 runs here (Opus; dispatcher debug log and `/agent/usage`): date, cost,
+  findings kept. Drop back to Sonnet or trim the digest if the value does not justify it. The Opus exception in
+  `CLAUDE.md` is for this agent only.
+- [ ] **Reinstall the scheduler unit** (`scripts/install_systemd.sh`): `TimeoutStartSec` went from 360 to 1500 so a
+  1200 s task is not killed, and the dispatcher now refreshes its heartbeat each minute during a task. Until
+  reinstalled, a long task would be killed at 6 minutes. While a long review runs, other due tasks wait (ticks are
+  serial); a Saturday 9 AM run can delay other 9 AM tasks by up to 20 minutes.
+- [ ] `home` and `lawn` and `profile_dates` digest sections read their tables directly (those features' rules live
+  in their CLIs/dashboard readers, not a service). Migrate them to services as part of the older-features item,
+  then point `review.py` at the services.
+- [ ] Finding titles show on the Today/Summary page, so they must not carry sensitive amounts. The agent file tells
+  it to keep them generic; check the first runs.
+
 ## Gmail read access (added 2026-10-31)
 
 - [ ] Read-only `gmail` agent added (`.claude/agents/gmail.md`; search_threads, get_thread, get_message, list_labels). Use cases are undecided, so no triage, digest, schedule or dashboard section exists. Needs a live check: ask it to find a recent email and confirm the tools resolve (a fresh agent session may be needed to pick up the new agent). It is an infrastructure exception to the agent + UI standard.

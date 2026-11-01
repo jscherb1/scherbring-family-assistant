@@ -12,6 +12,8 @@ cost/tokens.
   use case.
 - If you encounter or are about to add a config that specifies Opus (or anything above
   Sonnet), stop and flag it to the user before proceeding.
+- **Approved exception:** `.claude/agents/review.md` (the weekly step-back review) uses `model: claude-opus-5-5`,
+  explicitly approved by the user for that agent only; every other agent stays on Sonnet.
 
 ## New feature standard: agent + UI on one shared path
 

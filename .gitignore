@@ -76,6 +76,7 @@ state/usage*.jsonl
 state/coros_mcp_*.json
 state/myhub_tmp/
 state/dayrating_tmp/
+state/review_tmp/
 state/reauth_pending.json
 
 # Session/credential backups written next to live state files

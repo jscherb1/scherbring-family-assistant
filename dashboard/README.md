@@ -20,7 +20,7 @@ nav never touches a router. Page URLs did not change.
 | Family | Chores Today/Chores & kids/Money, Kid chart (`/kids`), Profile, Kids memories |
 | Home | Menu, Recipes, Groceries (`/hyvee`), Maintenance, Lawn & garden, Weather alerts |
 | Money | Overview, Tagging, Reports & planning |
-| System (gear) | Status (`/health`), Scheduled tasks, Restarts, Logins & backups, Reconnect, Agent Live, Usage, Activity, Archive |
+| System (gear) | Status (`/health`), Scheduled tasks, Restarts, Logins & backups, Reconnect, Agent Live, Usage, Activity, Weekly review, Archive |
 
 There is one dark "HUD" theme, taken from the old My Hub page. All colors are tokens in `:root` in `static/style.css`
 (and `--w-*` chart tokens in `static/wellness.css`), and there is no light mode. Labels, headings and numbers use
@@ -105,6 +105,7 @@ other family members.
 | Chores | Today, Chores & kids, Money | `/chores`, `/chores/manage`, `/chores/ledger` | Adult setup for the kid chore chart: who's done what today, kids/chores/schedules/values, balances and payouts, and fixing a missed or mistaken completion. Writes go through the shared `scripts/chores.py` service (same code as the `chores` agent) |
 | (kids) | Chore Chart | `/kids` | Kid-facing page (no adult nav; linked from Family → Kid chart): big tap-to-complete chores for each kid with balance, streaks, confetti/chime, week strip and badges |
 | (kids) | One kid's chart | `/kids/<name>` | Same page as `/kids` filtered to a single kid (e.g. `/kids/ruth`), for that kid's tablet bookmark. Hides the other kid's chart but is not access control (no login) |
+| System | Weekly review | `/review`, `/api/review` | The latest step-back review summary and its findings (title, why it matters, evidence, one suggested action) with Accept / Done / Dismiss / Reopen. Same `scripts/review.py` service as the `review` agent; new findings show on the Summary as a "Review" tile and `review:<id>` attention items. Never shows kids' memory text or profile values |
 | Activity | Agent Activity | `/activity` | Latest agent results and last run per agent; sensitive agents' summaries are hidden |
 
 Everything is view-only except the Habits page (see Notes). Because there is no login, sensitive areas (kids memories, profile,
