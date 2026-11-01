@@ -1,0 +1,73 @@
+{
+  "year": 2026,
+  "refresh": "Yearly, after the IRS (October/November) and Minnesota Department of Revenue (December) publish the next year's figures. Dollar thresholds are in tax-year dollars; the engine deflates income to today's dollars before applying them, which treats them as inflation-indexed. Social Security taxation thresholds and the NIIT threshold are fixed in law (not indexed) and are applied in nominal dollars.",
+  "sources": [
+    "IRS Rev. Proc. 2025-32 (2026 inflation adjustments, incl. One Big Beautiful Bill Act changes): MFJ standard deduction $32,200; 0% long-term capital gains rate to $98,900 MFJ.",
+    "Minnesota Department of Revenue, 2026 brackets and standard deduction (Dec 2025): MFJ 5.35% / 6.80% / 7.85% / 9.85% at $48,700 / $193,480 / $337,930; standard deduction $30,600; Social Security subtraction in full at AGI up to $110,780 MFJ.",
+    "SSA 2026 PIA bend points $1,286 and $7,749; IRS 2026 elective deferral limit $24,500."
+  ],
+  "federal": {
+    "mfj": {
+      "standard_deduction": 32200,
+      "senior_addition_per_person": 1650,
+      "brackets": [[24800, 0.10], [100800, 0.12], [211400, 0.22], [403550, 0.24], [512450, 0.32], [768700, 0.35], [null, 0.37]],
+      "ltcg": [[98900, 0.0], [613700, 0.15], [null, 0.20]],
+      "ss_thresholds": [32000, 44000],
+      "niit_threshold": 250000
+    },
+    "single": {
+      "standard_deduction": 16100,
+      "senior_addition_per_person": 2050,
+      "brackets": [[12400, 0.10], [50400, 0.12], [105700, 0.22], [201775, 0.24], [256225, 0.32], [640600, 0.35], [null, 0.37]],
+      "ltcg": [[49450, 0.0], [545500, 0.15], [null, 0.20]],
+      "ss_thresholds": [25000, 34000],
+      "niit_threshold": 200000
+    }
+  },
+  "state": {
+    "MN": {
+      "mfj": {
+        "standard_deduction": 30600,
+        "brackets": [[48700, 0.0535], [193480, 0.068], [337930, 0.0785], [null, 0.0985]],
+        "ss_full_subtraction_agi": 110780,
+        "ss_phaseout_step": 4000,
+        "ss_phaseout_pct": 0.10
+      },
+      "single": {
+        "note": "Estimated: 2025 single figures indexed by the MFJ bracket change (about 2.3%).",
+        "standard_deduction": 15300,
+        "brackets": [[33310, 0.0535], [109420, 0.068], [203140, 0.0785], [null, 0.0985]],
+        "ss_full_subtraction_agi": 86410,
+        "ss_phaseout_step": 2000,
+        "ss_phaseout_pct": 0.10
+      }
+    }
+  },
+  "early_withdrawal": {
+    "penalty": 0.10,
+    "penalty_free_age": 60,
+    "note": "Pre-tax withdrawals before 59 1/2 (integer ages: before 60) pay the 10% penalty. The rule of 55 and 72(t) payments are not modeled, so early-retirement results are conservative."
+  },
+  "working_years": {
+    "gains_rate": 0.27,
+    "pretax_rate": 0.42,
+    "note": "Flat rates for withdrawals while still working (e.g. college shortfalls): gains at 15% federal + 3.8% NIIT + about 7.85% MN; pre-tax at 24% federal + 7.85% MN + 10% penalty."
+  },
+  "rmd": {
+    "start_age": 75,
+    "uniform_lifetime_divisors": {
+      "75": 24.6, "76": 23.7, "77": 22.9, "78": 22.0, "79": 21.1, "80": 20.2, "81": 19.4, "82": 18.5,
+      "83": 17.7, "84": 16.8, "85": 16.0, "86": 15.2, "87": 14.4, "88": 13.7, "89": 12.9, "90": 12.2,
+      "91": 11.5, "92": 10.8, "93": 10.1, "94": 9.5, "95": 8.9, "96": 8.4, "97": 7.8, "98": 7.3,
+      "99": 6.8, "100": 6.4
+    }
+  },
+  "social_security": {
+    "full_retirement_age": 67,
+    "bend_points": [1286, 7749],
+    "computation_years": 35
+  },
+  "contribution_limits": {
+    "elective_deferral": 24500
+  }
+}

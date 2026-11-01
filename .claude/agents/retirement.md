@@ -58,10 +58,34 @@ tools to build a run, and you never sum balances or estimate an allocation yours
   bonds / cash, balance-weighted. Returns come from the **capital-market assumptions** in
   `scripts/retirement_data/cma.json` (forward-looking 10-15 year forecasts, net of fees), with
   a **glide path** that lowers the stock share toward retirement and beyond.
-- **Annual contribution** = trailing-12-month income − spending from the snapshot, unless the
-  user set `contribution_override`. Say plainly that this is a net-pay figure: it misses
-  payroll 403b/401k deferrals and employer match, and counts cash piling up in checking as
-  saved.
+- **Cash** above an emergency reserve (`household.emergency_reserve_months` × trailing monthly
+  spending) counts as taxable money held in cash; the reserve itself is set aside.
+- **Contributions** = each person's payroll deferral (gross salary × deferral %, capped at the
+  IRS limit) + employer contributions into pre-tax, plus trailing-12-month take-home savings
+  (income − spending) into taxable unless `household.taxable_contribution` is set.
+
+## The household model (what the engine simulates)
+
+- **Three tax buckets** (taxable, pre-tax, Roth) plus a **kids' bucket** (529s etc.). Spending
+  comes from taxable first, then pre-tax, then Roth (`household.withdrawal_order`).
+- **Taxes**: every withdrawal is grossed up for federal + Minnesota income tax, Social Security
+  taxation and capital gains (the taxable account's gain share comes from Monarch cost basis),
+  with the 10% penalty on pre-tax money before 60 and **RMDs from 75**. Tables live in
+  `scripts/retirement_data/tax_2026.json` (refreshed yearly). `retirement_spend` is
+  **after-tax** spending in today's dollars.
+- **Social Security per person** from `household.people[*].ss_pia_monthly` (the statement's
+  full benefit at 67) and `ss_claim_age`, with SSA's early/delayed factors and a reduction if
+  fewer than 35 working years. `Survivor` scenarios keep the larger benefit after the first
+  death and cut spending to `survivor_spend_factor`.
+- **Cash-flow events** on top of today's budget: mortgage principal + interest (fixed dollars,
+  only once retired, through payoff; escrow is inside `retirement_spend`), health insurance
+  before Medicare and Medicare after (growing faster than inflation), and college per kid
+  (`household.college`), paid from the kids' bucket first.
+- **Not modeled yet (Phase 2b/3):** spending guardrails, variable inflation, fat-tailed
+  returns, stress tests, Roth conversions. Say so when relevant: with mostly pre-tax money,
+  RMDs from 75 drive a large tax bill, and Roth conversions in the low-tax years between
+  retirement and 75 are the obvious lever to discuss (a recommendation, not something the
+  model optimizes).
 
 Check what it sees, and fix classification when the user tells you something:
 ```
@@ -78,9 +102,21 @@ user gives their mix; then persist it with `accounts classify --allocation`.
 ## Assumptions: the user's choices, always overridable
 
 The user's fixed choices live in `finance_config` key `retirement_assumptions`:
-retirement age, plan-through age, retirement spend (today's dollars), inflation, Social
-Security start age and amount, `fallback_stock_pct`, optional `glide_path`, `fee`,
-`contribution_override`, `allocation_override`, and the default `scenarios` list.
+retirement age, plan-through age, `retirement_spend` (after-tax, today's dollars, with
+`spend_source` explaining it), inflation, `fallback_stock_pct`, optional `glide_path`, `fee`,
+`allocation_override`, the `household` block (people with birth dates, gross salaries,
+deferral %, employer contributions, Social Security, claim ages; mortgage; college; kids'
+contributions; emergency reserve months; healthcare costs; withdrawal order), and the
+default `scenarios` list. Edit the household block by reading it with `config get`, changing
+the field, and writing the whole block back with `config set --key household`.
+
+**Scenarios** are a name plus overrides. Engine keys (`retirement_age`, `retirement_spend`,
+`allocation`, `glide_path`, `ss_factor` for a benefit cut, `expected_return`/`volatility` with
+`allocation: null`) apply directly; these are interpreted by the service:
+`college_per_kid`, `reserve_months`, `ss_claim_age` (everyone), `people_overrides`
+(`{"Caroline": {"ss_pia_monthly": 2200}}`), `first_death_age`, `invest_idle_cash`,
+`extra_events` (extra dated cash flows: `name`, `start_age`, `end_age`, `amount`, optional
+`real: false` for fixed dollars).
 ```
 python scripts/retirement_store.py config get
 python scripts/retirement_store.py config set --key retirement_spend --value 110000
@@ -92,7 +128,10 @@ one-off override in a request ("model it at 90/10", "assume we save $70k"), pass
 `run --override` for that run, and offer to persist it with `config set`.
 
 **Never invent an assumption silently.** Everything assumed shows up in the run's
-`warnings` and `sources`; relay the warnings that matter.
+`warnings` and `sources`; relay the warnings that matter. Current placeholders to mention
+until the user replaces them: gross salaries (estimated from take-home pay), employer
+contributions (assumed 0), Caroline's Social Security (assumed), and the fund mix of employer
+plans Monarch returns no holdings for.
 
 ## The run workflow
 
@@ -192,8 +231,10 @@ than the simulation noise as drift.
 
 For retirement-relevant or large questions ("can we afford a second home", "can we retire
 at 58", "what if we added a $100k renovation"), answer by running it as a **what-if
-scenario** with `retirement_store.py run --tag whatif --scenarios '[...]'` (a lump sum
-from the portfolio = a lower `current_balance`), compare the resulting success probability to the base case, and answer from the
+scenario** with `retirement_store.py run --tag whatif --scenarios '[...]'`. A purchase or
+lump sum is an `extra_events` entry in today's dollars at the household head's age, e.g.
+`{"name": "Renovation", "extra_events": [{"name": "Renovation", "start_age": 40, "end_age": 40, "amount": 100000}]}`
+(a second home's yearly costs: `start_age` to `"plan_end"`). Then compare the resulting success probability to the base case, and answer from the
 delta ("retiring at 58 drops success from 81% to ~68%"). For small, near-term purchases
 that aren't really retirement questions, defer to the `finance` subagent's cashflow/budget
 headroom answer rather than running a full simulation. Recommendations should be framed

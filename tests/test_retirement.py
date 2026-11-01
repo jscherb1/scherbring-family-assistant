@@ -202,3 +202,104 @@ def test_rerun_same_day_never_overwrites(db, tmp_path, capsys):
     assert retirement_store.main(args) == 0
     assert retirement_store.main(args) == 2
     assert "already exists" in capsys.readouterr().err
+
+
+HOUSEHOLD = {
+    "people": [
+        {"name": "Alex", "birth_date": "1989-06-15", "gross_salary": 300000, "deferral_pct": 0.10,
+         "employer_contribution": 1000, "ss_pia_monthly": 4000, "ss_claim_age": 67},
+        {"name": "Sam", "birth_date": "1989-02-10", "gross_salary": 100000, "deferral_pct": 0.10,
+         "ss_pia_monthly": 3000, "ss_claim_age": 67},
+    ],
+    "mortgage": {"monthly_pi": 1000, "payoff": "2050-11"},
+    "college": {"per_kid_today": 100000, "years": 4, "start_age": 18,
+                "kids": [{"name": "Kid", "birth_date": "2019-04-10"}]},
+    "kids_contribution": 1000, "emergency_reserve_months": 6,
+    "healthcare": {"pre_medicare_annual": 20000, "medicare_annual": 10000, "real_growth": 0.0},
+}
+
+
+@pytest.fixture
+def hdb(db):
+    stored = {k: v for k, v in STORED.items() if not k.startswith("ss_")}
+    stored["household"] = HOUSEHOLD
+    stored["scenarios"] = [{"name": "Retire at 55", "retirement_age": 55},
+                           {"name": "College 200k", "college_per_kid": 200000},
+                           {"name": "Reserve 12 months", "reserve_months": 12},
+                           {"name": "Claim at 70", "ss_claim_age": 70},
+                           {"name": "Sam lower", "people_overrides": {"Sam": {"ss_pia_monthly": 2000}}},
+                           {"name": "Survivor", "first_death_age": 85}]
+    retirement._set_json(retirement.ASSUMPTIONS_KEY, stored, db)
+    return db
+
+
+def test_household_build_contributions_reserve_and_events(hdb):
+    r = retirement.resolve_assumptions(hdb, TODAY)
+    a = r["assumptions"]
+    # deferrals capped at the IRS limit for Justin (30k -> 24.5k) + 10k + 1k employer
+    assert a["contributions"]["pretax"] == pytest.approx(24_500 + 10_000 + 1_000)
+    assert a["contributions"]["taxable"] == 50_000
+    # 6 months of 150k/yr spending held back from 30k cash -> nothing excess
+    assert r["household"]["reserve"] == pytest.approx(75_000)
+    assert a["buckets"]["taxable"] == pytest.approx(55_000)  # tax 50k + car fund 5k, no excess cash
+    names = [e["name"] for e in a["events"]]
+    assert "College: Kid" in names and "Mortgage P&I (fixed, through payoff)" in names
+    college = next(e for e in a["events"] if e["name"] == "College: Kid")
+    assert college["start_age"] == 48 and college["amount"] == 25_000 and college["funding"] == "kids"
+    assert a["current_age"] == 37 and a["people"][1]["age_offset"] == 0
+
+
+def test_household_scenarios_are_fully_built(hdb):
+    a = retirement.resolve_assumptions(hdb, TODAY)["assumptions"]
+    sc = {s["name"]: s for s in a["scenarios"]}
+    assert sc["Retire at 55"]["retirement_age"] == 55
+    assert next(e for e in sc["College 200k"]["events"] if e["name"].startswith("College"))["amount"] == 50_000
+    assert all(p["ss_claim_age"] == 70 for p in sc["Claim at 70"]["people"])
+    assert sc["Sam lower"]["people"][1]["ss_pia"] == 24_000
+    assert sc["Survivor"]["survivor"]["first_death_age"] == 85
+    assert "household" not in sc["Survivor"]
+
+
+def test_household_run_and_workbook(hdb, tmp_path):
+    out = retirement.run(hdb, TODAY, n_paths=200, seed=1)
+    assert {s["name"] for s in out["scenarios"]} >= {"Retire at 55", "Survivor"}
+    payload = retirement.workbook_payload(TODAY.isoformat(), "H", "B")
+    import retirement_workbook
+    retirement_workbook.build_workbook(payload, str(tmp_path / "h.xlsx"))
+    assert (tmp_path / "h.xlsx").exists()
+
+
+def test_set_assumption_rejects_bad_household_and_keeps_old(hdb):
+    before = retirement.get_assumptions(hdb)
+    bad = dict(HOUSEHOLD, people=[dict(HOUSEHOLD["people"][0], ss_claim_age=75)])
+    with pytest.raises(retirement.RetirementError):
+        retirement.set_assumption("household", bad, db_path=hdb, today=TODAY)
+    assert retirement.get_assumptions(hdb) == before
+
+
+def test_scenario_null_override_really_removes_base_allocation(hdb):
+    retirement.set_assumption("scenarios", [{"name": "Scalar", "allocation": None, "glide_path": None,
+                                             "expected_return": 0.02, "volatility": 0.0}], db_path=hdb, today=TODAY)
+    out = retirement.run(hdb, TODAY, n_paths=200, seed=1)
+    scalar = next(s for s in out["scenarios"] if s["name"] == "Scalar")
+    assert scalar["success_probability"] != out["base"]["success_probability"] or scalar["delta_pp"] != 0
+    _, a, result = retirement.load_run(TODAY.isoformat(), out["tag"])
+    sc = next(s for s in result["scenarios"] if s["name"] == "Scalar")
+    assert "allocation" not in sc["assumptions"] and sc["returns"]["now"]["mean"] == 0.02
+
+
+def test_extra_events_scenario_lowers_success(hdb):
+    out = retirement.run(hdb, TODAY, n_paths=300, seed=2, extra_scenarios=[
+        {"name": "Big purchase", "extra_events": [{"name": "Lake place", "start_age": 40, "end_age": 40,
+                                                    "amount": 600000}]}])
+    big = next(s for s in out["scenarios"] if s["name"] == "Big purchase")
+    assert big["ending_balance_real_p50"] < out["base"]["ending_balance_real_p50"]
+
+
+def test_rerun_never_overwrites_older_files_without_a_run_file(db, tmp_path):
+    out_dir = tmp_path / "runs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"result-{TODAY.isoformat()}.json").write_text("{}")  # left by an older workflow
+    out = retirement.run(db, TODAY, n_paths=50, seed=1)
+    assert out["tag"] == "2"
+    assert (out_dir / f"result-{TODAY.isoformat()}.json").read_text() == "{}"
