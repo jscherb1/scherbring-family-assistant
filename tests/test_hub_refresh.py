@@ -243,6 +243,175 @@ def test_failed_delivery_is_not_recorded_so_it_retries(monkeypatch, db):
     assert r2["notify"]["sent"] is True and len(sent) == 2
 
 
+def seed_tasks(db, n=12):
+    myhub.set_snapshot("task", [{"title": f"t{i}", "day": "2026-10-30", "priority": 4} for i in range(n)], db_path=db)
+
+
+def test_empty_task_read_is_refused_and_does_not_reannounce(monkeypatch, db):
+    add_agent_task(db, False)
+    sent = []
+    monkeypatch.setattr(notify, "send", lambda text, **k: sent.append(text) or Delivered())
+    stub_ha(monkeypatch)
+    twelve = [{"content": f"late{i}", "project_id": "4", "priority": 1, "due": {"date": "2026-10-30"}} for i in range(12)]
+    projects = [{"id": "4", "name": "Home"}]
+    stub_todoist(monkeypatch, projects, twelve)
+    hr.refresh(db_path=db, today=TODAY, now=NOW, kinds=("task",), notify=True)     # good read: digest goes out
+    assert len(sent) == 1
+    told = myhub.connect(db).execute("SELECT COUNT(*) FROM hub_notified").fetchone()[0]
+    assert told >= 12
+    stub_todoist(monkeypatch, projects, [])                                        # Todoist "succeeds" with nothing
+    res = hr.refresh(db_path=db, today=TODAY, now=NOW, kinds=("task",), notify=True)
+    assert res["task"]["status"] == "kept old snapshot" and "kept the old snapshot" in res["task"]["errors"][0]
+    assert len(rows(db, "task")) == 12
+    assert myhub.connect(db).execute("SELECT COUNT(*) FROM hub_notified").fetchone()[0] == told  # nothing forgotten
+    health = {r["key"]: r["status"] for r in myhub.connect(db).execute("SELECT key, status FROM system_health")}
+    assert health["todoist_api"] == "warn"
+    stub_todoist(monkeypatch, projects, twelve)                                    # the next good read
+    hr.refresh(db_path=db, today=TODAY, now=NOW, kinds=("task",), notify=True)
+    assert len(sent) == 1                                                          # no re-announce flood
+
+
+def test_sharp_drop_refused_but_small_change_accepted(monkeypatch, db):
+    seed_tasks(db, 12)
+    stub_ha(monkeypatch)
+
+    def tasks(n):
+        return [{"content": f"n{i}", "project_id": "4", "priority": 1, "due": {"date": "2026-11-03"}} for i in range(n)]
+    stub_todoist(monkeypatch, [{"id": "4", "name": "Home"}], tasks(3))      # 3 < 40% of 12
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("task",))["task"]["status"] == "kept old snapshot"
+    stub_todoist(monkeypatch, [{"id": "4", "name": "Home"}], tasks(9))      # ordinary change
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("task",))["task"]["status"] == "updated"
+    assert len(rows(db, "task")) == 9
+
+
+def test_small_stored_list_may_go_empty(monkeypatch, db):
+    seed_tasks(db, 3)                                                       # below the guard threshold
+    stub_ha(monkeypatch)
+    stub_todoist(monkeypatch, [], [])
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("task",))["task"]["status"] == "updated"
+    assert rows(db, "task") == []
+
+
+def test_genuinely_empty_list_is_accepted_after_n_refusals(monkeypatch, db):
+    seed_tasks(db, 12)
+    stub_ha(monkeypatch)
+    stub_todoist(monkeypatch, [], [])
+    statuses = [hr.refresh(db_path=db, today=TODAY, kinds=("task",))["task"]["status"] for _ in range(hr.ACCEPT_AFTER)]
+    assert statuses == ["kept old snapshot"] * (hr.ACCEPT_AFTER - 1) + ["updated"]
+    assert rows(db, "task") == []
+
+
+def test_force_accepts_an_empty_read_at_once(monkeypatch, db):
+    seed_tasks(db, 12)
+    stub_ha(monkeypatch)
+    stub_todoist(monkeypatch, [], [])
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("task",), force=True)["task"]["status"] == "updated"
+    assert rows(db, "task") == []
+
+
+def test_dry_run_does_not_advance_the_refusal_counter(monkeypatch, db):
+    seed_tasks(db, 12)
+    stub_ha(monkeypatch)
+    stub_todoist(monkeypatch, [], [])
+    for _ in range(hr.ACCEPT_AFTER + 2):
+        assert hr.refresh(db_path=db, today=TODAY, kinds=("task",), dry_run=True)["task"]["status"] == "kept old snapshot"
+    assert hr.meta_get("refresh_shrunk_task", db) is None
+
+
+def test_empty_event_read_refused_when_many_stored(monkeypatch, db):
+    seed_events(db, 8)
+    stub_ha(monkeypatch)                                                    # every calendar "succeeds" empty
+    res = hr.refresh(db_path=db, today=TODAY, kinds=("event",))
+    assert res["event"]["status"] == "kept old snapshot" and len(rows(db, "event")) == 8
+
+
+def test_disappearing_calendar_keeps_snapshot_and_warns_until_forced(monkeypatch, db):
+    ev = {"calendar.scherbring_family": [{"summary": "E", "start": {"date": "2026-11-04"}, "end": {"date": "2026-11-05"}}]}
+    stub_ha(monkeypatch, ev)
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("event",))["event"]["status"] == "updated"
+    assert hr.meta_get("refresh_calendars", db) == ["calendar.meal_planning", "calendar.scherbring_family"]
+    stub_ha(monkeypatch, ev, cals=CALS[:1])                                 # Meal planning vanished from HA
+    res = hr.refresh(db_path=db, today=TODAY, kinds=("event",))
+    assert res["event"]["status"] == "kept old snapshot" and "no longer listed" in res["event"]["errors"][0]
+    health = {r["key"]: r["status"] for r in myhub.connect(db).execute("SELECT key, status FROM system_health")}
+    assert health["hub_calendar"] == "warn"
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("event",), force=True)["event"]["status"] == "updated"
+    assert hr.meta_get("refresh_calendars", db) == ["calendar.scherbring_family"]
+
+
+def test_new_calendar_is_not_an_error(monkeypatch, db):
+    stub_ha(monkeypatch, cals=CALS[:1])
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("event",))["event"]["status"] == "updated"
+    stub_ha(monkeypatch, cals=CALS)
+    assert hr.refresh(db_path=db, today=TODAY, kinds=("event",))["event"]["status"] == "updated"
+
+
+def test_birthdays_calendar_is_excluded_to_keep_the_old_set(monkeypatch, db):
+    cals = CALS + [{"name": "Birthdays", "entity_id": "calendar.birthdays"}]
+    ev = {"calendar.birthdays": [{"summary": "B", "start": {"date": "2026-11-03"}, "end": {"date": "2026-11-04"}}]}
+    stub_ha(monkeypatch, ev, cals=cals)
+    hr.refresh(db_path=db, today=TODAY, kinds=("event",))
+    assert rows(db, "event") == []
+
+
+def test_malformed_event_does_not_kill_the_run_or_skip_tasks_and_health(monkeypatch, db):
+    seed_events(db, 3)
+    bad = {"calendar.scherbring_family": [{"summary": "Bad", "start": {"date": "not-a-date"}, "end": {"date": "x"}}],
+           "calendar.meal_planning": [{"summary": "NoStart"}]}
+    stub_ha(monkeypatch, bad)
+    stub_todoist(monkeypatch, [{"id": "4", "name": "Home"}],
+                 [{"content": "ok task", "project_id": "4", "priority": 1, "due": {"date": "2026-11-03"}}])
+    res = hr.refresh(db_path=db, today=TODAY)
+    assert res["event"]["status"] == "kept old snapshot" and len(res["event"]["errors"]) >= 1
+    assert res["task"]["status"] == "updated" and [r["title"] for r in rows(db, "task")] == ["ok task"]
+    assert len(rows(db, "event")) == 3
+    health = {r["key"]: r["status"] for r in myhub.connect(db).execute("SELECT key, status FROM system_health")}
+    assert health["hub_calendar"] == "warn" and health["todoist_api"] == "ok"
+
+
+def test_unexpected_crash_in_one_kind_still_runs_the_other(monkeypatch, db):
+    def boom(*a, **k):
+        raise KeyError("surprise")
+    monkeypatch.setattr(hr, "fetch_events", boom)
+    stub_todoist(monkeypatch, [{"id": "4", "name": "Home"}],
+                 [{"content": "ok task", "project_id": "4", "priority": 1, "due": {"date": "2026-11-03"}}])
+    res = hr.refresh(db_path=db, today=TODAY)
+    assert "crashed" in res["event"]["errors"][0] and res["task"]["status"] == "updated"
+    health = {r["key"]: r["status"] for r in myhub.connect(db).execute("SELECT key, status FROM system_health")}
+    assert health["hub_calendar"] == "warn" and health["todoist_api"] == "ok"
+
+
+def test_failed_send_records_a_health_warn_without_alerting(monkeypatch, db):
+    overdue_setup(monkeypatch)
+    alerts = []
+    import system_health
+    monkeypatch.setattr(system_health, "telegram_notify", lambda m: alerts.append(m))
+    monkeypatch.setattr(notify, "send", lambda text, **k: Delivered(False))
+    hr.refresh(db_path=db, today=TODAY, now=NOW, notify=True)
+    health = {r["key"]: r["status"] for r in myhub.connect(db).execute("SELECT key, status FROM system_health")}
+    assert health["hub_notify"] == "warn" and not alerts
+
+
+def test_overnight_freshness_is_not_amber(monkeypatch, db):
+    import insights
+    monkeypatch.setattr(insights, "freshness", lambda db_path=None: {})
+    myhub.set_snapshot("task", [{"title": "t", "day": "2026-11-03"}], db_path=db)
+    c = myhub.connect(db)
+    c.execute("UPDATE hub_items SET synced_at='2026-11-02T22:45:00'")
+    c.commit()
+    c.close()
+    clock = {"at": datetime(2026, 11, 3, 3, 0)}
+
+    class FakeDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock["at"]
+    monkeypatch.setattr(myhub, "datetime", FakeDT)
+    assert {f["key"]: f["stale"] for f in myhub.freshness(db_path=db)}["tasks"] is False   # 3am, last run 10:45pm
+    clock["at"] = datetime(2026, 11, 3, 14, 0)                                              # same age by day: stale
+    assert {f["key"]: f["stale"] for f in myhub.freshness(db_path=db)}["tasks"] is True
+
+
 def test_cli_dry_run_prints_json(monkeypatch, db, capsys):
     stub_ha(monkeypatch)
     stub_todoist(monkeypatch)

@@ -38,6 +38,7 @@ SYSTEMS = {
     # recorded by scripts/hub_refresh.py on every run (the agent pings above test the MCP connectors instead)
     "todoist_api": ("Todoist (API token)", "script"),
     "hub_calendar": ("Calendar (via Home Assistant)", "script"),
+    "hub_notify": ("Hub notifications (Telegram)", "script"),
     "todoist": ("Todoist", "agent"),
     "calendar": ("Google Calendar", "agent"),
     "gmail": ("Gmail", "agent"),

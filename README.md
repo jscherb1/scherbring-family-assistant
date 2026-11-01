@@ -547,6 +547,9 @@ Calendar events and Todoist tasks are refreshed by `assistant-hub-refresh.timer`
 every Home Assistant calendar for local today through +7 days (holiday calendars skipped) and the dated open Todoist tasks
 (Shopping, Costco and Staple Groceries projects excluded) and writes the snapshot through `myhub.set_snapshot`. A failed read keeps the old
 snapshot (one unreadable calendar skips the whole event update) and shows under System status as "Todoist (API token)" / "Calendar (via Home Assistant)".
+Safety guards: an empty read over 5+ stored items, a drop below 40% of 10+ stored items, or a calendar HA stops listing keeps the old snapshot
+and shows a warning; the new read is accepted after 4 refusals in a row (about an hour), or at once with `python scripts/hub_refresh.py --force`.
+HA's Birthdays calendar is excluded (`EXCLUDED_CALENDARS`) to keep the set the old agent read.
 Needs `TODOIST_API_TOKEN` in `~/.config/scherbring-assistant/.env`. Install: `scripts/install_systemd.sh assistant-hub-refresh.timer`.
 The timer runs with `--notify`, which is held back while the `myhub-refresh` task above is enabled; disabling that task is the cutover
 (`docs/TODO.md`). The `myhub` agent now only calls `python scripts/hub_refresh.py` for an on-demand refresh.

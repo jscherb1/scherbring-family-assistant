@@ -45,6 +45,7 @@
       "Bash(python scripts/journal_store.py *)",
       "Bash(python scripts/myhub_store.py *)",
       "Bash(python scripts/hub_refresh.py *)",
+      "Bash(python scripts/hub_refresh.py)",
       "Bash(python scripts/reauth_store.py *)",
       "Bash(python scripts/system_health_store.py *)",
       "Bash(python scripts/chores_store.py *)",

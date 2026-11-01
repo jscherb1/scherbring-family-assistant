@@ -192,7 +192,10 @@ def freshness(*, db_path=None) -> list[dict]:
     now = datetime.now()
     out = []
     for label, key, at in rows:
-        stale = at is None or now - datetime.fromisoformat(at) > timedelta(minutes=2 * FRESH_MINUTES[key])
+        limit = timedelta(minutes=2 * FRESH_MINUTES[key])
+        if key in ("calendar", "tasks") and not (6 <= now.hour < 23):
+            limit = timedelta(hours=12)  # the 15-minute hub-refresh timer sleeps 10:45pm-6am: that is not stale
+        stale = at is None or now - datetime.fromisoformat(at) > limit
         out.append({"label": label, "key": key, "at": at, "stale": stale})
     return out
 

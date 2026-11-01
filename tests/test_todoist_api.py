@@ -108,11 +108,20 @@ def test_add_task_resolves_project_and_skips_duplicate(monkeypatch):
     assert all(s[1] == "GET" for s in seen)  # nothing was created
 
     seen.clear()
-    responses = [{"results": [{"id": "9", "name": "Shopping"}], "next_cursor": None}, {"id": "new1"}]
+    responses = [{"results": [{"id": "9", "name": "Shopping"}], "next_cursor": None},
+                 {"results": [], "next_cursor": None}, {"id": "new1"}]
     monkeypatch.setattr(ta.urllib.request, "urlopen", _urlopen(responses, seen))
-    res = ta.add_task("Milk", "Shopping")
+    res = ta.add_task("Milk", "shopping")          # dedupe check is the default; name comes back as Todoist spells it
     assert res == {"skipped": False, "id": "new1", "content": "Milk", "project": "Shopping"}
-    assert seen[1][1] == "POST" and json.loads(seen[1][2]) == {"content": "Milk", "project_id": "9"}
+    assert seen[2][1] == "POST" and json.loads(seen[2][2]) == {"content": "Milk", "project_id": "9"}
+
+
+@pytest.mark.parametrize("bad", [0, 5, "4", 2.5, True])
+def test_add_task_rejects_bad_priority_before_any_call(monkeypatch, bad):
+    monkeypatch.setattr(ta.urllib.request, "urlopen", _urlopen([]))   # any HTTP call would raise StopIteration
+    with pytest.raises(ta.TodoistError) as e:
+        ta.add_task("x", "Shopping", priority=bad)
+    assert e.value.code == "bad_input" and e.value.exit_code == 2
 
 
 def test_due_day_converts_utc_to_local():
@@ -122,3 +131,7 @@ def test_due_day_converts_utc_to_local():
     # 02:30Z is the evening before in Chicago
     assert ta.due_day({"due": {"date": "2026-11-04T02:30:00Z"}}, ha.local_tz()) == "2026-11-03"
     assert ta.due_day({"due": None}) is None
+    tz = ha.local_tz()
+    assert ta.due_day({"due": {"date": "2026-11-04T02:30:00+00:00"}}, tz) == "2026-11-03"
+    assert ta.due_day({"due": {"date": "2026-11-03T21:00:00-05:00"}}, tz) == "2026-11-03"   # 20:00 Chicago
+    assert ta.due_day({"due": {"date": "2026-11-04T01:00:00+05:30"}}, tz) == "2026-11-03"   # offsets other than Z/UTC

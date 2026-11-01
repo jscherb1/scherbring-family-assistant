@@ -128,25 +128,30 @@ def task_on_project(content: str, project: str) -> bool:
 
 
 def add_task(content: str, project: str | None = None, *, due_string: str | None = None,
-             priority: int | None = None, skip_if_present: bool = False) -> dict:
-    """Create a task on a project resolved by name. With skip_if_present an existing open task of the same
-    text is returned as {"skipped": True, ...} instead of adding a duplicate. priority is Todoist's API value
-    (4 = p1 urgent, 1 = p4 normal)."""
+             priority: int | None = None, skip_if_present: bool = True) -> dict:
+    """Create a task on a project resolved by name. By default an existing open task of the same text on that
+    project is returned as {"skipped": True, ...} instead of adding a duplicate (pass skip_if_present=False to
+    force one). priority is Todoist's API value (4 = p1 urgent, 1 = p4 normal), 1-4 only. The result names the
+    project as Todoist spells it."""
     content = (content or "").strip()
     if not content:
         raise TodoistError("A task needs some text.", "bad_input", 2)
+    if priority is not None and (isinstance(priority, bool) or not isinstance(priority, int) or not 1 <= priority <= 4):
+        raise TodoistError(f"priority must be 1-4, got {priority!r}.", "bad_input", 2)
     body: dict = {"content": content}
+    pname = None
     if project:
         proj = resolve_project(project)
+        pname = proj["name"]
         body["project_id"] = proj["id"]
         if skip_if_present and is_on_list(content, list_open_tasks(proj["id"])):
-            return {"skipped": True, "content": content, "project": proj["name"]}
+            return {"skipped": True, "content": content, "project": pname}
     if due_string:
         body["due_string"] = due_string
     if priority is not None:
         body["priority"] = priority
     res = _open("/tasks", body)
-    return {"skipped": False, "id": (res or {}).get("id"), "content": content, "project": project}
+    return {"skipped": False, "id": (res or {}).get("id"), "content": content, "project": pname}
 
 
 def due_day(task: dict, tz=None) -> str | None:
@@ -155,14 +160,15 @@ def due_day(task: dict, tz=None) -> str | None:
     d = due.get("date")
     if not d:
         return None
-    if len(d) > 10 and d.endswith("Z"):
+    if len(d) > 10:
         from datetime import datetime, timezone
         try:
-            dt = datetime.fromisoformat(d.replace("Z", "+00:00")).astimezone(tz or timezone.utc)
-            return dt.strftime("%Y-%m-%d")
+            dt = datetime.fromisoformat(d.replace("Z", "+00:00"))
+            if dt.tzinfo is not None:  # any explicit offset (Z, +00:00, -05:00): convert to local
+                return dt.astimezone(tz or timezone.utc).strftime("%Y-%m-%d")
         except ValueError:
             pass
-    return d[:10]
+    return d[:10]  # a plain date, or a floating time that is already local
 
 
 def main(argv=None) -> int:
