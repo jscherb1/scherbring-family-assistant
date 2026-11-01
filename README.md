@@ -28,7 +28,7 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `.claude/agents/profile.md` | Profile subagent — captures/recalls structured facts about the user, family, and friends; other subagents read the store directly |
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
 | `.claude/agents/chores.md` | Chores subagent — kid chore chart (chores, dollar balances, streaks, payouts), the weekly payday summary and the optional afternoon open-chores check |
-| `.claude/agents/myhub.md` | My Hub subagent: answers "what needs my attention?" and keeps the hub's calendar/Todoist snapshot fresh (scheduled morning + evening) |
+| `.claude/agents/myhub.md` | My Hub subagent: answers "what needs my attention?", runs the on-demand hub refresh (`scripts/hub_refresh.py`) and the connector pings |
 | `.claude/agents/gmail.md` | Gmail subagent: read-only email search, read and summarize (search_threads, get_thread, get_message, list_labels; no Bash, no write tools). Infrastructure exception to the agent + UI standard: access only, no service module or dashboard section until a use case is decided |
 | `.claude/agents/dayrating.md` | Day-rating subagent: daily 1-10 rating with a note, the nightly nudge, and the weekly insights report (stats plus an AI-written story) |
 | `.claude/agents/journal.md` | Journal subagent: the 8:30 PM nightly check-in (day rating + yes/no journal questions + open daily habits in one message), recording the reply, managing questions, and "what does X do to my HRV/sleep/mood" |
@@ -87,6 +87,8 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `scripts/chores.py` | Shared chore-chart service (completion rules, money ledger, badges; streaks via `habits.habit_status`). The single code path used by `chores_store.py`, the `/chores` dashboard section and the `/kids` page |
 | `scripts/chores_store.py` | Zero-dep CLI over `chores.py` for the chores subagent (kid/chore/done/undo/status/payout/config sub-commands) |
 | `scripts/myhub.py` | Shared My Hub service: runs every provider in `scripts/hub_providers/`, merges their needs-attention items into one ranked list, stores the calendar/task snapshot. Used by `myhub_store.py` and the dashboard `/me` page |
+| `scripts/todoist_api.py` | Stdlib Todoist API v1 client (`TODOIST_API_TOKEN` via `paths.get_env`): projects, open tasks (paginated), add task by project name, case-insensitive "already on the list" check, typed `TodoistError` |
+| `scripts/hub_refresh.py` | Scripted My Hub refresh: HA calendars (local-day window) and dated Todoist tasks into the hub snapshot, then the notify-check message when `--notify` is on. `--dry-run` shows counts and diffs. Run by `assistant-hub-refresh.timer` and by the `myhub` agent for "refresh my hub" |
 | `scripts/myhub_store.py` | Zero-dep CLI over `myhub.py` for the myhub subagent (summary / attention / dismiss / restore / notify-check / snapshot set / snapshot status) |
 | `scripts/system_health.py` | Shared integration-health service: one latest check result per system (COROS health + training hub, Open-Meteo, Drive, Monarch, Hy-Vee, plus Todoist, Calendar, Gmail, Home Assistant recorded by an agent). One failure is `warn`, two in a row `down`. Feeds the hub Systems tile and attention strip |
 | `scripts/reauth.py` | Remote re-auth service: Google Drive two-step paste sign-in (consent link, then paste the `localhost/callback` address), so an expired Drive login can be refreshed from any device. Shared by `reauth_store.py` (Telegram, via the `myhub` agent) and the dashboard Reconnect page |
@@ -540,6 +542,17 @@ Sleep, recovery, weather and habits are script-reachable, so `assistant-insights
 30 minutes (6am-10pm, no model tokens; `insights refresh --days 3 --source coros_health,weather,habits,journal`). The hub footer
 shows each source's last refresh (amber when older than twice its interval) and a **Refresh now** button for the script tier.
 Install: `scripts/install_systemd.sh assistant-insights-refresh.timer`.
+
+Calendar events and Todoist tasks are refreshed by `assistant-hub-refresh.timer` (every 15 minutes, 6am-10pm, no model tokens): `scripts/hub_refresh.py` reads
+every Home Assistant calendar for local today through +7 days (holiday calendars skipped) and the dated open Todoist tasks
+(Shopping, Costco and Staple Groceries projects excluded) and writes the snapshot through `myhub.set_snapshot`. A failed read keeps the old
+snapshot (one unreadable calendar skips the whole event update) and shows under System status as "Todoist (API token)" / "Calendar (via Home Assistant)".
+Safety guards: an empty read over 5+ stored items, a drop below 40% of 10+ stored items, or a calendar HA stops listing keeps the old snapshot
+and shows a warning; the new read is accepted after 4 refusals in a row (about an hour), or at once with `python scripts/hub_refresh.py --force`.
+HA's Birthdays calendar is excluded (`EXCLUDED_CALENDARS`) to keep the set the old agent read.
+Needs `TODOIST_API_TOKEN` in `~/.config/scherbring-assistant/.env`. Install: `scripts/install_systemd.sh assistant-hub-refresh.timer`.
+The timer runs with `--notify`, which is held back while the `myhub-refresh` task above is enabled; disabling that task is the cutover
+(`docs/TODO.md`). The `myhub` agent now only calls `python scripts/hub_refresh.py` for an on-demand refresh.
 
 ## Chores agent (kid chore chart)
 

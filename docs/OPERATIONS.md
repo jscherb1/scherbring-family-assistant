@@ -17,6 +17,7 @@ Everything runs as **systemd user units** (`systemctl --user ...`). The repo is
 | `assistant-ha-mcp.service` | local Home Assistant MCP server, 127.0.0.1:8086 |
 | `assistant-system-health.timer` | every 2 h: integration health checks, shown on the dashboard's System status page (`python scripts/system_health_store.py status`) |
 | `assistant-insights-refresh.timer` | every 30 min, 6am-10pm: refreshes COROS sleep/recovery, weather, habits and journal answers for My Hub, day rating and Wellness (`python scripts/dayrating_store.py insights refresh --days 3 --source coros_health,weather,habits,journal`) |
+| `assistant-hub-refresh.timer` | every 15 min, 6am-10pm: copies Home Assistant calendar events and dated Todoist tasks into My Hub and, once cut over, sends the hub notify-check message (`python scripts/hub_refresh.py --notify`; preview with `--dry-run`). Needs `TODOIST_API_TOKEN` in the secrets `.env`. Notifications stay muted while the `myhub-refresh` scheduled task is enabled |
 | `assistant-money-sync.timer` | every 30 min, 6am-11pm: copies Monarch budget, transactions, balances, net worth and bills (plus investment holdings on the daily full sync) into the `money_*` tables for the Money page and the `finance` agent (`vendor/monarch-mcp-server/.venv/bin/python scripts/money_sync.py --mode auto`). Status: `python scripts/money_store.py sync-status` |
 | `assistant-credential-check.timer` | daily 09:30: warn before Hy-Vee, Drive, Monarch logins expire |
 | `assistant-backup.timer` | daily 03:15: back up the database, memory notes and secrets |
