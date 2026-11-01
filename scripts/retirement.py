@@ -725,7 +725,8 @@ def _unique_tag(out: Path, as_of: str, tag: str) -> str:
     """The tag itself if no run with it exists for the date, else tag-2, tag-3, ... (or 2, 3, ...
     with no tag), so a re-run never overwrites an earlier run's files."""
     def taken(t: str) -> bool:
-        return (out / f"run-{as_of}{'-' + t if t else ''}.json").exists()
+        stem = f"{as_of}{'-' + t if t else ''}"
+        return any((out / f"{k}-{stem}.json").exists() for k in ("assumptions", "result", "run"))
     if not taken(tag):
         return tag
     n = 2

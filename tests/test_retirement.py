@@ -294,3 +294,12 @@ def test_extra_events_scenario_lowers_success(hdb):
                                                     "amount": 600000}]}])
     big = next(s for s in out["scenarios"] if s["name"] == "Big purchase")
     assert big["ending_balance_real_p50"] < out["base"]["ending_balance_real_p50"]
+
+
+def test_rerun_never_overwrites_older_files_without_a_run_file(db, tmp_path):
+    out_dir = tmp_path / "runs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"result-{TODAY.isoformat()}.json").write_text("{}")  # left by an older workflow
+    out = retirement.run(db, TODAY, n_paths=50, seed=1)
+    assert out["tag"] == "2"
+    assert (out_dir / f"result-{TODAY.isoformat()}.json").read_text() == "{}"
