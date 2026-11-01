@@ -254,6 +254,43 @@ def parse_recovery(text: str) -> dict[str, float]:
     return out
 
 
+def parse_sleep_hrv(text: str) -> dict[str, dict[str, float]]:
+    """querySleepHrv -> {day: {hrv_ms, hrv_base_low, hrv_base_high, hrv_baseline}} from the official daily
+    assessment only. The raw time-series section that follows it is ignored (the tool says not to average it).
+    Days with no official value are skipped. Dated by wake-up day, like the web series."""
+    text = re.split(r"\nSleep HRV Time Series", text, maxsplit=1)[0]
+    out: dict[str, dict[str, float]] = {}
+    for m in re.finditer(r"^(\d{4}-\d{2}-\d{2}):\n((?:[ \t]+.*\n?)+)", text, flags=re.M):
+        body = m.group(2)
+        row: dict[str, float] = {}
+        if s := re.search(r"HRV Avg: (\d+(?:\.\d+)?) ms", body):
+            row["hrv_ms"] = float(s.group(1))
+        if s := re.search(r"Normal Range: (\d+(?:\.\d+)?) - (\d+(?:\.\d+)?) ms", body):
+            row["hrv_base_low"], row["hrv_base_high"] = float(s.group(1)), float(s.group(2))
+        if s := re.search(r"Baseline: (\d+(?:\.\d+)?) ms", body):
+            row["hrv_baseline"] = float(s.group(1))
+        if row.get("hrv_ms"):
+            out[m.group(1)] = row
+    return out
+
+
+def parse_training_load(text: str) -> dict[str, dict[str, float]]:
+    """queryTrainingLoadAssessment -> {day: {load_short, load_long, load_ratio}}. COROS's short-term load is a
+    7-day figure and long-term a 28-day one, but they are not on the same scale as the web series."""
+    out: dict[str, dict[str, float]] = {}
+    for block in re.split(r"\n(?=\d{4}-\d{2}-\d{2}\n)", text):
+        head = re.match(r"(\d{4}-\d{2}-\d{2})\n", block)
+        if not head:
+            continue
+        row: dict[str, float] = {}
+        for label, name in (("Short-Term Load", "load_short"), ("Long-Term Load", "load_long"), ("Load Ratio", "load_ratio")):
+            if s := re.search(rf"^{label}: (\d+(?:\.\d+)?)\s*$", block, flags=re.M):
+                row[name] = float(s.group(1))
+        if row:
+            out[head.group(1)] = row
+    return out
+
+
 def main(argv: list[str]) -> int:
     try:
         if argv[:1] == ["auth-url"]:

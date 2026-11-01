@@ -28,7 +28,11 @@
     <figure class="card wring">
       {{ charts.rings.strain }}
       <figcaption><strong>Load</strong>
-        <span>{% if st.zone == 'ok' %}In the recommended range{% elif st.zone == 'low' %}Below the recommended range{% elif st.zone == 'high' %}Above the recommended range{% elif st.day %}7 days to {{ st.day|fmt_date }}{% else %}No load data yet{% endif %}</span></figcaption>
+        <span>{% if st.zone == 'ok' %}In the recommended range{% elif st.zone == 'low' %}Below the recommended range{% elif st.zone == 'high' %}Above the recommended range{% elif st.day %}7 days to {{ st.day|fmt_date }}{% else %}No load data yet{% endif %}</span>
+        {% set lf = data.load_freshness %}
+        <span class="wnote" title="The 7-day load and its recommended range come from COROS's Training Hub once a week; the live acute/fitness/ratio come from the COROS watch feed every 30 minutes">
+          Weekly load: {{ ('through ' ~ (lf.weekly.day|fmt_date)) if lf.weekly.day else 'no data' }}{% if lf.weekly.age_days is not none and lf.weekly.age_days > 8 %} (stale){% endif %}
+          · Live: {% if lf.live.day %}{{ lf.live.day|fmt_date }} · {% set parts = [] %}{% if lf.live.short is not none %}{% set _ = parts.append('acute ' ~ (lf.live.short|int)) %}{% endif %}{% if lf.live.long is not none %}{% set _ = parts.append('fitness ' ~ (lf.live.long|int)) %}{% endif %}{% if lf.live.ratio is not none %}{% set _ = parts.append('ratio ' ~ ('%.2f'|format(lf.live.ratio))) %}{% endif %}{{ parts|join(', ') }}{% else %}no data{% endif %}</span></figcaption>
     </figure>
   </section>
 

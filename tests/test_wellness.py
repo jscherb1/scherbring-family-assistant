@@ -235,10 +235,28 @@ def test_coros_wellness_keeps_new_day_detail_fields():
     d = "2026-10-13"
     assert out["coros:ati"][d] == 15.0 and out["coros:cti"][d] == 46.0 and out["coros:load_28d"][d] == 513
     assert out["coros:load_rec_min"][d] == 322.0 and out["coros:load_rec_max"][d] == 579.6
-    assert out["coros:hrv_base_low"][d] == 34.0 and out["coros:hrv_base_high"][d] == 50.0
-    assert out["coros:hrv_vs_baseline"][d] == 6.0 and out["coros:training_load"][d] == 0.0
+    assert "coros:hrv_base_low" not in out and "coros:hrv_vs_baseline" not in out  # HRV band comes from the MCP now
+    assert out["coros:training_load"][d] == 0.0
     assert "coros:vo2max" not in out
     assert {"coros:load_rec_min", "coros:hrv_base_low", "coros:fatigue_state"} <= insights.NOT_ANALYZED
+
+
+def test_load_freshness_shows_weekly_and_live_load(db):
+    put(db, "coros:load_7d", {back(6): 250}, source="coros_wellness")
+    empty = wellness.today_view(now=MORNING, db_path=db)["load_freshness"]
+    assert empty["live"]["day"] is None and empty["weekly"]["age_days"] == 6
+    put(db, "coros:mcp_load_short", {back(0): 32, back(1): 24})
+    put(db, "coros:mcp_load_long", {back(0): 47})
+    put(db, "coros:mcp_load_ratio", {back(0): 0.68})
+    lf = wellness.today_view(now=MORNING, db_path=db)["load_freshness"]
+    assert lf["live"] == {"day": TODAY.isoformat(), "age_days": 0, "short": 32.0, "long": 47.0, "ratio": 0.68}
+    assert lf["weekly"]["day"] == back(6).isoformat()
+    put(db, "coros:load_7d", {back(9): 240}, source="coros_wellness")  # outside the 7-day window the view reads
+    db2 = db.parent / "old.db"
+    put(db2, "coros:load_7d", {back(9): 240}, source="coros_wellness")
+    old = wellness.today_view(now=MORNING, db_path=db2)["load_freshness"]["weekly"]
+    assert old == {"day": back(9).isoformat(), "age_days": 9}
+    assert wellness.METRICS["mcp_load_short"]["metric"] == "coros:mcp_load_short"
 
 
 # ---- CLI ----

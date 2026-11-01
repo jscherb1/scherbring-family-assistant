@@ -190,10 +190,19 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       the Gmail `list_labels` / Home Assistant `GetDateTime` tools under its new tool list.
 - [x] PR 3 built 2026-10-14: `workout_sync` now reads activities from the health MCP (`querySportRecords`, matched the web
       API's 16 activity days 9/11-10/12 exactly) and falls back to the web API if the MCP fails. MCP history only starts
-      ~2026-09-05, so deeper backfills need `--source web`. Day-rating metrics (`coros_wellness`) deliberately stay on
-      web: the MCP has no fatigue or daily training load, its resting HR is a different measure (53 vs 48 bpm), and its
-      load numbers differ, so switching would break the stored series. HRV matches, so it could move later. Verify the
-      6am `workouts-habit-sync` run reports `"source": "mcp"`.
+      ~2026-09-05, so deeper backfills need `--source web`. Day-rating metrics (`coros_wellness`) stay on web:
+      the MCP has no fatigue or daily training load, its resting HR is a different measure (53 vs 48 bpm), and its
+      load numbers differ. Verify the 6am `workouts-habit-sync` run reports `"source": "mcp"`.
+- [x] Phase 5 (2026-10-31, branch `feat/wellness-mcp-freshness`): HRV moved to the MCP. Over the 54 days both existed
+      (2026-09-01 to 10-25) `querySleepHrv` equalled the stored web `coros:hrv_ms`, `hrv_vs_baseline` and the normal band
+      exactly (mean and max difference 0), so `coros_health` (30-minute timer) now writes `coros:hrv_ms`,
+      `hrv_vs_baseline`, `hrv_base_low/high` and `coros_wellness` no longer does; older web rows stay as history.
+      `queryTrainingLoadAssessment` is stored as new `coros:mcp_load_short/long/ratio` (kept out of the insights
+      analysis, shown as "Live" load freshness on Wellness); the weekly web load, fatigue, ATI/CTI and recommended range
+      are unchanged. The timer picks it up on its next run; the dashboard needs a restart for the Load freshness line.
+      Optional backfill of MCP HRV and load back to 2026-09-01 (not run):
+      `python scripts/dayrating_store.py insights refresh --days 60 --source coros_health`. A daily-load history
+      before that is not available from the MCP.
 - [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
       `system_health` rows' `checked_at` after a few hours. Tune the 2 h interval as needed.
 

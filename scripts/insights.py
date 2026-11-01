@@ -44,7 +44,10 @@ PERMUTATIONS = 2000
 # Stored for the Wellness charts (bands, recommended ranges, state codes), not as possible drivers: testing
 # them would only add chance findings.
 NOT_ANALYZED = {"coros:load_rec_min", "coros:load_rec_max", "coros:hrv_base_low", "coros:hrv_base_high",
-                "coros:fatigue_state", "coros:load_ratio_state", "coros:load_28d"}
+                "coros:fatigue_state", "coros:load_ratio_state", "coros:load_28d",
+                # The MCP's daily load is the same quantity as the web ati/cti/load_ratio (already analysed), so
+                # testing it too would double count one signal.
+                "coros:mcp_load_short", "coros:mcp_load_long", "coros:mcp_load_ratio"}
 
 
 class InsightError(Exception):
@@ -147,6 +150,8 @@ def refresh(*, days: int = 90, only: str | None = None, db_path=None, today: dat
                     count += 1
             conn.commit()
             report[name] = {"metrics": len(data), "values": count}
+            if getattr(mod, "WARNINGS", None):  # a source that kept going after a partial failure
+                report[name]["warnings"] = list(mod.WARNINGS)
         if wanted and wanted - set(report):
             raise InsightError(f"no source named {sorted(wanted - set(report))[0]!r}", 1)
         return report
