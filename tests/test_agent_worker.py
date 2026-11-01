@@ -629,7 +629,7 @@ def test_sdk_options_dev_note_only_for_dev_chats(tmp_path, monkeypatch):
     store = BridgeStore(tmp_path / "i.db")
     dev = agent_worker.SdkSession("-100", store, "sonnet")._options().system_prompt["append"]
     home = agent_worker.SdkSession("1", store, "sonnet")._options().system_prompt["append"]
-    assert "git worktree add" in dev and "never switch branches" in dev
+    assert "git worktree add" in dev and "never switch its branch" in dev
     assert dev.startswith(agent_worker.CHANNEL_PROMPT)  # stable shared prefix, note appended after
     assert home == agent_worker.CHANNEL_PROMPT and "worktree" not in home
 
@@ -659,3 +659,122 @@ def test_context_notes_follow_session_key(tmp_path):
     store.add_inbound("telegram", "-100", "dev question", external_id="1", session_key="-100")
     row = store.claim_next("-100")
     assert row["notes"] == []  # household notes stay out of the dev session
+
+
+# ---------------------------------------------------------------- review fixes
+
+def test_ping_alerts_are_one_per_outage_across_sessions(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRIDGE_ALLOWED_CHAT_IDS", "1")
+    monkeypatch.delenv("TELEGRAM_ALERT_CHAT_ID", raising=False)
+    store, w, _ = make(tmp_path)
+    hung = PingSession([RuntimeError("hung")] * 2)
+    healthy = PingSession([[], [], []])
+    w.sessions["A"], w.sessions["B"] = hung, healthy
+    asyncio.run(w.ping_once())  # A fails, B ok: one failure alert, no recovery flip
+    asyncio.run(w.ping_once())  # A fails again and is rebuilt: still the same outage
+    alerts = _alerts(store)
+    assert len(alerts) == 1 and "failed (ping)" in alerts[0]
+    asyncio.run(w.ping_once())  # only B left, all ok: recovered once
+    alerts = _alerts(store)
+    assert len(alerts) == 1 and "recovered" in alerts[0]
+
+
+def test_ping_skips_session_whose_lock_is_held(tmp_path):
+    async def go():
+        store, w, _ = make(tmp_path)
+        s = PingSession([RuntimeError("would fail")])
+        w.sessions["A"] = s
+        async with w._lock("A"):  # e.g. compaction in progress, no turn marker
+            await w.ping_once()
+        assert s.results and store.kv_get("last_canary") is None
+
+    asyncio.run(go())
+
+
+def test_turn_queued_behind_compaction_keeps_marker_and_slow_acks(tmp_path):
+    async def go():
+        store, w, log, gates = make_concurrent(tmp_path, slow_ack_after=0.1)
+        lock = w._lock("A")
+        await lock.acquire()  # maintenance holds the session
+        store.set_current_turn("A", "maintenance", time.time())
+        store.add_inbound("telegram", "A", "hi", external_id="1")
+        task = asyncio.create_task(w.process_one("A"))
+        await asyncio.sleep(0.4)
+        assert store.current_turns()["A"]["inbox_id"] == "maintenance"  # the waiting turn did not overwrite it
+        assert any("On it" in r["text"] for r in store._conn.execute("SELECT text FROM outbox"))
+        store.clear_current_turn("A")  # compaction finishes
+        lock.release()
+        assert await asyncio.wait_for(task, 5) is True
+        assert _replies(store, "A") == ["done A"] and store.current_turns() == {}
+
+    asyncio.run(go())
+
+
+def test_exception_after_claim_requeues_instead_of_stranding(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_worker, "RETRY_BACKOFF_S", 0)
+    store, w, log, gates = make_concurrent(tmp_path)
+    store.add_inbound("telegram", "A", "hi", external_id="1")
+    real = store.set_current_turn
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("database is locked")
+        return real(*a, **k)
+
+    store.set_current_turn = boom
+    assert asyncio.run(w.process_one("A")) is True  # swallowed, not raised
+    assert store.stats()["inbox_pending"] == 1 and store.stats()["inbox_processing"] == 0
+    assert asyncio.run(w.process_one("A")) is True  # retried and completed
+    assert _replies(store, "A") == ["done A"]
+
+
+def test_repeated_unexpected_failure_hits_max_attempts(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_worker, "RETRY_BACKOFF_S", 0)
+    store, w, log, gates = make_concurrent(tmp_path)
+    store.add_inbound("telegram", "A", "hi", external_id="1")
+    store.set_current_turn = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("always"))
+    for _ in range(agent_worker.MAX_ATTEMPTS + 1):
+        asyncio.run(w.process_one("A"))
+    assert store.stats()["inbox_pending"] == 0 and store.stats()["inbox_processing"] == 0
+    assert "couldn't process" in store.next_outbound("telegram")["text"]
+
+
+def test_unexpected_failure_backs_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_worker, "RETRY_BACKOFF_S", 0.3)
+    store, w, log, gates = make_concurrent(tmp_path)
+    store.add_inbound("telegram", "A", "hi", external_id="1")
+    store.set_current_turn = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked"))
+    t0 = time.time()
+    asyncio.run(w.process_one("A"))
+    assert time.time() - t0 >= 0.3
+
+
+def test_closed_sessions_leave_no_mcp_state(tmp_path):
+    store = BridgeStore(tmp_path / "i.db")
+    store.set_mcp_down("A", ["ha"])
+    store.clear_mcp_down("A")
+    assert store.health_snapshot()["mcp_down"] == [] and store.kv_get("mcp_down:A") is None
+    store.set_mcp_down("B", ["x"])
+    store.clear_mcp_down()
+    assert store.health_snapshot()["mcp_down"] == []
+
+    async def go():
+        w = Worker(store, lambda key: FakeSession())
+        w.sessions["Z"] = FakeSession()
+        store.set_mcp_down("Z", ["stale"])
+        run = asyncio.create_task(w.run())
+        await asyncio.sleep(0.2)
+        assert store.health_snapshot()["mcp_down"] == []  # start clears the previous run's keys
+        store.set_mcp_down("Z", ["stale"])
+        w.stop.set()
+        await asyncio.wait_for(run, 5)
+        assert store.health_snapshot()["mcp_down"] == [] and w.sessions["Z"].closed
+
+    asyncio.run(go())
+
+
+def test_dev_prompt_mentions_worktree_first_and_no_live_state():
+    p = agent_worker.DEV_PROMPT
+    assert "worktree FIRST" in p and "state/" in p and "live database" in p and "dirty" in p

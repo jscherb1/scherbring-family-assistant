@@ -208,10 +208,22 @@ class BridgeStore:
             out[key] = {"inbox_id": v.get("inbox_id"), "started": v.get("started")}
         return out
 
+    def clear_mcp_down(self, session_key: str | None = None) -> None:
+        """Forget one session's MCP state (closed/removed), or every session's (worker start), so a stale
+        key can't pin the global list."""
+        if session_key is None:
+            self._conn.execute("DELETE FROM kv WHERE key LIKE 'mcp_down:%'")
+        else:
+            self._conn.execute("DELETE FROM kv WHERE key=?", (f"mcp_down:{session_key}",))
+        self._recompute_mcp_down()
+
     def set_mcp_down(self, session_key: str, names: list[str]) -> None:
         """Record one session's disconnected MCP servers; the global `mcp_down` is the union over
         sessions, so two sessions with momentarily different views don't flip it back and forth."""
         self.kv_set(f"mcp_down:{session_key}", json.dumps(names))
+        self._recompute_mcp_down()
+
+    def _recompute_mcp_down(self) -> None:
         union: set[str] = set()
         for r in self._conn.execute("SELECT value FROM kv WHERE key LIKE 'mcp_down:%'"):
             try:

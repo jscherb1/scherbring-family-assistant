@@ -131,7 +131,9 @@ while a session has queued work. `paused`, the health canaries, cost tracking an
 `current_turn` is per session (`current_turn:<session_key>` in the `kv` table; `agent_ctl.py status` and the
 dashboard list every running turn); the global MCP-down list is the union over sessions. The quiet-hours compaction
 only compacts a session that is idle, and the 30 s ping skips a session that is mid-turn. On SIGTERM the worker waits
-15 s for running turns, then cancels them and puts their messages back in the queue (redelivered as a retry).
+10 s for running turns, then cancels them (3 s) and closes clients (4 s), inside systemd's 20 s stop timeout, and puts
+cancelled messages back in the queue (redelivered as a retry). A turn that fails before it starts (for example a locked
+database) is requeued after a 1 s pause, bounded by the 3-attempt limit.
 
 The Telegram group on the same bot is the dev chat. Put its id in `BRIDGE_ALLOWED_CHAT_IDS` (the allow list is
 per chat; nobody but the owner is in the group) and in `BRIDGE_DEV_CHAT_IDS`. Its session gets a dev note in its
@@ -141,7 +143,10 @@ share it), follow the CLAUDE.md development process. The household session does 
 dashboard ask box and `agent_ctl.py say` default to "the first allowed chat", set `TELEGRAM_ALERT_CHAT_ID` and
 `DASHBOARD_ASK_CHAT_ID` explicitly to the household chat; `agent_ctl.py status` warns if a dev chat is configured and
 they are not. The fallback (first allowed chat) skips dev chats, and `say` only reaches a dev chat with `--as`.
-`/status@botname` works in groups. If Telegram upgrades the basic group to a supergroup its chat id changes: the
+Dev and household sessions share the Claude memory directory and fixed-name temp files such as `state/hyvee_tmp`
+and `state/myhub_tmp`, so don't run the same flow (a Hy-Vee build, a hub refresh) from both at once. A dev worktree has
+no `state/`, so scripts run there don't see live data; the dev prompt says so. Outage alerts from the bridge go to
+`TELEGRAM_ALERT_CHAT_ID`, else the first non-dev allowed chat, never the group. `/status@botname` works in groups. If Telegram upgrades the basic group to a supergroup its chat id changes: the
 bridge logs `chat <old> was upgraded to a supergroup with NEW chat id <new>` and answers nothing from the new id
 (it replies "Not authorized. Your chat id is ..."); replace the old id in `BRIDGE_ALLOWED_CHAT_IDS` and
 `BRIDGE_DEV_CHAT_IDS` and restart the bridge and worker. Config is never rewritten automatically.

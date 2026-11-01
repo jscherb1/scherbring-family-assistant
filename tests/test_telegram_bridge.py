@@ -223,3 +223,32 @@ def test_long_dev_turn_does_not_trigger_restart_notice_while_worker_alive(env):
     store.kv_set("worker_heartbeat", str(time.time()))  # heartbeat runs on its own task, so it stays fresh
     b.check_agent_notice(store)
     assert store.stats()["outbox_pending"] == 0
+
+
+def test_non_service_textless_messages_are_still_enqueued(env):
+    api, store, b = env
+    b.allowed.add("-100")
+    for i, extra in enumerate(({"sticker": {"file_id": "s"}}, {"video_note": {"file_id": "v"}}, {"animation": {"file_id": "a"}},
+                               {"location": {"latitude": 1, "longitude": 2}}, {"contact": {"phone_number": "1"}}), start=1):
+        b.handle_update(store, group_upd(i, -100, None, mid=i, **extra))
+    assert store.stats()["inbox_pending"] == 5  # the rule: never leave a message unanswered
+    for key in ("pinned_message", "left_chat_member", "new_chat_title", "group_chat_created"):
+        assert parse_update(group_upd(9, -100, None, **{key: {}}))["service"] is True
+
+
+def test_poll_outage_alert_skips_dev_group_even_with_negative_id(env, monkeypatch):
+    import paths
+    import telegram_bridge
+
+    fake = lambda name, *a, **k: {"BRIDGE_DEV_CHAT_IDS": "-5468858630", "BRIDGE_ALLOWED_CHAT_IDS": "8150343517,-5468858630"}.get(name)  # noqa: E731
+    monkeypatch.setattr(paths, "get_env", fake)
+    monkeypatch.setattr(telegram_bridge, "get_env", fake)
+    api, store, _ = env
+    b = Bridge(api, store.path, {"8150343517", "-5468858630"})  # sorted() would put the group first
+    assert b._alert_chat() == "8150343517"
+    b.note_poll_result(store, "boom", now=0)
+    b.note_poll_result(store, "boom", now=100)
+    assert store.next_outbound("telegram")["chat_ref"] == "8150343517"
+    # No household id configured at all: the dev group is still never used.
+    b2 = Bridge(api, store.path, {"-5468858630"})
+    assert b2._alert_chat() is None

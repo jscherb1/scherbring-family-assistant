@@ -28,8 +28,12 @@ def get_agent_status():
     snap = BridgeStore(path, read_only=True).health_snapshot()
     snap["content_visible"] = _show_content()
     dev = dev_chat_ids()
-    for t in snap["current_turns"]:  # a label instead of the chat id: this page has no login
-        t["label"] = "dev chat" if t["session"] in dev else "household"
+    # A label instead of the chat id: this page and /api/agent have no login.
+    label = lambda k: "dev chat" if k in dev else "household"  # noqa: E731
+    for t in snap["current_turns"]:
+        t["label"] = label(t.pop("session"))
+    if snap.get("current_turn"):
+        snap["current_turn"]["label"] = label(snap["current_turn"].pop("session"))
     return snap
 
 
