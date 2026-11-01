@@ -100,7 +100,7 @@ def main() -> int:
         "summary": summary[:600],
         "debug_log": str(sd.DISPATCH_DEBUG_DIR / f"{task['id']}_{run_at.replace(':', '-')}.log"),
     }, indent=2))
-    return 0 if success else 1
+    return 1 if run_status == "failed" else 0
 
 
 if __name__ == "__main__":
