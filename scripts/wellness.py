@@ -48,7 +48,7 @@ RECOVERY_ZONES = (67, 34)   # >= 67 green, >= 34 yellow, else red (Whoop's bands
 LOAD_RATIO_ZONES = [(0, 0.8, "low", "Detraining"), (0.8, 1.5, "ok", "Optimal"), (1.5, 3, "high", "Overreaching")]
 # How old each source's newest write may be before the page calls it stale (hours).
 STALE_HOURS = {"coros_health": 3, "weather": 3, "habits": 3, "coros_wellness": 24 * 8, "calendar_load": 24 * 8}
-SOURCE_LABELS = {"coros_health": "COROS sleep & activity", "coros_wellness": "COROS HRV & load",
+SOURCE_LABELS = {"coros_health": "COROS sleep, HRV & live load", "coros_wellness": "COROS fatigue & weekly load",
                  "weather": "Weather", "habits": "Habits", "calendar_load": "Calendar"}
 
 # key -> metric definition. `better`: "up" when higher is better, "down" when lower is, None when neutral.
@@ -86,6 +86,11 @@ _m("cti", "coros:cti", "Fitness (CTI)", "", "daytime", "up", 0, "load")
 _m("load_ratio", "coros:load_ratio", "Load ratio", "", "daytime", None, 2, "load")
 _m("load_rec_min", "coros:load_rec_min", "Recommended 7-day load (min)", "", "daytime", None, 0, "load")
 _m("load_rec_max", "coros:load_rec_max", "Recommended 7-day load (max)", "", "daytime", None, 0, "load")
+# Daily load straight from the COROS MCP (30-minute timer). A different, fresher series than the weekly web load
+# above; shown as "live" and kept out of the insights analysis (insights.NOT_ANALYZED).
+_m("mcp_load_short", "coros:mcp_load_short", "Acute load (live)", "", "daytime", None, 0, "load")
+_m("mcp_load_long", "coros:mcp_load_long", "Fitness (live)", "", "daytime", None, 0, "load")
+_m("mcp_load_ratio", "coros:mcp_load_ratio", "Load ratio (live)", "", "daytime", None, 2, "load")
 METRICS["rating"] = {"key": "rating", "metric": None, "label": "Day rating", "unit": "/10", "class": "evening",
                      "better": "up", "digits": 0, "group": "mood"}
 
@@ -388,6 +393,8 @@ def today_view(*, now: datetime | None = None, db_path=None) -> dict:
         load7 = _raw(conn, "load_7d", _iso(today - timedelta(days=7)), t)
         rec_lo = _raw(conn, "load_rec_min", _iso(today - timedelta(days=14)), t)
         rec_hi = _raw(conn, "load_rec_max", _iso(today - timedelta(days=14)), t)
+        live = {k: _raw(conn, k, _iso(today - timedelta(days=14)), t)
+                for k in ("mcp_load_short", "mcp_load_long", "mcp_load_ratio")}
     finally:
         conn.close()
 
@@ -424,6 +431,14 @@ def today_view(*, now: datetime | None = None, db_path=None) -> dict:
         strain.update(value=v, day=d, low=lo, high=hi,
                       zone=None if lo is None or hi is None else "low" if v < lo else "high" if v > hi else "ok")
 
+    # How current each load series is: the web one (7-day load and its recommended range) refreshes weekly, the
+    # MCP one on the 30-minute timer.
+    live_day = max(live["mcp_load_short"], default=None)
+    load_fresh = {"weekly": {"day": max(load7, default=None),
+                             "age_days": (today - date.fromisoformat(max(load7))).days if load7 else None},
+                  "live": {"day": live_day, "age_days": (today - date.fromisoformat(live_day)).days if live_day else None,
+                           **{k.removeprefix("mcp_load_"): live[k].get(live_day) for k in live}}}
+
     goals = [h for h in habits.list_status(db_path=db_path, today=today) if h["has_goal"]]
     checkin = journal.pending(journal.checkin_date(now, db_path=db_path), today=today, db_path=db_path)
     out_of_range = [v["label"] for v in vitals.values() if v.get("verdict") == "bad"]
@@ -434,6 +449,7 @@ def today_view(*, now: datetime | None = None, db_path=None) -> dict:
                             "status": sleep["status"], "day": sleep_day,
                             "zone": zone(sleep["values"].get("sleep_score"))},
                   "strain": strain},
+        "load_freshness": load_fresh,
         "sleep": sleep, "vitals": list(vitals.values()), "out_of_range": out_of_range,
         "mood": _mood(now, db_path),
         "habits": [{"name": h["name"], "status": h["period_status"], "done": h["done_this_period"],

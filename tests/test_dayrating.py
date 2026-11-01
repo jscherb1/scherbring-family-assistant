@@ -111,7 +111,8 @@ def test_coros_wellness_mapping():
     out = coros_wellness.to_metrics([{"happenDay": 20261013, "avgSleepHrv": 50, "sleepHrvBase": 43, "rhr": 47,
                                       "tiredRateNew": -10, "trainingLoad": 0, "trainingLoadRatio": 0, "t7d": 30},
                                      {"happenDay": 20261014, "avgSleepHrv": None, "rhr": 0}])
-    assert out["coros:hrv_ms"] == {"2026-10-13": 50.0} and out["coros:hrv_vs_baseline"]["2026-10-13"] == 7.0
+    assert not {"coros:hrv_ms", "coros:hrv_vs_baseline", "coros:hrv_base_low"} & set(out)  # HRV now comes from the MCP
+    assert out["coros:resting_hr"] == {"2026-10-13": 47.0}
     assert "2026-10-14" not in out.get("coros:resting_hr", {}) and out["coros:training_load"]["2026-10-13"] == 0.0
 
 
@@ -185,6 +186,18 @@ STRESS = "Stress Level\n\n2026-10-13:\nAverage Stress: 27 (Low)\n"
 WELLNESS = ("Health Check Time Series\n\nDate: 2026-09-01\ntimestamp=1, source=dailyRhmList\n"
             "Heart Rate List: [1=64 bpm, 2=66 bpm]\nHRV List: [1=33 ms]\nStress List: [1=46]\n"
             "Respiration Rate List: [1=14/min]\nSpO2 List: [1=98%]\nStress Level: 2\n")
+SLEEP_HRV = ("Sleep HRV \u2014 2026-10-12 to 2026-10-14\n====\nNote: dates are wake-up days.\n\n"
+             "HRV Assessment \u2014 Last 3 days\n====\n\n"
+             "2026-10-14:\n  HRV Avg: 50 ms \u2014 Normal\n  Normal Range: 36 - 52 ms\n  Baseline: 44 ms\n"
+             "2026-10-13:\n  HRV Avg: 33 ms \u2014 Below normal\n  Normal Range: 37 - 51 ms\n  Baseline: 44 ms\n"
+             "2026-10-12:\n  HRV Avg: -- \u2014 No data\n\n"
+             "Sleep HRV Time Series \u2014 Last 3 days\n====\n\n"
+             "2026-10-14:\n  timestamp=1, timezone=-20, hrv=90 ms, status=4, confidence=100\n"
+             "  timestamp=2, timezone=-20, hrv=10 ms, status=4, confidence=100\n"
+             "2026-10-13: no official sleep HRV value for this day; raw HRV points omitted.\n")
+LOAD = ("Training Load Assessment\n====\n\n2026-10-14\nComment: Resuming\nShort-Term Load: 32\n"
+        "Long-Term Load: 47\nLoad Ratio: 0.68\n\n2026-10-13\nComment: Resuming\nShort-Term Load: 24\n"
+        "Long-Term Load: 46\nLoad Ratio: 0.52\n")
 RECOVERY = "Recovery Status\n====\n\nRecovery: 85%\nLevel: Heavy training allowed\nEstimated Full Recovery: 3h\n"
 
 
@@ -219,13 +232,50 @@ def test_coros_health_parsing_and_metrics():
     assert full["coros:wellness_hrv"] == {"2026-09-01": 33.0} and full["coros:recovery_pct"] == {"2026-10-14": 85.0}
 
 
+def test_sleep_hrv_and_training_load_parsing():
+    import coros_mcp
+    hrv = coros_mcp.parse_sleep_hrv(SLEEP_HRV)
+    assert hrv == {"2026-10-14": {"hrv_ms": 50.0, "hrv_base_low": 36.0, "hrv_base_high": 52.0, "hrv_baseline": 44.0},
+                   "2026-10-13": {"hrv_ms": 33.0, "hrv_base_low": 37.0, "hrv_base_high": 51.0, "hrv_baseline": 44.0}}
+    assert coros_mcp.parse_sleep_hrv("nothing here") == {}
+    load = coros_mcp.parse_training_load(LOAD)
+    assert load == {"2026-10-14": {"load_short": 32.0, "load_long": 47.0, "load_ratio": 0.68},
+                    "2026-10-13": {"load_short": 24.0, "load_long": 46.0, "load_ratio": 0.52}}
+    assert coros_mcp.parse_training_load("Training Load Assessment\n====\n") == {}
+
+
+def test_coros_health_writes_hrv_and_separate_mcp_load():
+    from insight_sources import coros_health
+    out = coros_health.to_metrics(SLEEP, HEALTH, STRESS, hrv_text=SLEEP_HRV, load_text=LOAD)
+    assert out["coros:hrv_ms"] == {"2026-10-14": 50.0, "2026-10-13": 33.0}
+    assert out["coros:hrv_vs_baseline"] == {"2026-10-14": 6.0, "2026-10-13": -11.0}
+    assert out["coros:hrv_base_low"]["2026-10-14"] == 36.0 and out["coros:hrv_base_high"]["2026-10-13"] == 51.0
+    assert out["coros:mcp_load_short"]["2026-10-14"] == 32.0 and out["coros:mcp_load_long"]["2026-10-13"] == 46.0
+    assert out["coros:mcp_load_ratio"]["2026-10-14"] == 0.68
+    assert not {"coros:load_7d", "coros:ati", "coros:cti", "coros:load_ratio"} & set(out)  # web series untouched
+
+
+def test_mcp_load_is_not_analysed(db):
+    """The live load duplicates ati/cti/ratio, so it stays out of the analysis."""
+    assert {"coros:mcp_load_short", "coros:mcp_load_long", "coros:mcp_load_ratio"} <= insights.NOT_ANALYZED
+    days = {f"2026-09-{d:02d}": float(d) for d in range(1, 21)}
+    findings, _ = insights._findings({"coros:mcp_load_short": days, "coros:ati": days}, days)
+    assert {f["metric"] for f in findings} == {"coros:ati", "coros:ati (previous day)"}
+
+
 def test_coros_health_collect_drops_partial_today(monkeypatch):
     import coros_mcp
     from insight_sources import coros_health
-    monkeypatch.setattr(coros_mcp, "call_tools", lambda calls: [SLEEP, HEALTH, STRESS] if len(calls) == 3
-                        else [WELLNESS] + ["No complete health check data."] * (len(calls) - 2) + [RECOVERY])
+
+    def fake(calls):
+        if [c[0] for c in calls] == ["querySleepHrv", "queryTrainingLoadAssessment"]:
+            return [SLEEP_HRV, LOAD]
+        return ([SLEEP, HEALTH, STRESS] if len(calls) == 3
+                else [WELLNESS] + ["No complete health check data."] * (len(calls) - 2) + [RECOVERY])
+    monkeypatch.setattr(coros_mcp, "call_tools", fake)
     out = coros_health.collect(None, TODAY - timedelta(days=7), TODAY, TODAY)
     assert "2026-10-14" not in out["coros:steps"] and "2026-10-13" in out["coros:steps"]
+    assert out["coros:hrv_ms"]["2026-10-14"] == 50.0 and out["coros:mcp_load_ratio"]["2026-10-14"] == 0.68
 
 
 def test_coros_mcp_needs_sign_in(tmp_path, monkeypatch):

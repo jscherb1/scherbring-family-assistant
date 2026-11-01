@@ -44,7 +44,10 @@ PERMUTATIONS = 2000
 # Stored for the Wellness charts (bands, recommended ranges, state codes), not as possible drivers: testing
 # them would only add chance findings.
 NOT_ANALYZED = {"coros:load_rec_min", "coros:load_rec_max", "coros:hrv_base_low", "coros:hrv_base_high",
-                "coros:fatigue_state", "coros:load_ratio_state", "coros:load_28d"}
+                "coros:fatigue_state", "coros:load_ratio_state", "coros:load_28d",
+                # The MCP's daily load is the same quantity as the web ati/cti/load_ratio (already analysed), so
+                # testing it too would double count one signal.
+                "coros:mcp_load_short", "coros:mcp_load_long", "coros:mcp_load_ratio"}
 
 
 class InsightError(Exception):
