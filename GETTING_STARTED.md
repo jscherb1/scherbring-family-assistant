@@ -162,6 +162,7 @@ and its `state/schema.sql` tables):
 | Wellness summary: recovery, sleep and HRV trends, what drives them (the Wellness dashboard pages) | `wellness` |
 | "What needs my attention?", today/this week at a glance, the dashboard's Today page | `myhub` |
 | Kid chore chart with dollar payouts and streaks | `chores` |
+| Find, read or summarize email (read-only) | `gmail` |
 | Home maintenance cadence tracking | `home-maintenance` |
 | Smart home control (Home Assistant) | `home-assistant` |
 | Home Assistant status, health and recommendations (also on the dashboard under Home > Home Assistant) | `ha-overview` |
