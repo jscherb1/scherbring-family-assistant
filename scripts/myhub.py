@@ -177,7 +177,7 @@ def get_hub(*, db_path=None, today: date | None = None) -> dict:
 
 
 # Expected refresh interval per data source, in minutes. A source older than twice this shows amber.
-FRESH_MINUTES = {"coros_health": 30, "weather": 30, "habits": 30, "calendar": 120, "tasks": 120}
+FRESH_MINUTES = {"coros_health": 30, "weather": 30, "habits": 30, "calendar": 15, "tasks": 15}
 
 
 def freshness(*, db_path=None) -> list[dict]:

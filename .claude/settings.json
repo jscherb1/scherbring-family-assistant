@@ -44,6 +44,7 @@
       "Bash(python scripts/wellness_store.py *)",
       "Bash(python scripts/journal_store.py *)",
       "Bash(python scripts/myhub_store.py *)",
+      "Bash(python scripts/hub_refresh.py *)",
       "Bash(python scripts/reauth_store.py *)",
       "Bash(python scripts/system_health_store.py *)",
       "Bash(python scripts/chores_store.py *)",
@@ -59,7 +60,6 @@
       "mcp__claude_ai_Gmail__get_thread",
       "mcp__claude_ai_Gmail__get_message",
       "mcp__claude_ai_Home_Assistant__llm__GetDateTime",
-      "Edit(state/myhub_tmp/**)",
       "Edit(state/dayrating_tmp/**)",
       "Edit(state/finance_reports/**)",
       "Edit(state/retirement/**)"

@@ -35,6 +35,9 @@ SYSTEMS = {
     "monarch": ("Monarch", "script"),
     "money_sync": ("Monarch snapshot sync", "script"),
     "hyvee": ("Hy-Vee", "script"),
+    # recorded by scripts/hub_refresh.py on every run (the agent pings above test the MCP connectors instead)
+    "todoist_api": ("Todoist (API token)", "script"),
+    "hub_calendar": ("Calendar (via Home Assistant)", "script"),
     "todoist": ("Todoist", "agent"),
     "calendar": ("Google Calendar", "agent"),
     "gmail": ("Gmail", "agent"),

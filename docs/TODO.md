@@ -172,6 +172,16 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## My Hub (built 2026-10-14)
 
+- [ ] **Hub refresh script cutover** (PR feat/hub-refresh-script; replaces the agent copying calendar/tasks):
+      1. Confirm `TODOIST_API_TOKEN` is in `~/.config/scherbring-assistant/.env`, then `python scripts/hub_refresh.py --dry-run`
+         (counts and diffs, writes nothing).
+      2. `scripts/install_systemd.sh assistant-hub-refresh.timer`. It runs with `--notify`, but notifications stay muted while
+         `myhub-refresh` is enabled, so nothing double-sends. Watch `systemctl --user list-timers` and the System status page.
+      3. After a day of good runs, cut over in one step: `python scripts/scheduler_store.py disable --name myhub-refresh`.
+         The next timer run starts sending the notify-check message (same dedupe, digest and quiet hours).
+      Rollback: `python scripts/scheduler_store.py enable --name myhub-refresh` mutes the script's notifications again.
+      Afterwards update the README `myhub-refresh` registration text (the task is retired). Untested live: the first notified run.
+
 - [ ] Registered `myhub-refresh` (every 2 h, 7am-9pm; replaced the morning/evening pair); it has not fired yet. Until the
       first run the page says calendar/tasks are "not synced yet". Check `scheduler_store.py runs`.
 - [ ] The look (JARVIS theme) and the phone layout have not been viewed in a browser; only tested by route tests.
