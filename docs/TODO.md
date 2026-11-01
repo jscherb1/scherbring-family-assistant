@@ -318,3 +318,7 @@ See the Backlog section of `README.md`.
 - [ ] Scheduled runs share the development checkout (decided 2026-10-19: no separate worktree). A failed run now carries a `[possible cause: checkout is on branch ...]` note, but keep dev work off the main checkout (use `git worktree add`) where possible. Verify `dayrating-weekly-insights` on its next Sunday 19:30 run (should be `ok`, no denials).
 
 - [ ] Live-test the **Monarch Login** and **Google Drive Login** desktop shortcuts through a real expiry (only the "already working" path was exercised). The `.bat` copies are already on the Windows desktop.
+
+## Gmail read access (added 2026-10-31)
+
+- [ ] Read-only `gmail` agent added (`.claude/agents/gmail.md`; search_threads, get_thread, get_message, list_labels). Use cases are undecided, so no triage, digest, schedule or dashboard section exists. Needs a live check: ask it to find a recent email and confirm the tools resolve (a fresh agent session may be needed to pick up the new agent). It is an infrastructure exception to the agent + UI standard.

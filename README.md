@@ -28,6 +28,7 @@ You (Telegram) → Telegram channel plugin → Orchestrator (Claude Code, local)
 | `.claude/agents/weather-reminders.md` | Weather-reminders subagent — daily proactive forecast check (rain → deck cushions, snow → shoveling prep, severe weather watches) plus ad hoc weather questions |
 | `.claude/agents/chores.md` | Chores subagent — kid chore chart (chores, dollar balances, streaks, payouts), the weekly payday summary and the optional afternoon open-chores check |
 | `.claude/agents/myhub.md` | My Hub subagent: answers "what needs my attention?" and keeps the hub's calendar/Todoist snapshot fresh (scheduled morning + evening) |
+| `.claude/agents/gmail.md` | Gmail subagent: read-only email search, read and summarize (search_threads, get_thread, get_message, list_labels; no Bash, no write tools). Infrastructure exception to the agent + UI standard: access only, no service module or dashboard section until a use case is decided |
 | `.claude/agents/dayrating.md` | Day-rating subagent: daily 1-10 rating with a note, the nightly nudge, and the weekly insights report (stats plus an AI-written story) |
 | `.claude/agents/journal.md` | Journal subagent: the 8:30 PM nightly check-in (day rating + yes/no journal questions + open daily habits in one message), recording the reply, managing questions, and "what does X do to my HRV/sleep/mood" |
 | `.claude/agents/wellness.md` | Wellness subagent (read-only, Whoop-style): today's recovery, sleep and vitals against your normal, trends over time, and what drives the day rating / HRV / sleep / resting HR |
@@ -1009,8 +1010,8 @@ own brainstorm/spec before being built.
             for school" that blend the calendar + HA state.
       - See `docs/superpowers/specs/2026-08-19-home-assistant-integration-design.md`
         for the full phased design.
-- [ ] **Email triage / inbox digest** — the Gmail MCP server is also already connected but
-      unused. A daily/weekly digest of what needs action (school notices, bills, appointment
+- [ ] **Email triage / inbox digest** — read access now exists (the read-only `gmail` agent,
+      ad hoc search/read/summarize), but triage is not built. A daily/weekly digest of what needs action (school notices, bills, appointment
       confirmations), same proactive shape as the heartbeat skill above.
 - [ ] **Birthday/gift-reminder agent** — the data layer now exists (`profile_people.birthday`
       via the **Personal profile** section above, plus the Todoist subagent's per-person Gift
