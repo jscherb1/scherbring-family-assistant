@@ -557,24 +557,24 @@ def model(name, conf=0.95, **fields):
 
 
 def test_model_output_accepts_a_well_formed_answer(ctx):
-    m, _ = fastlane.check_model_output(model("chore.done", kid="Claire", chore="Feed the dog", day="yesterday"), "Claire fed the dog yesterday", ctx)
-    assert m.tier == 1 and m.action == "chore.done" and m.fields == {"kid": "Claire", "chore": "Feed the dog", "day": "2026-11-01"}
+    m, _ = fastlane.check_model_output(model("rating.set", score=7, day="yesterday"), "I'd rate yesterday a 7", ctx)
+    assert m.tier == 1 and m.action == "rating.set" and m.fields == {"score": 7, "note": None, "day": "2026-11-01"}
     m, _ = fastlane.check_model_output(model("todo.add", items=["oat milk", "eggs"], list="grocery list"),
                                        "add oat milk and eggs to the grocery list", ctx)
     assert m.fields["items"] == ["oat milk", "eggs"]
 
 
 @pytest.mark.parametrize("answer,text,why", [
-    (model("chore.done", conf=0.5, kid="Claire", chore="Feed the dog"), "Claire fed the dog", "model_low_confidence"),
-    ({"action": "chore.done", "fields": {"kid": "Claire", "chore": "Feed the dog"}, "confidence": "high"}, "Claire fed the dog", "model_no_confidence"),
-    ({"action": "chore.done", "fields": {"kid": "Claire", "chore": "Feed the dog"}}, "Claire fed the dog", "model_no_confidence"),
+    (model("rating.set", conf=0.5, score=7), "I'd rate today a 7", "model_low_confidence"),
+    ({"action": "rating.set", "fields": {"score": 7}, "confidence": "high"}, "I'd rate today a 7", "model_no_confidence"),
+    ({"action": "rating.set", "fields": {"score": 7}}, "I'd rate today a 7", "model_no_confidence"),
     (model("habit.log", habit="Stretching/Mobility"), "I stretched", "model_tier1_not_allowed"),      # the model may not log habits
     (model("ha.set", target="porch lights", action="off"), "turn off the porch lights", "model_tier1_not_allowed"),  # nor control devices
     (model("none", conf=0), "hello", "model_none"),
     (model("email.send", to="x"), "send it", "model_unknown_action"),
     ("habit.log", "x", "model_not_object"), (None, "x", "model_not_object"),
-    (model("chore.done", kid="Claire", chore="Feed the dog", day="tomorrow"), "Claire fed the dog tomorrow", "model_date_unparsed"),
-    (model("chore.done", kid="Claire", chore="Feed the dog", day="2026-12-01"), "Claire fed the dog on 2026-12-01", "model_date_future"),
+    (model("rating.set", score=7, day="tomorrow"), "I'd rate tomorrow a 7", "model_date_unparsed"),
+    (model("rating.set", score=7, day="2026-12-01"), "I'd rate 2026-12-01 a 7", "model_date_future"),
     (model("rating.set", score=7, day="2026-12-01"), "2026-12-01 was a 7", "model_date_future"),
     (model("rating.set", score=7, note="a paraphrase"), "7 - long day", "model_note_not_verbatim"),
     (model("rating.set", score=11), "rate it 11", "model_score_range"),
@@ -584,8 +584,8 @@ def test_model_output_accepts_a_well_formed_answer(ctx):
     (model("todo.add", items=["milk"], list="the list"), "add milk to the list", "model_list_vague"),
     (model("todo.add", items=["milk"], list="Costco list"), "add milk to the grocery list", "model_list_not_in_text"),
     (model("todo.add", items=["a", "b", "c", "d", "e", "f", "g", "h", "i"], list="Costco list"), "add a b c d e f g h i to the Costco list", "model_items_invalid"),
-    (model("chore.done", kid="Ruth", chore="Make their bed"), "Claire made her bed", "model_kid_not_in_text"),
-    (model("chore.done", kid="Ruth", chore="Mow the lawn"), "Ruth mowed", "model_kid_or_chore_unresolved"),
+    (model("chore.done", kid="Ruth", chore="Make their bed"), "Ruth made her bed", "model_tier1_not_allowed"),    # chores: Tier 0 only
+    (model("chore.done", kid="Claire", chore="Feed the dog"), "did Claire feed the dog", "model_tier1_not_allowed"),
 ])
 def test_model_output_rejections(ctx, answer, text, why):
     m, got = fastlane.check_model_output(answer, text, ctx)
@@ -1174,14 +1174,14 @@ def test_default_deny_unknown_device_goes_to_the_agent(tmp_path, db, fake_ha):
 # ---- Tier 1 through the worker ----
 
 def test_tier1_takes_a_validated_answer_and_logs_its_tier(tmp_path, db):
-    router = StubRouter(model("chore.done", kid="Claire", chore="Feed the dog", day="yesterday"))
+    router = StubRouter(model("rating.set", score=7, day="yesterday"))
     store, w, _ = mk(tmp_path, db, router=router)
-    rid = add(store, "Claire fed the dog yesterday")
+    rid = add(store, "I'd rate yesterday a 7")
     asyncio.run(triage(w))
-    assert triage_of(store, rid)["triage"] == "fast" and router.calls == ["Claire fed the dog yesterday"]
-    assert "Claire: Feed the dog done for yesterday" in store.next_outbound()["text"]
+    assert triage_of(store, rid)["triage"] == "fast" and router.calls == ["I'd rate yesterday a 7"]
+    assert "Rated yesterday 7/10" in store.next_outbound()["text"]
     line = usage_lines(tmp_path)[-1]
-    assert line["fastlane"]["tier"] == 1 and line["fastlane"]["action"] == "chore.done" and line["cost_usd"] == 0.0004
+    assert line["fastlane"]["tier"] == 1 and line["fastlane"]["action"] == "rating.set" and line["cost_usd"] == 0.0004
     assert isinstance(line["fastlane"]["latency_ms"], int)
 
 
@@ -1198,9 +1198,9 @@ def test_tier0_logs_tier0_and_agent_turns_log_tier2(tmp_path, db, fake_ha):
 
 
 def test_tier1_low_confidence_or_no_answer_passes(tmp_path, db):
-    for answer, why in ((model("chore.done", conf=0.4, kid="Claire", chore="Feed the dog"), "pass:model_low_confidence"), (None, "pass:model_unparseable")):
+    for answer, why in ((model("rating.set", conf=0.4, score=7), "pass:model_low_confidence"), (None, "pass:model_unparseable")):
         store, w, _ = mk(tmp_path, db, router=StubRouter(answer))
-        rid = add(store, "Claire fed the dog")
+        rid = add(store, "I'd rate today a 7")
         asyncio.run(triage(w))
         assert triage_of(store, rid)["triage"] == why
 
@@ -1712,7 +1712,7 @@ def test_tier1_can_never_run_device_control_or_habit_logs_even_for_a_perfect_com
         assert fastlane.check_model_output(answer, text, ctx) == (None, "model_tier1_not_allowed"), text
         assert fastlane.tier0(text, ctx) is not None and fastlane.tier0(text, ctx).tier == 0   # only the anchored rules do these
     assert {"ha.set", "habit.log"}.isdisjoint(fastlane.TIER1_ACTIONS)
-    assert fastlane.TIER1_ACTIONS == {"ha.state", "hub.today", "hub.tasks", "hub.dinner", "habit.status", "todo.add", "rating.set", "chore.done"}
+    assert fastlane.TIER1_ACTIONS == {"ha.state", "hub.today", "hub.tasks", "hub.dinner", "habit.status", "todo.add", "rating.set"}
 
 
 @pytest.mark.parametrize("text,action", [
@@ -1775,3 +1775,83 @@ def test_close_doors_error_with_nothing_attempted_is_not_marked_as_written(ctx, 
     monkeypatch.setattr(ha, "fastlane_read", down)
     r = run("close the garage", ctx)
     assert r.wrote is False and "didn't answer" in r.text
+
+
+# ---------------------------------------------------------------------------
+# review round 3: no chores in Tier 1; Tier 1 ratings must be about the user's own day; modals and "did/was ..." questions
+# ---------------------------------------------------------------------------
+
+FORGED3 = {
+    "did Claire feed the dog": model("chore.done", conf=0.95, kid="Claire", chore="Feed the dog"),
+    "Claire will feed the dog": model("chore.done", conf=0.95, kid="Claire", chore="Feed the dog"),
+    "Claire should feed the dog": model("chore.done", conf=0.95, kid="Claire", chore="Feed the dog"),
+    "the movie was a 7": model("rating.set", conf=0.95, score=7),
+    "that restaurant was an 8": model("rating.set", conf=0.95, score=8),
+    "rate the movie 7": model("rating.set", conf=0.95, score=7),
+    "Ruth was a 7 out of 10 at dance": model("rating.set", conf=0.95, score=7),
+}
+
+
+@pytest.mark.parametrize("text", list(FORGED3))
+def test_round3_forged_replies_never_execute(tmp_path, db, fake_ha, text):
+    store, w, _ = mk(tmp_path, db, router=StubRouter(FORGED3[text]))
+    rid = add(store, text)
+    asyncio.run(triage(w))
+    t = triage_of(store, rid)
+    assert t["triage"].startswith("pass:") and t["status"] == "pending"
+    assert dayrating.get_rating(None, db_path=db) is None
+    assert chores.balance(chores.resolve_kid("Claire", db)["id"], db_path=db) == 0
+    m, why = fastlane.check_model_output(FORGED3[text], text, fastlane.Context.load(db))
+    assert m is None and why in ("model_tier1_not_allowed", "model_rating_not_about_the_day"), (text, why)
+    assert fastlane.tier0(text, fastlane.Context.load(db)) is None
+
+
+def test_chore_done_is_not_a_tier1_action_but_tier0_keeps_its_anchored_past_tense_rules(ctx):
+    assert "chore.done" not in fastlane.TIER1_ACTIONS
+    assert fastlane.check_model_output(model("chore.done", conf=0.99, kid="Ruth", chore="Make their bed"),
+                                       "mark Ruth make bed done", ctx) == (None, "model_tier1_not_allowed")
+    for text in ("mark Ruth make bed done", "Claire finished feed the dog", "Ruth did make bed", "Claire's feed the dog done yesterday"):
+        assert fastlane.tier0(text, ctx).action == "chore.done", text
+    for text in ("did Claire feed the dog", "Claire will feed the dog", "Claire should feed the dog", "Claire feeds the dog",
+                 "Claire fed the dog", "Claire is feeding the dog", "Claire gonna feed the dog", "mark Ruth make bed done later"):
+        assert fastlane.tier0(text, ctx) is None, text
+
+
+@pytest.mark.parametrize("text,score,note", [
+    ("I'd rate today a 7", 7, None), ("my day was a 7", 7, None), ("7", 7, None), ("7 - long day", 7, "long day"),
+    ("yesterday was an 8", 8, None), ("rate my day 9", 9, None), ("tuesday was a 6", 6, None),
+    ("6. Decent day at work", 6, "Decent day at work"), ("rate the day 5", 5, None),
+])
+def test_tier1_ratings_about_the_day_are_accepted(ctx, text, score, note):
+    m, why = fastlane.check_model_output(model("rating.set", conf=0.95, score=score, note=note), text, ctx)
+    assert m is not None and m.fields["score"] == score, (text, why)
+
+
+@pytest.mark.parametrize("text", [
+    "the movie was a 7", "that restaurant was an 8", "rate the movie 7", "Ruth was a 7 out of 10 at dance",
+    "Ruth's tuesday was a 7", "the dentist was a 3 today", "rate Claire a 9", "I'd rate the soccer game a 7",
+])
+def test_tier1_ratings_about_something_else_are_refused(ctx, text):
+    m, why = fastlane.check_model_output(model("rating.set", conf=0.95, score=7), text, ctx)
+    assert m is None, text
+    assert why in ("model_rating_not_about_the_day", "model_score_not_in_text"), (text, why)
+
+
+@pytest.mark.parametrize("text", [
+    "did Claire feed the dog", "does Ruth have a bed", "is the porch light on", "was the garage closed", "has Claire eaten",
+    "will Claire feed the dog", "Claire should feed the dog", "Claire would feed the dog", "Claire could feed the dog",
+    "Claire must feed the dog", "Claire is going to feed the dog", "Claire gonna feed the dog", "turn off the porch lights you will",
+])
+def test_questions_and_modals_are_vetoed_for_writes(text):
+    for action in ("chore.done", "ha.set", "habit.log", "rating.set", "todo.add"):
+        assert fastlane.write_veto(action, {"items": [], "list": ""} if action == "todo.add" else {}, text) is not None, (action, text)
+
+
+@pytest.mark.parametrize("text", [
+    "Can you turn off our outside lights", "could you shut the double garage", "would you log stretching", "will you turn off the porch lights",
+    "turn off the porch lights", "add milk to the costco list", "achilles pt done", "today was a 7", "yesterday was a 7",
+    "set claire to 68", "close the garage", "I'd rate today a 7", "mark Ruth make bed done",
+])
+def test_polite_leads_and_plain_commands_are_not_over_blocked(text):
+    for action in ("ha.set", "habit.log", "rating.set", "chore.done"):
+        assert fastlane.write_veto(action, {}, text) is None, (action, text)

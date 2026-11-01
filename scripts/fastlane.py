@@ -947,8 +947,26 @@ def tier0(text: str, ctx: Context) -> Match | None:
 
 # What Tier 1 (the model) may run. Device control (ha.set) and habit logs (habit.log) are NOT here: they happen only
 # through the anchored Tier 0 rules or the full agent, so a model that is fooled can never switch a device or log a habit.
-TIER1_ACTIONS = frozenset({"ha.state", "hub.today", "hub.tasks", "hub.dinner", "habit.status",
-                           "todo.add", "rating.set", "chore.done"})
+# chore.done is not here either: chores involve money, so only the exact, anchored, past-tense Tier 0 rules do them.
+TIER1_ACTIONS = frozenset({"ha.state", "hub.today", "hub.tasks", "hub.dinner", "habit.status", "todo.add", "rating.set"})
+
+_RATING_HEAD_WORDS = {"rate", "rated", "rating", "i", "id", "i'd", "would", "my", "the", "day", "today", "yesterday", "was", "is",
+                      "a", "an", "out", "of", "please", "can", "you", "could", "give", "it", "as", "to", "at", "overall"}
+_RATING_DAY_CUE = re.compile(rf"\b(?:today|yesterday|{_WD}|(?:my|the) day)\b", re.I)
+
+
+def rating_about_the_day(head: str) -> bool:
+    """Tier 1 only. A rating is the day's rating only if the message (apart from a note after a separator) is about
+    the day: it names today, yesterday, a weekday, "my day" or "the day", or is just a number. "rate the movie 7" and
+    "Ruth was a 7 out of 10 at dance" are about something else and are refused."""
+    h = _fix(head).strip().rstrip(" \t-\u2013\u2014:,.;")
+    words = re.findall(r"[a-z']+|\d+", h.lower())
+    rest = [w for w in words if not w.isdigit() and w not in _RATING_HEAD_WORDS and not re.fullmatch(_WD, w)]
+    if rest:
+        return False
+    if re.fullmatch(r"(?:rate\s+)?(?:10|[1-9])(?:/10)?", h, re.I):
+        return True      # a bare number
+    return bool(_RATING_DAY_CUE.search(h))
 
 
 def check_model_output(obj, text: str, ctx: Context) -> tuple[Match | None, str]:
@@ -981,6 +999,8 @@ def check_model_output(obj, text: str, ctx: Context) -> tuple[Match | None, str]
         return None, "model_" + e.reason
     note = canon.get("note")
     probe = text.replace(note, "") if note else None
+    if name == "rating.set" and not rating_about_the_day(probe if probe is not None else text):
+        return None, "model_rating_not_about_the_day"
     why = write_veto(name, canon, text, probe)
     if why:
         return None, "model_veto_" + why
@@ -1095,7 +1115,8 @@ _DEFERRED = re.compile(
     r"|\b(?:at|in|after|before|by|until)\s+(?:\d|(?:noon|midnight|night|the (?:morning|evening|afternoon|night|weekend)|"
     r"dinner|lunch|breakfast|bed|bedtime|work|school|church|practice|(?:the )?kids|i|we|you|they|she|he)\b)", re.I)
 _QUESTION_START = re.compile(
-    r"^(?:should|shall|would|could|what if|if|did i|do i|have i|can i|how|why|what|when|where|who|which|is|are|was|were|does|will)\b", re.I)
+    r"^(?:should|shall|would|could|must|what if|if|did|do i|have i|has|can i|how|why|what|when|where|who|which|is|are|was|were|does|will)\b", re.I)
+_MODAL = re.compile(r"\b(?:will|should|would|could|must|shall|going to|gonna)\b", re.I)
 _CONDITIONAL = re.compile(r"\b(?:if|unless)\b", re.I)
 _QUOTED = re.compile(r"\"|(?:^|\s)'[^']+'(?:\s|$|[.,!?])")
 _REPORTED = re.compile(r"\b(?:said|says|told|asked|asks|thinks|wants me|wanted me|wants you)\b", re.I)
@@ -1121,6 +1142,8 @@ def write_veto(action: str, fields: dict, text: str, probe: str | None = None) -
         return "negation"
     if _QUESTION_START.match(lead) or t.endswith("?"):
         return "question"
+    if _MODAL.search(lead):
+        return "modal"          # "Claire will / should feed the dog": a prediction or an opinion, not a command
     if _CONDITIONAL.search(t):
         return "conditional"
     if _DEFERRED.search(t):

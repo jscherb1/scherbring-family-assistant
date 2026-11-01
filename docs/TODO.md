@@ -389,7 +389,7 @@ Off by default (`agent_ctl.py fastlane on` to enable); unit-tested with stubs fo
   light"; "add test item to my shopping list" (confirm it lands on the right Todoist project, then delete it); "rate today a
   7" (check the Check-in page); "Achilles PT done" (and again: it must say already logged); "what's for dinner today?".
 - [ ] Live check, Tier 1 (3-5 s; the first messages after switching on pass to the agent until the model client is ready):
-  "Claire fed the dog", "add granola and oats to the Costco list" ("I stretched yesterday" now correctly goes to the agent).
+  "add granola and oats to the Costco list", "I'd rate today a 7" ("I stretched yesterday" and "Claire fed the dog" now go to the agent unless a Tier 0 rule takes them).
 - [ ] Live check, garage: "close the double garage door" while it is open, and confirm "open the garage" /
   "raise the garage door" are answered by the agent, not the fast lane.
 - [ ] Live check, ordering: start a long task (for example "build the hyvee cart"), then send "add milk to my Costco list";

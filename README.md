@@ -406,17 +406,20 @@ before.
 - **Tier 0**, strict regex rules, no model: "log stretching", "Achilles PT done", "rate today a 7 - good day", "mark Ruth
   make bed done", "add milk to my Costco list", "turn off the porch lights", "set Claire's room to 68",
   "close the garage", "is the garage open?", "what's for dinner today?", "what's on today".
-- **Tier 1**, one Haiku call (`fastlane_model.py`) for phrasings the rules do not cover ("Claire fed the dog",
-  "add lunch meat and sliced cheese to my shopping list"). **Its scope is deliberately small, enforced in code
-  (`TIER1_ACTIONS`), not in the prompt:** reads (`ha.state`, `hub.*`, `habit.status`) and the writes `todo.add`,
-  `rating.set`, `chore.done`. It can never switch a device (`ha.set`) or log a habit (`habit.log`): those happen only
-  through the anchored Tier 0 rules or the full agent, so "I stretched yesterday" goes to the agent. A cold model process takes 4-7 s, so a client is started in the background and each message
+- **Tier 1**, one Haiku call (`fastlane_model.py`) for phrasings the rules do not cover ("add lunch meat and sliced
+  cheese to my shopping list", "I'd rate today a 7"). **Its scope is deliberately small, enforced in code
+  (`TIER1_ACTIONS`), not in the prompt:** reads (`ha.state`, `hub.*`, `habit.status`) and the writes `todo.add` and
+  `rating.set` (a rating only if the message is about the user's own day: today, yesterday, a weekday, "my day", or a bare
+  number; "rate the movie 7" is refused in code). It can never switch a device (`ha.set`), log a habit (`habit.log`) or
+  complete a chore (`chore.done`, which involves money): those happen only through the anchored Tier 0 rules or the full
+  agent, so "I stretched yesterday" and "Claire fed the dog" go to the agent. A cold model process takes 4-7 s, so a client is started in the background and each message
   uses one client once; if none is ready (the first seconds after switching on, two messages in a burst) the message just
   goes to the agent without waiting. Whether this warm-client design is acceptable, versus an API key, is an open decision. It only picks an action from the registry and fills its fields as JSON; the code then checks
   the answer (unknown action, low confidence, a name or text that is not in the message, a future date: all pass).
   Costs a fraction of a cent per message and only runs when the message mentions something the fast lane can act on.
 - **Never a command (any tier, in code):** negations ("don't", "dont", "no", "not", "never", "skip", "cancel"), questions
-  and conditionals ("should I...", "did I...", "if..."), a trailing "?", quotes and reported speech ("Caroline said ..."),
+  and conditionals ("should I...", "did Claire...", "was...", "if..."), modals anywhere ("will", "should", "would",
+  "could", "must", "going to", "gonna"; a leading "can you / could you / would you / will you" is a polite command), a trailing "?", quotes and reported speech ("Caroline said ..."),
   deferred or tentative wording ("later", "tomorrow", "tonight", "at 10pm", "after dinner", "maybe", "remind me"), and more
   than one command ("... and close the garage"): these go to the agent whole, never half-done. Tier 0 rules are anchored
   to the end of the message, so trailing words ("done tomorrow", "68 tonight") also mean no match.

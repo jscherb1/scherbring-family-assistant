@@ -99,6 +99,8 @@ def _router():
 
 async def _ready(router, wait_s: float = 40.0) -> None:
     """The CLI may wait for the one-use model client (the worker never does: it passes the message instead)."""
+    if hasattr(router, "_cool_until"):
+        router._cool_until = 0.0     # the CLI should not skip messages because an earlier call was slow
     await router.prewarm()
     end = asyncio.get_running_loop().time() + wait_s
     while getattr(router, "_client", 1) is None and asyncio.get_running_loop().time() < end:

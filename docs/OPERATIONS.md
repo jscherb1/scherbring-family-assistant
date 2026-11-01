@@ -142,8 +142,8 @@ list, "what's for dinner") without a full agent turn. It is **off by default**: 
 turns it on within a second, `off` stops it (no restart; the switch is `kv` key `fastlane`), `status` shows it with the last
 24 h of counts. While on, the task stamps `fastlane_beat` every second and `claim_next` holds a new message for it for at most
 10 s; if the stamp is older than 5 s, the fast lane is off, or a message is older than 10 s, the agent takes it as usual. The
-Tier 1 model call can only pick reads, `todo.add`, `rating.set` and `chore.done` (`TIER1_ACTIONS` in `scripts/fastlane.py`); it
-can never control a device or log a habit. It keeps one pre-started, primed Haiku client and uses it for exactly one message (so no message sees
+Tier 1 model call can only pick reads, `todo.add` and day ratings (`TIER1_ACTIONS` in `scripts/fastlane.py`); it
+can never control a device, log a habit or complete a chore (Tier 0 rules only), and a rating must be about the user's own day. It keeps one pre-started, primed Haiku client and uses it for exactly one message (so no message sees
 another's text); the replacement is built in the background, and while none is ready `route()` returns at once and the
 message goes to the agent. Disconnects are bounded (3 s), so a hung one cannot hold up a restart. It is only started while
 the lane is on, and closed when it is switched off. A failure or timeout pauses Tier 1 for 30 s. Each fast message logs `fastlane: {tier, action, latency_ms}` to `state/usage.jsonl`, an answer
