@@ -49,13 +49,15 @@ Quick end-to-end check: send the bot a message. If there is no reply within a mi
 
 Logs older than 14 days are pruned by the watchdog.
 
-An `ok` status only means the run exited cleanly and its message was delivered. The dispatcher
-reads the run as JSON, so it knows the exact commands that were denied. A run that finished and
-delivered its message but had commands denied is marked **degraded** (no alert; the summary and the
-System status page name the denied commands). A run is **failed** (and alerts) if it exits non-zero,
-fails to deliver, or its reply says it did not complete. Still read the Telegram message: a reply that
-says it could not finish is a failure even if the status looks fine. Fix degraded runs by correcting
-the prompt so each Bash call is one plain documented command, not by widening the allow list.
+An `ok` status only means the run exited cleanly and any message it had was delivered; a reply that says
+it could not finish is still `ok` when no command was denied, so read the Telegram message. The dispatcher
+reads the run as JSON, so it knows the exact commands that were denied. A run with denials is **degraded**
+(no alert; the summary and the System status page name the denied commands) only if a marked message was
+delivered and it does not report the task itself failing ("sync failed", "did not complete", ...). A run is
+**failed** (and alerts) if it exits non-zero, the JSON result is an error, delivery fails, it was silent
+despite denials (a blocked check may have hidden something), or its delivered message reports a failure
+while commands were denied. Fix degraded runs by correcting the prompt so each Bash call is one plain
+documented command, not by widening the allow list.
 
 ## Start, stop, restart
 

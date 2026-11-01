@@ -134,20 +134,37 @@ def denied_tool_names(debug_log: Path) -> list[str]:
     return re.findall(r"(\S+) tool permission denied", text)
 
 
+def _json_candidates(raw: str):
+    """Yield stdout variants to try as JSON: whole text, last non-empty line, first `{` to last `}`."""
+    yield raw
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    if lines:
+        yield lines[-1]
+    first, last = raw.find("{"), raw.rfind("}")
+    if 0 <= first < last:
+        yield raw[first:last + 1]
+
+
 def parse_claude_json(raw: str):
     """Parse `claude --print --output-format json` stdout.
 
-    Returns (reply_text, denials) where denials is a list of {"tool_name", "tool_input"} dicts from the
-    result's `permission_denials`. Returns None when `raw` isn't the expected single JSON result object, so
-    the caller falls back to treating stdout as plain text (the agent's reply must never be lost).
+    Returns (reply_text, denials, is_error), where denials is a list of {"tool_name", "tool_input"} dicts
+    from the result's `permission_denials` and is_error is the result's own error flag. Returns None when no
+    JSON result object can be found (a warning line before it is tolerated), so the caller falls back to
+    treating stdout as plain text (the agent's reply must never be lost).
     """
-    try:
-        data = json.loads(raw)
-    except (TypeError, ValueError):
-        return None
-    if isinstance(data, list):  # some versions emit an event array; the result is the last "result" item
-        data = next((d for d in reversed(data) if isinstance(d, dict) and d.get("type") == "result"), None)
-    if not isinstance(data, dict) or not isinstance(data.get("result"), str):
+    data = None
+    for cand in _json_candidates(raw or ""):
+        try:
+            loaded = json.loads(cand)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(loaded, list):  # some versions emit an event array; the result is the last "result" item
+            loaded = next((d for d in reversed(loaded) if isinstance(d, dict) and d.get("type") == "result"), None)
+        if isinstance(loaded, dict) and ("result" in loaded or loaded.get("type") == "result"):
+            data = loaded
+            break
+    if data is None:
         return None
     raw_denials = data.get("permission_denials")
     denials = []
@@ -155,7 +172,15 @@ def parse_claude_json(raw: str):
         for d in raw_denials:
             if isinstance(d, dict):
                 denials.append({"tool_name": str(d.get("tool_name") or "unknown tool"), "tool_input": d.get("tool_input")})
-    return data["result"].strip(), denials
+    is_error = data.get("is_error") is True
+    if isinstance(data.get("result"), str):
+        text = data["result"].strip()
+    else:  # error results (error_during_execution, error_max_turns, ...) carry no `result` string
+        errs = data.get("errors")
+        detail = f": {errs[0]}" if isinstance(errs, list) and errs else ""
+        text = f"claude returned no result text (subtype {data.get('subtype') or 'unknown'}){detail}"[:300]
+        is_error = True
+    return text, denials, is_error
 
 
 def describe_denial(denial: dict, width: int = 100) -> str:
@@ -177,10 +202,14 @@ def summarize_denials(denials: list[dict], limit: int = 3) -> str:
     return shown + (f"; +{more} more" if more > 0 else "")
 
 
-# Phrases in the agent's own reply that mean the work did not finish or did not reach the user.
+# Phrases in the delivered reply that report the task's own outcome as a failure. Anchored to the task
+# ("sync failed", "did not complete") so a report that merely mentions something else failing ("failed
+# payment", "a check failed earlier and recovered") is not a false positive.
 FAILURE_REPLY_RE = re.compile(
-    r"did not complete|didn't complete|did NOT complete|could not complete|couldn't complete|"
-    r"failed to deliver|not delivered|unable to complete",
+    r"(?:did\s+not|didn't|could\s+not|couldn't|unable\s+to|was\s+unable\s+to)\s+(?:complete|finish)|"
+    r"failed\s+to\s+(?:deliver|complete|finish|run)|not\s+delivered|"
+    r"\b(?:sync|review|refresh|run|task|job|upload|workflow|update)\s+(?:has\s+|had\s+)?"
+    r"(?:failed|did\s+not\s+(?:run|work))",
     re.IGNORECASE,
 )
 
@@ -364,34 +393,35 @@ def dispatch_task(task: dict) -> tuple[str, str]:
         # JSON output carries the exact denied commands. If it can't be parsed, fall back to the raw
         # stdout as the reply and to the debug-log denial count, so the reply text is never lost.
         parsed = parse_claude_json(raw_output)
+        reported_error = False
         if parsed is not None:
-            output, denial_list = parsed
+            output, denial_list, reported_error = parsed
             denial_count = len(denial_list)
             denial_text = summarize_denials(denial_list)
         else:
             output = raw_output
             denial_count = count_permission_denials(debug_log)
-            denial_list = []
             denial_text = ", ".join(denied_tool_names(debug_log)) or "unknown tool"
+        process_ok = process_ok and not reported_error
 
         message = extract_telegram_message(output) if (process_ok and chat_id) else None
+        delivered = False
         if message:
             delivered = deliver_telegram_message(chat_id, message, name)
             success = process_ok and delivered
             summary = message[:500] if delivered else f"telegram delivery failed; message was: {message[:400]}"
         else:
-            delivered = process_ok
             success = process_ok
             summary = output[:500] if output else (result.stderr or "").strip()[:200]
 
         status = "ok" if success else "failed"
-        if denial_count and success:
-            if reply_says_failed(output):
-                status = "failed"
-            else:
+        if denial_count:
+            # degraded needs a delivered, marked message: a silent run whose commands were denied may have
+            # concluded "nothing to report" from a blocked check, so it must stay failed and alert.
+            if success and delivered and not reply_says_failed(message):
                 status = "degraded"
-            summary = f"[{denial_count} command(s) denied: {denial_text}] {summary}"
-        elif denial_count:
+            else:
+                status = "failed"
             summary = f"[{denial_count} command(s) denied: {denial_text}] {summary}"
         problem = checkout_problem()
         if problem and status == "failed":

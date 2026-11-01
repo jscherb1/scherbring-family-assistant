@@ -67,7 +67,8 @@ def _result_json(text, denials=()):
 def test_parse_claude_json_extracts_reply_and_denied_commands():
     raw = _result_json("hello", [{"tool_name": "Bash", "tool_use_id": "t1",
                                   "tool_input": {"command": "cd x && python y.py"}}])
-    text, denials = sd.parse_claude_json(raw)
+    text, denials, is_error = sd.parse_claude_json(raw)
+    assert is_error is False
     assert text == "hello"
     assert denials[0]["tool_name"] == "Bash" and denials[0]["tool_input"]["command"] == "cd x && python y.py"
 
@@ -81,7 +82,7 @@ def test_parse_claude_json_falls_back_on_garbage():
 
 def test_parse_claude_json_accepts_event_array():
     raw = json.dumps([{"type": "system"}, json.loads(_result_json("hi"))])
-    assert sd.parse_claude_json(raw) == ("hi", [])
+    assert sd.parse_claude_json(raw) == ("hi", [], False)
 
 
 def test_denial_summary_truncates():
@@ -175,3 +176,59 @@ def test_main_sends_no_failure_alert_for_degraded(monkeypatch):
     monkeypatch.setattr(sd, "dispatch_task", lambda t: ("failed", "boom"))
     sd.main()
     assert len(alerts) == 1
+
+
+def test_parse_claude_json_tolerates_warning_lines():
+    obj = _result_json("hi", [{"tool_name": "Bash", "tool_input": {"command": "x"}}])
+    for raw in (f"warning: something\n{obj}", f"{obj}\n", f"noise {obj} trailing", f"a\n\n{obj}\n\n"):
+        text, denials, _ = sd.parse_claude_json(raw)
+        assert text == "hi" and len(denials) == 1
+
+
+def test_parse_claude_json_error_flag_and_missing_result():
+    text, _, is_error = sd.parse_claude_json(json.dumps({"type": "result", "result": "API error", "is_error": True}))
+    assert is_error and text == "API error"
+    text, _, is_error = sd.parse_claude_json(json.dumps(
+        {"type": "result", "subtype": "error_max_turns", "is_error": True, "errors": ["too many turns"],
+         "permission_denials": []}))
+    assert is_error and "error_max_turns" in text and "too many turns" in text and "{" not in text
+
+
+def test_is_error_result_with_exit_zero_is_failed(monkeypatch, tmp_path):
+    out = json.dumps({"type": "result", "subtype": "success", "is_error": True, "result": _marked("hello")})
+    (status, _), sent = _run_dispatch(monkeypatch, tmp_path, out)
+    assert status == "failed" and sent == []
+
+
+def test_silent_run_with_denials_is_failed(monkeypatch, tmp_path):
+    out = _result_json("nothing is due today", [{"tool_name": "Bash", "tool_input": {"command": "cd x && y"}}])
+    (status, summary), sent = _run_dispatch(monkeypatch, tmp_path, out)
+    assert status == "failed" and sent == [] and "cd x && y" in summary
+
+
+def test_silent_run_without_denials_is_ok(monkeypatch, tmp_path):
+    (status, _), sent = _run_dispatch(monkeypatch, tmp_path, _result_json("nothing due"))
+    assert status == "ok" and sent == []
+
+
+def test_reply_failure_wording_detection():
+    for text in ("COROS workout sync failed: login expired", "The quarterly review did not complete.",
+                 "Couldn't complete the upload", "Drive upload failed to deliver", "weather task failed"):
+        assert sd.reply_says_failed(text), text
+    for text in ("Review: one failed payment of $40 at Netflix", "A check failed earlier and recovered.",
+                 "All good. Rain likely Tuesday."):
+        assert not sd.reply_says_failed(text), text
+
+
+def test_delivered_failure_reply_with_denials_stays_failed(monkeypatch, tmp_path):
+    out = _result_json(_marked("COROS workout sync failed: login expired"),
+                       [{"tool_name": "Bash", "tool_input": {"command": "echo $?"}}])
+    (status, _), sent = _run_dispatch(monkeypatch, tmp_path, out)
+    assert status == "failed" and sent  # delivered, but reports failure
+
+
+def test_false_positive_text_with_denials_is_degraded(monkeypatch, tmp_path):
+    out = _result_json(_marked("Spending: one failed payment at Netflix"),
+                       [{"tool_name": "Bash", "tool_input": {"command": "echo $?"}}])
+    (status, _), _ = _run_dispatch(monkeypatch, tmp_path, out)
+    assert status == "degraded"

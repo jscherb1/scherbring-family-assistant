@@ -246,10 +246,13 @@ subagent (or a row in the registry via `scheduler_store.py`) — it never touche
    context, 300 s limit). The agent wraps its reply in `<<<TELEGRAM_SEND>>>` markers and the
    dispatcher delivers it through the Telegram Bot API.
 5. The run is read from `--output-format json` (falling back to raw stdout and the debug-log denial
-   count if that can't be parsed). A task that fails (non-zero exit, undelivered message, or a reply
-   saying it did not complete) is marked `failed` and a direct Telegram alert goes out (no Claude
-   involved). A run that finished and delivered but had commands denied is marked `degraded`: no
-   alert, and the summary names the denied commands. Missed runs after downtime collapse
+   count if that can't be parsed). It is marked `failed`, and a direct Telegram alert goes out (no
+   Claude involved), if it exits non-zero, the JSON result is an error, or the message fails to
+   deliver. If any commands were denied, the run is `degraded` (no alert; the summary names the
+   denied commands) only when a marked message was delivered and that message does not report the
+   task itself failing (for example "sync failed", "did not complete"); a silent run with denials,
+   or one whose delivered message reports a failure, is `failed`. Without denials, a reply that
+   says it did not complete is not detected, so read the message. Missed runs after downtime collapse
    into one catch-up run.
 
 A separate watchdog (`scripts/watchdog_scheduler_health.py`, run every 2 minutes by
