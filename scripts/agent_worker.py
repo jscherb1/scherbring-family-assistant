@@ -27,6 +27,7 @@ from typing import Any, Awaitable, Callable, Protocol
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import fastlane  # noqa: E402
 from bridge_store import BridgeStore  # noqa: E402
 from bridge_store import session_key_for  # noqa: E402
 from paths import REPO_ROOT, dev_chat_ids, household_chat_id  # noqa: E402
@@ -48,6 +49,9 @@ HEARTBEAT_EVERY_S = 2
 PING_EVERY_S = 30
 MODEL_CANARY_EVERY_S = 1800
 PING_TIMEOUT_S = 20
+FASTLANE_POLL_S = 0.1          # how often new messages are looked at; Tier 0 answers within about this long
+FASTLANE_BEAT_EVERY_S = 1.0    # liveness stamp that lets claim_next hold messages for triage (it ignores it after 5 s)
+FASTLANE_EXEC_TIMEOUT_S = 30   # an action's service calls (HA, Todoist) have their own 8 s timeouts
 MODEL_CANARY_TIMEOUT_S = 90
 ROTATE_CONTEXT_TOKENS = 150_000
 ROTATE_AGE_S = 7 * 86400
@@ -332,8 +336,16 @@ async def model_canary(model: str) -> None:
 
 
 class Worker:
-    def __init__(self, store: BridgeStore, session_factory: Callable[[str], AgentSession], *, turn_timeout: float = TURN_TIMEOUT_S, slow_ack_after: float = SLOW_ACK_AFTER_S, max_sessions: int = MAX_CONCURRENT_SESSIONS):
+    def __init__(self, store: BridgeStore, session_factory: Callable[[str], AgentSession], *, turn_timeout: float = TURN_TIMEOUT_S, slow_ack_after: float = SLOW_ACK_AFTER_S, max_sessions: int = MAX_CONCURRENT_SESSIONS,
+                 fastlane_router: Any = None, fastlane_db: Any = None):
         self.store = store
+        self.fastlane_router = fastlane_router   # Tier 1 (fastlane_model.HaikuRouter); None = Tier 0 only
+        self.fastlane_db = fastlane_db           # agent_results.db for the fast-lane services (None = the default)
+        self._fl_seen: set[int] = set()          # inbox ids being triaged right now
+        self._fl_locks: dict[str, asyncio.Lock] = {}  # per session: triage runs in message order
+        self._fl_tasks: set[asyncio.Task] = set()
+        self._fl_beat = 0.0
+        self._fl_warm = False
         self.session_factory = session_factory
         self.sessions: dict[str, AgentSession] = {}
         self.turn_timeout = turn_timeout
@@ -456,7 +468,8 @@ class Worker:
         self._reply(row, final)
         self.store.complete(row["id"])
         self._track_daily_cost(result.cost_usd or 0.0)
-        _append_jsonl(USAGE_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "session": key, "inbox_id": row["id"], "duration_s": round(time.time() - started, 1), "cost_usd": result.cost_usd, "usage": result.usage})
+        _append_jsonl(USAGE_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "session": key, "inbox_id": row["id"], "duration_s": round(time.time() - started, 1), "cost_usd": result.cost_usd, "usage": result.usage,
+                                  "fastlane": {"tier": 2, "latency_ms": int((time.time() - row["received_at"]) * 1000), "reason": row.get("triage")}})
         _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_end", "duration_s": round(time.time() - started, 1)})
         return True
 
@@ -537,6 +550,115 @@ class Worker:
                 await self.maintenance_once()
             except Exception as e:  # noqa: BLE001
                 log.error("maintenance error: %r", e)
+
+    # ---- fast lane: answer clear short commands without an agent turn (see scripts/fastlane.py) ----
+    def _fl_pass(self, row: dict, why: str) -> None:
+        self.store.set_triage(row["id"], "pass:" + why)
+        _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "fastlane_pass", "reason": why})
+
+    async def fastlane_once(self) -> int:
+        """Look at messages nobody has triaged yet. Returns how many were started. Does nothing unless the kill
+        switch is on (`agent_ctl.py fastlane on`); while on, a stamp tells claim_next to wait (up to 10 s) for it."""
+        on = self.store.kv_get("fastlane") == "on"
+        if not on:
+            if self._fl_warm and self.fastlane_router is not None:
+                self._fl_warm = False
+                await self.fastlane_router.close()
+            return 0
+        now = time.time()
+        if now - self._fl_beat >= FASTLANE_BEAT_EVERY_S:
+            self.store.kv_set("fastlane_beat", str(now))
+            self._fl_beat = now
+        if not self._fl_warm and self.fastlane_router is not None:
+            self._fl_warm = True
+            t = asyncio.create_task(self.fastlane_router.prewarm())
+            self._fl_tasks.add(t)
+            t.add_done_callback(self._fl_tasks.discard)
+        if self.store.kv_get("paused") == "1":
+            return 0
+        started = 0
+        for row in self.store.untriaged():
+            if row["id"] in self._fl_seen:
+                continue
+            self._fl_seen.add(row["id"])
+            t = asyncio.create_task(self._fastlane_row(row))
+            self._fl_tasks.add(t)
+            t.add_done_callback(self._fl_tasks.discard)
+            started += 1
+        return started
+
+    async def fastlane_loop(self) -> None:
+        while not self.stop.is_set():
+            try:
+                await self.fastlane_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                log.error("fast lane loop error: %r", e)  # never fatal: claim_next fails open after 10 s
+            await asyncio.sleep(FASTLANE_POLL_S)
+
+    async def _fastlane_row(self, row: dict) -> None:
+        lock = self._fl_locks.setdefault(row["session_key"], asyncio.Lock())
+        try:
+            async with lock:   # one message at a time per session, in order
+                try:
+                    await self._fastlane_triage(row)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    log.exception("fast lane triage of %s failed: %r", row["id"], e)
+                    self._fl_pass(row, "error")
+        finally:
+            self._fl_seen.discard(row["id"])
+
+    async def _fastlane_triage(self, row: dict) -> None:
+        now = time.time()
+        reason = fastlane.eligibility(row, self.store, now=now)
+        if reason:
+            return self._fl_pass(row, reason)
+        text = row["text"]
+        ctx = fastlane.Context.load(self.fastlane_db)
+        match, cost = fastlane.tier0(text, ctx), None
+        if match is None:
+            if self.fastlane_router is None or not fastlane.worth_model(text, ctx):
+                return self._fl_pass(row, "no_match")
+            res = await self.fastlane_router.route(text, ctx)
+            if res.obj is None:
+                return self._fl_pass(row, "model_" + (res.error or "none"))
+            match, why = fastlane.check_model_output(res.obj, text, ctx)
+            if match is None:
+                return self._fl_pass(row, why)
+            cost = res.cost_usd
+            if time.time() - row["received_at"] > fastlane.MAX_AGE_S:
+                return self._fl_pass(row, "late")
+        why = fastlane.ordering_conflict(row, match, self.store) or fastlane.checkin_block(match, self.store, row, ctx, now)
+        if why:
+            return self._fl_pass(row, why)
+        if not self.store.fastlane_claim(row["id"]):
+            return   # the agent took it (10 s passed or the gate was off): nothing to do
+        key = row["session_key"]
+        started = time.time()
+        stamp = datetime.now().isoformat(timespec="seconds")
+        _append_jsonl(STREAM_LOG, {"t": stamp, "inbox_id": row["id"], "session": key, "type": "turn_start", "text": text[:500], "fastlane": match.action})
+        try:
+            reply = await asyncio.wait_for(asyncio.to_thread(fastlane.execute, match, ctx), timeout=FASTLANE_EXEC_TIMEOUT_S)
+        except fastlane.PassUp as e:
+            self.store.fastlane_release(row["id"], e.reason, side_effects_possible=False)
+            return
+        except asyncio.TimeoutError:
+            reply = fastlane.Reply("That took longer than expected and I can't tell whether it went through. Please check it.", wrote=True)
+        except asyncio.CancelledError:
+            self.store.requeue(row["id"])   # worker stopping; the agent's redelivery carries the retry marker
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.exception("fast action %s for %s failed: %r", match.action, row["id"], e)
+            self.store.fastlane_release(row["id"], "error", side_effects_possible=True)
+            return
+        self.store.record_fast_exchange(row, reply.text)
+        self.store.complete(row["id"])
+        latency_ms = int((time.time() - row["received_at"]) * 1000)
+        _append_jsonl(USAGE_LOG, fastlane.usage_record(row, tier=match.tier, action=match.action, latency_ms=latency_ms, outcome="done", cost_usd=cost))
+        _append_jsonl(STREAM_LOG, {"t": datetime.now().isoformat(timespec="seconds"), "inbox_id": row["id"], "type": "turn_end", "duration_s": round(time.time() - started, 2), "fastlane": match.action})
 
     async def _slow_ack(self, row: dict) -> None:
         await asyncio.sleep(self.slow_ack_after)
@@ -633,6 +755,7 @@ class Worker:
         hb = asyncio.create_task(self.heartbeat_loop())
         canary = asyncio.create_task(self.canary_loop(model))
         maint = asyncio.create_task(self.maintenance_loop())
+        fl = asyncio.create_task(self.fastlane_loop())
         sd_notify("READY=1")
         try:
             # Dispatcher: a loop per session with pending work, so a long turn in one session never
@@ -645,6 +768,11 @@ class Worker:
             hb.cancel()
             canary.cancel()
             maint.cancel()
+            fl.cancel()
+            for t in list(self._fl_tasks):
+                t.cancel()
+            if self.fastlane_router is not None:
+                await self.fastlane_router.close()
             loops = list(self._loops.values())
             if loops:
                 _, pending = await asyncio.wait(loops, timeout=STOP_GRACE_S)  # let running turns finish briefly
@@ -665,7 +793,9 @@ def main() -> int:
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = BridgeStore(args.db)
-    worker = Worker(store, lambda key: SdkSession(key, store, args.model))
+    import fastlane_model  # noqa: E402  (Tier 1 router; only connects when the fast lane is switched on)
+
+    worker = Worker(store, lambda key: SdkSession(key, store, args.model), fastlane_router=fastlane_model.HaikuRouter())
 
     async def runner() -> None:
         loop = asyncio.get_running_loop()

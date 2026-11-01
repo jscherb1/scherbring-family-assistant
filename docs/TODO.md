@@ -380,6 +380,35 @@ Unit-tested with fake sessions only; nothing below has run against Telegram or t
 - Not checked: whether anything shared on disk (for example one browser profile) misbehaves when two sessions use the
   same tool at once; SQLite stores are fine.
 
+## Fast lane, Tier 0 and 1 (built 2026-11-01, branch `feat/fast-lane`)
+
+Off by default (`agent_ctl.py fastlane on` to enable); unit-tested with stubs for Home Assistant, Todoist and the model.
+- [ ] Restart the worker (`systemctl --user restart assistant-agent-worker`), run `agent_ctl.py fastlane on`, then
+  `agent_ctl.py status` should show the lane ON with the task alive.
+- [ ] Live check, Tier 0 (one at a time, watch the reply and the result): "turn off the porch light" then "turn on the porch
+  light"; "add test item to my shopping list" (confirm it lands on the right Todoist project, then delete it); "rate today a
+  7" (check the Check-in page); "Achilles PT done" (and again: it must say already logged); "what's for dinner today?".
+- [ ] Live check, Tier 1 (3-5 s; the first messages after switching on pass to the agent until the model client is ready):
+  "add granola and oats to the Costco list", "I'd rate today a 7" ("I stretched yesterday" and "Claire fed the dog" now go to the agent unless a Tier 0 rule takes them).
+- [ ] Live check, garage: "close the double garage door" while it is open, and confirm "open the garage" /
+  "raise the garage door" are answered by the agent, not the fast lane.
+- [ ] Live check, ordering: start a long task (for example "build the hyvee cart"), then send "add milk to my Costco list";
+  the second must answer while the first is still running.
+- [ ] Watch the Agent page (Fast lane card) and `state/usage.jsonl` for a week: share of messages handled, median time per
+  tier, and any `pass:model_*` reasons; look for a message the lane took that it should not have and tighten the rules.
+- **Decision for the user (not made):** the plan said to stop if Tier 1's median passed 4 s. A cold process per call
+  measured about 5.7 s median, so a pre-started one-use client was built instead (measured median 3.4 s over 20 calls and 4.7 s over 39 in two runs, p90 4.8 s, worst 12 s, a few calls over
+  the 6 s timeout, a second message within about 5 s of the first goes to the agent). Accept that, or use an API key
+  (faster, no idle process), or ship Tier 0 only (leave the model out).
+- Known window: the worker can crash after a fast action's reply is queued but before the row is completed. The row is
+  then redelivered to the agent with the "Retry" marker, so the user may get a second reply (the action itself is not
+  repeated by the lane; the agent is told to check state). The triage path's small SQLite calls stay on the event loop;
+  only the service calls (Home Assistant, Todoist, the services' databases) run in a thread.
+- Not verified live: the Haiku call inside the worker (measured separately from the CLI), the worker's fast-lane task
+  against real Telegram traffic, and the Todoist project names ("Costco list", "shopping list") against the real projects.
+- Possible follow-ups: Tier 2 stays the full agent. Candidates for later: undo ("undo that") through the fast lane, "also
+  add ... " style follow-ups, and raising Tier 1's coverage once the history shows which phrasings are common.
+
 ## Gmail read access (added 2026-10-31)
 
 - [ ] Read-only `gmail` agent added (`.claude/agents/gmail.md`; search_threads, get_thread, get_message, list_labels). Use cases are undecided, so no triage, digest, schedule or dashboard section exists. Needs a live check: ask it to find a recent email and confirm the tools resolve (a fresh agent session may be needed to pick up the new agent). It is an infrastructure exception to the agent + UI standard.

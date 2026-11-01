@@ -144,6 +144,7 @@ and its `state/schema.sql` tables):
 | Weather-driven prep nudges | `weather-reminders` |
 | Golf rounds and handicap (incl. scorecard photos) | `golf` |
 | Habit / streak tracking | `habits` |
+| Instant answers for short commands ("add milk to the Costco list", "turn off the porch lights", "log stretching"): no subagent, the worker's fast lane (off until `python scripts/agent_ctl.py fastlane on`) | (none: infrastructure) |
 | Daily 1-10 day rating with insights on what drives it | `dayrating` |
 | Nightly check-in (rate the day, yes/no journal, open habits in one message) | `journal` |
 | Wellness summary: recovery, sleep and HRV trends, what drives them (the Wellness dashboard pages) | `wellness` |

@@ -1,0 +1,21 @@
+<section class="card" id="fastlane-card">
+  <h2>Fast lane</h2>
+  <div class="card-body">
+    {% if fastlane.enabled %}
+      <span class="pill {{ 'pill-ok' if fastlane.alive else 'pill-warn' }}">{{ 'On' if fastlane.alive else 'On, task not running (messages go to the agent)' }}</span>
+    {% else %}
+      <span class="pill pill-muted">Off</span> <span class="subtitle">Switch on with <code>scripts/agent_ctl.py fastlane on</code>.</span>
+    {% endif %}
+    <p class="subtitle">Clear short commands answered without an agent turn. Last {{ fastlane.days }} days.</p>
+    <table class="tbl">
+      <thead><tr><th>Handled by</th><th class="num">Messages</th><th class="num">Median time</th></tr></thead>
+      <tbody>
+        {% for key, label in (('tier0', 'Fast lane, rules (Tier 0)'), ('tier1', 'Fast lane, model (Tier 1)'), ('tier2', 'Agent (Tier 2)')) %}
+          {% set t = fastlane.tiers[key] %}
+          <tr><td>{{ label }}</td><td class="num">{{ t.count }}</td><td class="num">{% if t.median_ms is not none %}{{ '%.1f'|format(t.median_ms / 1000) }} s{% else %}&ndash;{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if fastlane.actions %}<p class="subtitle">By action: {% for a, n in fastlane.actions.items() %}{{ a }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+  </div>
+</section>

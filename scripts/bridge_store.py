@@ -84,6 +84,13 @@ OUTBOX_MIGRATIONS = {
     "noted": "INTEGER NOT NULL DEFAULT 0",    # 1 = also recorded as a context note (the seed shows the note instead)
 }
 
+# Inbox columns added after the first release.
+INBOX_MIGRATIONS = {
+    "triage": "TEXT",   # fast lane: NULL = not looked at yet, 'fast' = handled by the fast lane, 'pass:<why>' = for the agent
+}
+
+FASTLANE_MAX_WAIT_S = 10      # a message the fast lane has not triaged by now is claimed anyway (fail open)
+FASTLANE_BEAT_STALE_S = 5     # ...and the gate is off entirely when the fast-lane task isn't beating
 MAX_OUTBOX_ATTEMPTS = 8
 MAX_FOLDED_NOTES = 20
 
@@ -106,6 +113,11 @@ def session_key_for(chat_ref: str) -> str:
 
 def _note_text(source: str | None, text: str) -> str:
     return f"[{source or 'system'}] sent you: {text}"[:4000]
+
+
+def _exchange_text(source: str, request: str, result: str) -> str:
+    """Context note for something answered without an agent turn: what was asked and what was done."""
+    return f"[{source}] You asked: {request}\n[{source}] Handled directly without an agent turn, I replied: {result}"[:4000]
 
 
 def record_context_note(chat_ref: str, text: str, source: str, *, db: Path | str = DEFAULT_DB) -> None:
@@ -148,14 +160,15 @@ class BridgeStore:
                 time.sleep(0.1)
 
     def _migrate(self) -> None:
-        have = {r["name"] for r in self._conn.execute("PRAGMA table_info(outbox)")}
-        for col, decl in OUTBOX_MIGRATIONS.items():
-            if col not in have:
-                try:
-                    self._conn.execute(f"ALTER TABLE outbox ADD COLUMN {col} {decl}")
-                except sqlite3.OperationalError as e:  # another connection added it first
-                    if "duplicate column" not in str(e):
-                        raise
+        for table, migrations in (("outbox", OUTBOX_MIGRATIONS), ("inbox", INBOX_MIGRATIONS)):
+            have = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            for col, decl in migrations.items():
+                if col not in have:
+                    try:
+                        self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+                    except sqlite3.OperationalError as e:  # another connection added it first
+                        if "duplicate column" not in str(e):
+                            raise
 
     def close(self) -> None:
         self._conn.close()
@@ -232,10 +245,106 @@ class BridgeStore:
                 pass
         self.kv_set("mcp_down", json.dumps(sorted(union)))
 
-    def pending_session_keys(self) -> list[str]:
+    # ---- fast lane gate ----
+    def fastlane_gate_active(self, now: float | None = None) -> bool:
+        """True when the fast lane is switched on AND its task is alive. Only then does claim_next hold back
+        messages the fast lane has not looked at yet, so a dead or disabled fast lane can never stall anything."""
+        if self.kv_get("fastlane") != "on":
+            return False
+        ts = now if now is not None else time.time()
+        beat = self.kv_get("fastlane_beat")
+        try:
+            return bool(beat) and ts - float(beat) <= FASTLANE_BEAT_STALE_S
+        except ValueError:
+            return False
+
+    def _claimable(self, now: float | None) -> tuple[str, tuple]:
+        """SQL condition (and args) for pending messages the agent may take now."""
+        ts = now if now is not None else time.time()
+        where = "status='pending' AND kind='message'"
+        if self.fastlane_gate_active(ts):
+            return where + " AND (triage IS NOT NULL OR received_at <= ?)", (ts - FASTLANE_MAX_WAIT_S,)
+        return where, ()
+
+    def pending_session_keys(self, now: float | None = None) -> list[str]:
         """Sessions with a claimable message, oldest waiting first."""
+        where, args = self._claimable(now)
         return [r["session_key"] for r in self._conn.execute(
-            "SELECT session_key FROM inbox WHERE status='pending' AND kind='message' GROUP BY session_key ORDER BY MIN(id)")]
+            f"SELECT session_key FROM inbox WHERE {where} GROUP BY session_key ORDER BY MIN(id)", args)]
+
+    def untriaged(self, limit: int = 20) -> list[dict]:
+        """New messages the fast lane has not looked at, oldest first."""
+        rows = self._conn.execute(
+            "SELECT * FROM inbox WHERE status='pending' AND kind='message' AND triage IS NULL ORDER BY id LIMIT ?",
+            (limit,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["payload"] = json.loads(d["payload"])
+            except ValueError:
+                d["payload"] = {}
+            out.append(d)
+        return out
+
+    def set_triage(self, inbox_id: int, value: str) -> bool:
+        """Record a pass decision ('pass:<why>') on a message nobody has taken yet."""
+        cur = self._conn.execute(
+            "UPDATE inbox SET triage=? WHERE id=? AND status='pending' AND triage IS NULL", (value[:80], inbox_id))
+        return cur.rowcount == 1
+
+    def fastlane_claim(self, inbox_id: int, now: float | None = None) -> bool:
+        """Take an untriaged pending message for the fast lane (atomic against claim_next). attempts becomes 1,
+        so if the worker dies mid-action the agent's redelivery carries the "may have partially executed" marker."""
+        ts = now if now is not None else time.time()
+        cur = self._conn.execute(
+            "UPDATE inbox SET status='processing', triage='fast', attempts=attempts+1, picked_at=?"
+            " WHERE id=? AND status='pending' AND triage IS NULL", (ts, inbox_id))
+        return cur.rowcount == 1
+
+    def fastlane_release(self, inbox_id: int, why: str, *, side_effects_possible: bool) -> None:
+        """Hand a fast-lane claim to the agent after all. With no possible side effect the attempt does not
+        count; otherwise it does, and the agent is told to check state before repeating anything."""
+        self._conn.execute(
+            "UPDATE inbox SET status='pending', triage=?, attempts=CASE WHEN ? THEN attempts ELSE 0 END"
+            " WHERE id=? AND status='processing' AND triage='fast'",
+            (("pass:" + why)[:80], int(side_effects_possible), inbox_id))
+
+    def earlier_messages(self, session_key: str, before_id: int) -> list[dict]:
+        """Messages of this session queued or running ahead of `before_id` (for the fast lane's ordering rule)."""
+        return [dict(r) for r in self._conn.execute(
+            "SELECT id, text, status, triage FROM inbox WHERE session_key=? AND kind='message' AND id<?"
+            " AND status IN ('pending','processing') ORDER BY id", (session_key, before_id))]
+
+    def open_checkin(self, session_key: str, *, now: float | None = None, within_s: float = 4 * 3600) -> float | None:
+        """When the most recent scheduled message that asks something (a nightly check-in) was sent, if that was
+        within `within_s`; None otherwise. Whether it was answered is for the caller to judge from real data."""
+        ts = now if now is not None else time.time()
+        refs = [r["chat_ref"] for r in self._conn.execute("SELECT DISTINCT chat_ref FROM inbox WHERE session_key=?", (session_key,))]
+        if not refs:
+            return None
+        marks = ",".join("?" * len(refs))
+        row = self._conn.execute(
+            f"SELECT created_at FROM outbox WHERE chat_ref IN ({marks}) AND source LIKE 'scheduled:%' AND status<>'failed'"
+            " AND text LIKE '%?%' ORDER BY id DESC LIMIT 1", refs).fetchone()
+        return row["created_at"] if row and ts - row["created_at"] <= within_s else None
+
+    def recent_assistant_question(self, session_key: str, *, within_s: float = 600,
+                                  now: float | None = None, exclude_id: int | None = None) -> str | None:
+        """Why the next message may be an answer: the assistant's last outbound for this session asked something in
+        the last `within_s`. Returns a short reason or None."""
+        ts = now if now is not None else time.time()
+        refs = [r["chat_ref"] for r in self._conn.execute("SELECT DISTINCT chat_ref FROM inbox WHERE session_key=?", (session_key,))]
+        if not refs:
+            return None
+        marks = ",".join("?" * len(refs))
+        asks = lambda text: "?" in ((text or "").strip().splitlines() or [""])[-1]  # noqa: E731
+        last = self._conn.execute(
+            f"SELECT text, created_at FROM outbox WHERE chat_ref IN ({marks}) AND status<>'failed' ORDER BY id DESC LIMIT 1",
+            refs).fetchone()
+        if last and ts - last["created_at"] <= within_s and asks(last["text"]):
+            return "question"
+        return None
 
     def active_session_keys(self) -> set[str]:
         """Sessions with a message pending or in progress."""
@@ -290,11 +399,10 @@ class BridgeStore:
         the turn without a model call per note.
         """
         with self._tx() as c:
-            where = "status='pending' AND kind='message'"
-            args: tuple = ()
+            where, args = self._claimable(now)
             if session_key is not None:
                 where += " AND session_key=?"
-                args = (session_key,)
+                args = args + (session_key,)
             row = c.execute(f"SELECT * FROM inbox WHERE {where} ORDER BY id LIMIT 1", args).fetchone()
             if row is None:
                 return None
@@ -350,10 +458,12 @@ class BridgeStore:
         source: str | None = None,
         kind: str = "reply",
         note: bool = False,
+        note_text: str | None = None,
         now: float | None = None,
     ) -> int:
         """Queue a message for the bridge to send. `note=True` also records it as a context note, for
-        messages the live session didn't write itself (alerts, notices), so it can discuss them later."""
+        messages the live session didn't write itself (alerts, notices), so it can discuss them later.
+        `note_text` replaces the default "sent you: ..." wording of that note."""
         ts = now if now is not None else time.time()
         cur = self._conn.execute(
             "INSERT INTO outbox(channel,chat_ref,text,files,in_reply_to,created_at,next_attempt_at,source,kind,noted)"
@@ -361,9 +471,17 @@ class BridgeStore:
             (channel, str(chat_ref), text, json.dumps(files or []), in_reply_to, ts, ts, source, kind, int(note)),
         )
         if note:
-            self.add_inbound(source or channel, str(chat_ref), _note_text(source, text), kind="context_note",
+            self.add_inbound(source or channel, str(chat_ref), note_text or _note_text(source, text), kind="context_note",
                              session_key=session_key_for(str(chat_ref)), now=ts)
         return cur.lastrowid
+
+    def record_fast_exchange(self, row: dict, reply: str, *, source: str = "fastlane", now: float | None = None) -> int:
+        """An action the fast lane handled: queue the reply (source=fastlane, so replying to it can be traced) and
+        leave ONE context note with both the request and the result for the agent's next turn. The request row is
+        then hidden from recent_conversation (triage='fast'), so nothing shows twice."""
+        return self.enqueue_outbound(
+            row["channel"], row["chat_ref"], reply, in_reply_to=row["id"], source=source, kind="reply", note=True,
+            note_text=_exchange_text(source, row["text"], reply), now=now)
 
     def record_sent(self, channel: str, chat_ref: str, text: str, tg_message_ids: list[int], *,
                     source: str, kind: str = "alert", note: bool = True, now: float | None = None) -> int:
@@ -497,7 +615,7 @@ class BridgeStore:
         rows: list[dict] = []
         for r in self._conn.execute(
             "SELECT CASE kind WHEN 'context_note' THEN 'note' ELSE 'in' END dir, received_at at, text FROM inbox"
-            " WHERE session_key=? AND kind IN ('message','context_note')",
+            " WHERE session_key=? AND kind IN ('message','context_note') AND COALESCE(triage,'')<>'fast'",
             (session_key,),
         ):
             rows.append(dict(r))

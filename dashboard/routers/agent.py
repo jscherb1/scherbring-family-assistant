@@ -10,7 +10,7 @@ router = APIRouter()
 @router.get("/agent", include_in_schema=False)
 def live(request: Request):
     return render(request, "agent/index.html", "agent", "live", "Agent (Telegram bridge)",
-                  status=agent.get_agent_status(), stream=agent.get_stream())
+                  status=agent.get_agent_status(), stream=agent.get_stream(), fastlane=agent.get_fastlane())
 
 
 @router.get("/agent/panel", include_in_schema=False)
@@ -27,4 +27,4 @@ def usage_page(request: Request):
 
 @router.get("/api/agent")
 def api_agent():
-    return {"status": agent.get_agent_status(), "stream": agent.get_stream(), "usage": agent.get_usage()}
+    return {"status": agent.get_agent_status(), "stream": agent.get_stream(), "usage": agent.get_usage(), "fastlane": agent.get_fastlane()}

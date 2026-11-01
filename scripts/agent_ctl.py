@@ -4,6 +4,9 @@
     agent_ctl.py status [--json]      liveness, queue depth, current turn, MCP problems
     agent_ctl.py pause | resume       worker finishes its turn then stops/starts taking messages
                                       (pause before `claude --resume <session_id>` by hand)
+    agent_ctl.py fastlane on|off|status
+                                      the fast lane (clear short commands answered without an agent turn);
+                                      OFF until switched on, takes effect within a second, no restart needed
     agent_ctl.py say "text" [--as CHAT_ID] [--timeout 120]
                                       send a message from the "terminal" channel and print the reply
     agent_ctl.py tail                 follow the live agent event stream (read-only)
@@ -80,6 +83,26 @@ def dev_chat_warnings() -> list[str]:
 def cmd_pause(args) -> int:
     BridgeStore(DB).kv_set("paused", "1" if args.cmd == "pause" else "0")
     print("worker paused (finishes current turn)" if args.cmd == "pause" else "worker resumed")
+    return 0
+
+
+def cmd_fastlane(args) -> int:
+    store = BridgeStore(DB)
+    if args.state in ("on", "off"):
+        store.kv_set("fastlane", args.state)
+        print(f"fast lane {args.state.upper()}" + ("" if args.state == "off" else
+              " (the worker picks it up within a second; messages are held for at most 10 s while it decides)"))
+        return 0
+    on = store.kv_get("fastlane") == "on"
+    beat = store.kv_get("fastlane_beat")
+    alive = bool(beat) and time.time() - float(beat) <= 5
+    print(f"fast lane: {'ON' if on else 'OFF'}" + (f", worker task {'alive' if alive else 'NOT beating (messages go straight to the agent)'}" if on else ""))
+    try:
+        import fastlane
+        t = fastlane.usage_summary(REPO_ROOT / "state" / "usage.jsonl", days=1)["tiers"]
+        print("last 24 h: " + ", ".join(f"{k} {v['count']} (median {v['median_ms']} ms)" for k, v in t.items()))
+    except Exception as e:  # noqa: BLE001
+        print(f"(no usage numbers: {e})")
     return 0
 
 
@@ -173,6 +196,9 @@ def main() -> int:
     p.add_argument("--as", dest="chat")
     p.add_argument("--timeout", type=float, default=120)
     p.set_defaults(fn=cmd_say)
+    p = sub.add_parser("fastlane")
+    p.add_argument("state", choices=["on", "off", "status"])
+    p.set_defaults(fn=cmd_fastlane)
     sub.add_parser("tail").set_defaults(fn=cmd_tail)
     sub.add_parser("sessions").set_defaults(fn=cmd_sessions)
     p = sub.add_parser("drill")

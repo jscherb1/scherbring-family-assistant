@@ -12,6 +12,8 @@ It holds three things in one place:
   - the write allow-list (the only entities/actions the app may change)
 
 Writes are deliberately narrow. Alarm, garage doors and locks are read-only: they are not in WRITABLE.
+The fast lane (scripts/fastlane.py) has its own, separate list, FASTLANE_WRITABLE (porch lights, thermostat setpoint,
+CLOSING a garage door), so the dashboard stays read-only for garage doors.
 Failures raise HAError with a CLI-style code: 1 = not found / unreachable, 2 = bad input.
 """
 
@@ -152,6 +154,52 @@ _SERVICE = {
     "media_play_pause": ("media_player", "media_play_pause"),
     "volume_up": ("media_player", "volume_up"),
     "volume_down": ("media_player", "volume_down"),
+}
+
+# Fast-lane allow-list (scripts/fastlane.py): a SEPARATE, narrower list than WRITABLE so the dashboard stays
+# read-only for garage doors. The fast lane may switch the porch lights, set a thermostat, and CLOSE the two garage
+# doors. It can never open a garage, unlock, or touch the alarm: those are not here, so `fastlane_act` refuses them
+# and such requests go to the full agent. Default-deny: any entity not listed is refused.
+FASTLANE_PORCH = "switch.shelly_relay_frontoutdoorlights_switch_0"
+FASTLANE_GARAGES = ("cover.single_garage_door", "cover.athom_garage_door")
+FASTLANE_WRITABLE: dict[str, set[str]] = {
+    FASTLANE_PORCH: set(_ON_OFF),
+    **{eid: {"set_temperature"} for eid, _ in THERMOSTATS},
+    **{eid: {"close_cover"} for eid in FASTLANE_GARAGES},
+}
+_SERVICE["close_cover"] = ("cover", "close_cover")  # only reachable through FASTLANE_WRITABLE
+
+# Spoken names -> entity ids (lowercase, apostrophes removed, the words "the/my/our/thermostat/temperature" dropped).
+FASTLANE_ALIASES: dict[str, tuple[str, ...]] = {
+    "porch lights": (FASTLANE_PORCH,), "porch light": (FASTLANE_PORCH,),
+    "front porch lights": (FASTLANE_PORCH,), "front porch light": (FASTLANE_PORCH,),
+    "outside lights": (FASTLANE_PORCH,), "outside light": (FASTLANE_PORCH,),
+    "outdoor lights": (FASTLANE_PORCH,), "outdoor light": (FASTLANE_PORCH,),
+    "front door lights": (FASTLANE_PORCH,), "front door light": (FASTLANE_PORCH,),
+    "front outdoor lights": (FASTLANE_PORCH,), "front lights": (FASTLANE_PORCH,),
+    "claires room": ("climate.claire_thermostat",), "claire room": ("climate.claire_thermostat",),
+    "claire": ("climate.claire_thermostat",),
+    "ruths room": ("climate.ruth_thermostat",), "ruth room": ("climate.ruth_thermostat",),
+    "ruth": ("climate.ruth_thermostat",),
+    "basement bedroom": ("climate.basement_bedroom_thermostat",),
+    "entryway": ("climate.entryway",), "entry": ("climate.entryway",),
+    "basement": ("climate.basement_thermostat",),
+    "garage": FASTLANE_GARAGES, "garage door": FASTLANE_GARAGES, "garage doors": FASTLANE_GARAGES,
+    "both garage doors": FASTLANE_GARAGES, "both garages": FASTLANE_GARAGES,
+    "single garage": ("cover.single_garage_door",), "single garage door": ("cover.single_garage_door",),
+    "single door": ("cover.single_garage_door",),
+    "double garage": ("cover.athom_garage_door",), "double garage door": ("cover.athom_garage_door",),
+    "double door": ("cover.athom_garage_door",),
+}
+# Read-only questions the fast lane answers (state only, never a write).
+FASTLANE_READ_ALIASES: dict[str, tuple[str, ...]] = {
+    "front door": ("binary_sensor.zb_doorsensor_frontdoor_opening",),
+    "back door": ("binary_sensor.zb_doorsensor_backdoor_opening",),
+    "claires door": ("binary_sensor.lumi_lumi_sensor_magnet_aq2_opening",),
+    "ruths door": ("binary_sensor.zb_doorsensor_ruth_opening",),
+    **{k: v for k, v in FASTLANE_ALIASES.items() if k.startswith(("garage", "single", "double", "both"))},
+    "porch lights": (FASTLANE_PORCH,), "porch light": (FASTLANE_PORCH,),
+    "outside lights": (FASTLANE_PORCH,), "front door lights": (FASTLANE_PORCH,),
 }
 
 OPENING_CLASSES = ("opening", "door", "garage_door", "window")
@@ -563,8 +611,30 @@ def _merge_events(lists: list[list[dict]]) -> list[dict]:
 
 
 def act(entity_id: str, action: str, value=None) -> dict:
-    """Change one allow-listed entity. Returns the fresh tile."""
-    allowed = WRITABLE.get(entity_id)
+    """Change one allow-listed entity (the dashboard's WRITABLE list). Returns the fresh tile."""
+    return _apply(entity_id, action, value, WRITABLE)
+
+
+def fastlane_act(entity_id: str, action: str, value=None) -> dict:
+    """Change one entity on the FAST-LANE allow-list (porch lights, thermostat setpoint, close a garage door).
+    Anything else, including opening a garage, locks and the alarm, is refused with HAError code 2."""
+    return _apply(entity_id, action, value, FASTLANE_WRITABLE)
+
+
+def fastlane_read(entity_id: str) -> dict:
+    """Fresh single-entity state for the fast lane's read questions (bypasses the 15 s cache)."""
+    known = {e for v in FASTLANE_READ_ALIASES.values() for e in v} | {e for e, _ in THERMOSTATS} \
+        | {e for e, _ in TEMP_SENSORS}
+    if entity_id not in known:
+        raise HAError(f"{entity_id} isn't readable from the fast lane", 2)
+    st = _open("/api/states/" + urllib.parse.quote(entity_id, safe="._"))
+    if not isinstance(st, dict) or "state" not in st:
+        raise HAError(f"no such entity {entity_id}", 1)
+    return _tile({entity_id: st}, entity_id)
+
+
+def _apply(entity_id: str, action: str, value, allow: dict[str, set[str]]) -> dict:
+    allowed = allow.get(entity_id)
     if allowed is None:
         raise HAError(f"{entity_id} can't be changed from the app (read-only)", 2)
     if action not in allowed:

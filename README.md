@@ -113,6 +113,9 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `scripts/golf.py` | Shared golf service (differentials, best-8-of-last-20 x 0.96 handicap, round logging/undo, saved courses). The single code path used by both `golf_store.py` and the dashboard |
 | `scripts/golf_store.py` | Zero-dep CLI over `golf.py` for the golf subagent (round/course/handicap/import/sync sub-commands) |
 | `scripts/golf_sheet.py` | Google Sheets side of golf: read history, append new rounds to the "Handicap - 18 holes only" tab (best-effort mirror) |
+| `scripts/fastlane.py` | Fast lane (stdlib): the action registry (habit, day rating, chore, Todoist list, My Hub reads, Home Assistant), the strict Tier 0 rules, validation of Tier 1 answers, and the guards (always-pass cases, garage/lock/alarm veto, ordering). Calls the same services the agents and dashboard use |
+| `scripts/fastlane_model.py` | Fast lane Tier 1: one Haiku call through the Agent SDK (no tools, no MCP, no settings, one turn, 6 s timeout) that maps a short message onto the registry as JSON; the code validates it. Uses a pre-started one-use client so no message sees another's text |
+| `scripts/fastlane_store.py` | CLI for the fast lane: `test "<text>" [--model]` (dry run, Tier 0 only unless `--model`; exit 0 would take it / 1 would pass / 2 bad input) and `eval --file <history>` (coverage report) |
 | `scripts/habits.py` | Shared habit-tracker service (streak rules, logging, at-risk). The single code path used by both `habits_store.py` and the dashboard |
 | `scripts/habits_store.py` | Zero-dep CLI over `habits.py` for the habits subagent (habit/log/at-risk/config sub-commands) |
 | `scripts/home_maintenance_store.py` | Zero-dep CLI for home maintenance data (item/completion/due sub-commands) |
@@ -392,6 +395,57 @@ code** (`scripts/golf.py`) against the same tables (`golf_rounds`, `golf_courses
 - Needs the **Google Sheets API enabled** on the same Cloud project as Drive (done 2026-10-24; the existing Drive login works;
   the `drive` scope covers Sheets). See `docs/TODO.md`.
 - No scheduled task.
+
+## Fast lane (Tier 0 and 1)
+
+Infrastructure, not a feature with its own subagent: it answers short, clear commands without a full agent turn. A
+simple command took the agent about 19 s (median over 20 real ones) although the action itself takes under a second;
+the fast lane does it in about a second (Tier 0) or roughly 3-5 s (Tier 1, measured median 3.4 s and 4.7 s in two runs, over the 4 s target in one; see the open decision in `docs/TODO.md`). Everything else goes to the agent exactly as
+before.
+
+- **Tier 0**, strict regex rules, no model: "log stretching", "Achilles PT done", "rate today a 7 - good day", "mark Ruth
+  make bed done", "add milk to my Costco list", "turn off the porch lights", "set Claire's room to 68",
+  "close the garage", "is the garage open?", "what's for dinner today?", "what's on today".
+- **Tier 1**, one Haiku call (`fastlane_model.py`) for phrasings the rules do not cover ("add lunch meat and sliced
+  cheese to my shopping list", "I'd rate today a 7"). **Its scope is deliberately small, enforced in code
+  (`TIER1_ACTIONS`), not in the prompt:** reads (`ha.state`, `hub.*`, `habit.status`) and the writes `todo.add` and
+  `rating.set` (a rating only if the message is about the user's own day: today, yesterday, a weekday, "my day", or a bare
+  number; "rate the movie 7" is refused in code). It can never switch a device (`ha.set`), log a habit (`habit.log`) or
+  complete a chore (`chore.done`, which involves money): those happen only through the anchored Tier 0 rules or the full
+  agent, so "I stretched yesterday" and "Claire fed the dog" go to the agent. A cold model process takes 4-7 s, so a client is started in the background and each message
+  uses one client once; if none is ready (the first seconds after switching on, two messages in a burst) the message just
+  goes to the agent without waiting. Whether this warm-client design is acceptable, versus an API key, is an open decision. It only picks an action from the registry and fills its fields as JSON; the code then checks
+  the answer (unknown action, low confidence, a name or text that is not in the message, a future date: all pass).
+  Costs a fraction of a cent per message and only runs when the message mentions something the fast lane can act on.
+- **Never a command (any tier, in code):** negations ("don't", "dont", "no", "not", "never", "skip", "cancel"), questions
+  and conditionals ("should I...", "did Claire...", "was...", "if..."), modals anywhere ("will", "should", "would",
+  "could", "must", "going to", "gonna"; a leading "can you / could you / would you / will you" is a polite command), a trailing "?", quotes and reported speech ("Caroline said ..."),
+  deferred or tentative wording ("later", "tomorrow", "tonight", "at 10pm", "after dinner", "maybe", "remind me"), and more
+  than one command ("... and close the garage"): these go to the agent whole, never half-done. Tier 0 rules are anchored
+  to the end of the message, so trailing words ("done tomorrow", "68 tonight") also mean no match.
+- **Actions** (`scripts/fastlane.py`, `ACTIONS`): `habit.log` / `habit.status` (never double-logs a day for a goal habit;
+  count habits can be logged repeatedly), `rating.set` (note kept as written; never overwrites a different rating; needs
+  "was/is/rate/rated" or "/10", so "sun 5, pick up kids" is not a rating; blocked for 4 h after a scheduled check-in unless
+  the day has been rated since; habit logs and chore completions are held the same way), `chore.done` (the chore service's own messages are shown), `todo.add` (skips items already
+  on the list; several items fine), `hub.today` / `hub.tasks` / `hub.dinner` (from the My Hub snapshot), `ha.set` /
+  `ha.state`. Dates are today, yesterday, a weekday name or a date, never the future.
+- **Home Assistant is default-deny.** The only writes are the porch lights on/off, a thermostat setpoint (within its
+  min/max, 60-80 only) and **closing** the two garage doors, from `ha.FASTLANE_WRITABLE`, which is separate from the dashboard's
+  `WRITABLE` (the dashboard stays read-only for garage doors). Opening or raising a garage, locks and the alarm are never
+  handled here: any such wording sends the message to the agent, whatever the model says. A garage is closed only when
+  it reports open, opening or stopped; closed, closing, unavailable and unknown are reported as they are, never as closed.
+  The reply says it was requested ("I haven't confirmed it finished"); completion is not checked.
+- **Always the agent:** attachments, Telegram replies, retries, the dev chat, edited messages, scheduled rows, a message
+  within 10 minutes of a question the assistant asked (so "yes" keeps its context), anything that refers back ("undo that", "never mind"), anything mentioning the agent itself or dev work, and
+  an action that touches the same thing as an earlier queued or running message.
+- **How it runs:** a task in the worker triages each new message (`inbox.triage`); `claim_next` takes only triaged
+  messages, or any older than 10 s, or all of them when the fast lane is off or its task has stopped beating, so it can
+  never stall a message. A fast action runs while a long turn in the same session is still running. The reply goes out
+  with `source="fastlane"` and one context note records both the request and the result for the agent's next turn.
+- **Control:** `python scripts/agent_ctl.py fastlane on|off|status` (a `kv` switch, no restart). **Off by default.**
+  `python scripts/fastlane_store.py test "<text>"` shows what it would do without doing it (add `--model` for the live Tier 1 call). Tier and end-to-end latency
+  per message go to `state/usage.jsonl` (`fastlane` field) and the Agent page shows counts and median time per tier.
+- To enable after the worker is restarted with this code: `python scripts/agent_ctl.py fastlane on`. No scheduled task.
 
 ## Habits agent
 

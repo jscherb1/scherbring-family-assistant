@@ -6,6 +6,7 @@
 {% endblock %}
 
 {% block content %}
+  {% include "agent/_fastlane.html" %}
   <div id="agent-panel" hx-get="/agent/panel" hx-trigger="every 5s" hx-swap="innerHTML">
     {% include "agent/_panel.html" %}
   </div>

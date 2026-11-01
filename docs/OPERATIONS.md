@@ -136,6 +136,22 @@ only compacts a session that is idle, and the 30 s ping skips a session that is 
 cancelled messages back in the queue (redelivered as a retry). A turn that fails before it starts (for example a locked
 database) is requeued after a 1 s pause, bounded by the 3-attempt limit.
 
+**Fast lane.** The worker also runs a fast-lane task (`scripts/fastlane.py`, `scripts/fastlane_model.py`) that answers
+short, clear commands (lights, thermostat, closing a garage door, a habit, a day rating, a chore, adding to a Todoist
+list, "what's for dinner") without a full agent turn. It is **off by default**: `python scripts/agent_ctl.py fastlane on`
+turns it on within a second, `off` stops it (no restart; the switch is `kv` key `fastlane`), `status` shows it with the last
+24 h of counts. While on, the task stamps `fastlane_beat` every second and `claim_next` holds a new message for it for at most
+10 s; if the stamp is older than 5 s, the fast lane is off, or a message is older than 10 s, the agent takes it as usual. The
+Tier 1 model call can only pick reads, `todo.add` and day ratings (`TIER1_ACTIONS` in `scripts/fastlane.py`); it
+can never control a device, log a habit or complete a chore (Tier 0 rules only), and a rating must be about the user's own day. It keeps one pre-started, primed Haiku client and uses it for exactly one message (so no message sees
+another's text); the replacement is built in the background, and while none is ready `route()` returns at once and the
+message goes to the agent. Disconnects are bounded (3 s), so a hung one cannot hold up a restart. It is only started while
+the lane is on, and closed when it is switched off. A failure or timeout pauses Tier 1 for 30 s. Each fast message logs `fastlane: {tier, action, latency_ms}` to `state/usage.jsonl`, an answer
+leaves one context note ("You asked: ... I replied: ...") and a `source="fastlane"` outbox reply, and `inbox.triage`
+records the decision (`fast`, or `pass:<reason>` such as `pass:question`, `pass:no_match`, `pass:order_conflict`).
+Debug a message with `python scripts/fastlane_store.py test "<text>"` (dry run, never writes; Tier 0 only, `--model` adds the live call). The worker needs a restart
+to pick up the code (`systemctl --user restart assistant-agent-worker`), then switch it on.
+
 The Telegram group on the same bot is the dev chat. Put its id in `BRIDGE_ALLOWED_CHAT_IDS` (the allow list is
 per chat; nobody but the owner is in the group) and in `BRIDGE_DEV_CHAT_IDS`. Its session gets a dev note in its
 system prompt: use `git worktree add` for code changes, never switch branches in the main checkout (scheduled runs
