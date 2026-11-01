@@ -83,3 +83,7 @@ state/reauth_pending.json
 state/*.bak
 state/hyvee_checks.jsonl
 state/hyvee_connection.json
+
+# --- Hub refresh timer lock and agent worktrees (runtime/local) ---
+state/.hub_refresh.lock
+.claude/worktrees/

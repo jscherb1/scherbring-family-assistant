@@ -37,17 +37,15 @@ update it when you finish or add something. Dates are absolute.
 8. **Check the Windows backup folder is covered.** Backups land in `C:\Users\<you>\Backups\assistant`.
    Make sure File History or OneDrive includes it, and consider a periodic `wsl --export` of the distro.
 
-## Scheduler `degraded` status and HA tool names (built 2026-10-31, branch `fix/ha-tools-and-degraded-runs`)
+## Scheduler `degraded` status and HA tool names (PRs merged 2026-10-31 and 2026-11-01)
 
-- [ ] Live-verify after restarting nothing is needed for the dispatcher (each run is a fresh process). Check the
-      next scheduled run in `scheduler_store.py runs`: the summary should come from the JSON `result`, and a
-      run with denials should show `degraded` with the denied command. `permission_denials` was confirmed
-      from the bundled CLI schema only, not by a live model call.
-- [ ] Live-verify the `home-assistant` agent with a porch-light request: it should call
-      `mcp__claude_ai_Home_Assistant__intent__HassTurnOn` (no `ha_search`). Needs a fresh agent session
-      (restart the agent worker).
-- [ ] Watch whether `retirement-quarterly-review`, `daily-weather-check` and `workouts-habit-sync` still
-      produce denials after the prompt rule (one plain command per Bash call).
+- [ ] `degraded` status has not been seen on a real run yet; when one appears, check that `scheduler_store.py runs` shows the
+  denied command. `permission_denials` was confirmed from the bundled CLI schema only.
+- HA connector tools were verified in a Telegram turn for a read (`GetLiveContext`). The porch light is not exposed to the
+  connector, so it goes through the local HA server (`ha_call_service`).
+- [ ] Agent on/off through the `Hass` intents is still unverified.
+- [ ] Watch whether `daily-weather-check` and `workouts-habit-sync` still produce denials after the prompt rule (one plain
+  command per Bash call).
 
 ## Plugin path removed (2026-10-31, branch `chore/remove-plugin-path`)
 
@@ -56,10 +54,9 @@ bridge"). The soak ended and the plugin-era path is removed from the repo: orche
 the log-grep Telegram watchdog, the context-bridge hooks, `agent_ctl.py mode`, and the dashboard restart history
 (so the "record a structured restart cause" dashboard follow-up is moot).
 
-Host steps after merging (the repo change does not touch the machine). Done 2026-11-01: the orchestrator unit
-was disabled and deleted, the gitignored `state/` leftovers were removed, and the worker and dashboard were
-restarted on the merged code. Still open (besides rotating the bot token, item 5):
-- [ ] Windows: `Unregister-ScheduledTask -TaskName WSL-Assistant-Window -Confirm:$false` (the attach window).
+Host steps done 2026-11-01: the orchestrator unit was disabled and deleted, the gitignored `state/` leftovers were
+removed, and the worker and dashboard were restarted on the merged code. Still open (besides rotating the bot token, item 5):
+- [ ] Optional, Windows: `Unregister-ScheduledTask -TaskName WSL-Assistant-Window -Confirm:$false` (the attach window).
 
 Deferred by the user (do later, none urgent):
 - **Send files/photos back through the bridge** (the plugin could; the bridge only receives them
@@ -77,21 +74,17 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## Agent follow-ups
 
-9. **Test the two scheduled tasks that have never run on WSL.** Dates are when each next fires on its own:
-   - `retirement-quarterly-review`: next real run **2026-10-31**. Test before then.
-   - `annual-financial-review`: next real run **2026-11-28**.
+9. **Test `annual-financial-review`** (never run on WSL; next real run **2026-11-28**).
+   `retirement-quarterly-review` ran on 2026-10-31 (it hit a `sed` denial, since fixed by a prompt rule; PR #52 fixed the
+   likely cause).
 
    ```
-   python scripts/scheduler_run_now.py --name retirement-quarterly-review --ignore-gates
    python scripts/scheduler_run_now.py --name annual-financial-review --ignore-gates
    ```
    Judge by the Telegram message and the printed debug log, not the `ok` status: look for "did NOT
-   complete", permission denials, and a Drive link. Watch the retirement run's duration against the 300 s
-   limit (`TASK_TIMEOUT_SECONDS` in `scripts/scheduler_dispatch.py`; raise it if close). Each run writes a
-   real Drive file (annual: Reports folder; retirement: Retirement folder) and database rows
-   (`finance_report_log`, `retirement_*` config), so trash the Drive files and delete the rows afterwards, as
-   was done for the weekly and monthly tests on 2026-10-06. Both earlier attempts failed only on the account
-   session limit; the permission fixes (commit `dc61b97`) are unproven for these two.
+   complete", permission denials, and a Drive link. Each run writes a real Drive file (Reports folder) and database
+   rows (`finance_report_log`), so trash the Drive file and delete the rows afterwards, as was done for the weekly and
+   monthly tests on 2026-10-06.
 9a. **Retirement model improvements (Phases 1-3).** Plan: `docs/superpowers/specs/2026-10-31-retirement-model-review.md`
    (review findings + phased build). Built and merged: Phase 1 (snapshot-derived inputs, capital-market returns,
    glide path, median-path and timing fixes; PR #53) and Phase 2a (taxes, buckets, RMDs, two-person Social
@@ -167,18 +160,11 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## My Hub (built 2026-10-14)
 
-- [ ] **Hub refresh script cutover** (PR feat/hub-refresh-script; replaces the agent copying calendar/tasks):
-      1. Confirm `TODOIST_API_TOKEN` is in `~/.config/scherbring-assistant/.env`, then `python scripts/hub_refresh.py --dry-run`
-         (counts and diffs, writes nothing).
-      2. `scripts/install_systemd.sh assistant-hub-refresh.timer`. It runs with `--notify`, but notifications stay muted while
-         `myhub-refresh` is enabled, so nothing double-sends. Watch `systemctl --user list-timers` and the System status page.
-      3. After a day of good runs, cut over in one step: `python scripts/scheduler_store.py disable --name myhub-refresh`.
-         The next timer run starts sending the notify-check message (same dedupe, digest and quiet hours).
-      Rollback: `python scripts/scheduler_store.py enable --name myhub-refresh` mutes the script's notifications again.
-      Afterwards update the README `myhub-refresh` registration text (the task is retired). Untested live: the first notified run.
+- **Hub refresh script cutover DONE 2026-11-01:** `assistant-hub-refresh.timer` installed and the `myhub-refresh` task
+  disabled after 21 clean timer runs (a day earlier than planned). Rollback:
+  `python scripts/scheduler_store.py enable --name myhub-refresh`. Still to verify: the first script-sent digest (see
+  System health, 2026-11-02 7am).
 
-- [ ] Registered `myhub-refresh` (every 2 h, 7am-9pm; replaced the morning/evening pair); it has not fired yet. Until the
-      first run the page says calendar/tasks are "not synced yet". Check `scheduler_store.py runs`.
 - [ ] The look (JARVIS theme) and the phone layout have not been viewed in a browser; only tested by route tests.
 - [ ] Not on the hub yet (phase 2): finance items waiting on a decision (e.g. WHO tags; Monarch is live-only, so it
       needs a snapshot like calendar/tasks), Hy-Vee cart state, upcoming birthdays, Costco/shopping list counts, an
@@ -188,7 +174,7 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
 
 ## System health (PR 1 built 2026-10-14)
 
-- [ ] Hub notify-check (2026-10-17): verify live. The 7am refresh should send one digest, later refreshes stay silent unless something is new/escalated, urgent repeats every 6 h, nothing after 8pm except a new urgent item; dismissing on Summary or My Hub must stop the message. Check `hub_notified` and the run log after a day.
+- [ ] Hub notify-check: verify the first script-sent digest at 7am on 2026-11-02 (`hub_notify` system-health key, `hub_notified` table, run log). Later refreshes stay silent unless something is new/escalated, urgent repeats every 6 h, nothing after 8pm except a new urgent item; dismissing on Summary or My Hub must stop the message.
 - [x] PR 2 built 2026-10-14: `myhub` agent pings Todoist, Calendar, Gmail, Home Assistant (`system-ping-morning` 6:35am,
       `system-ping-evening` 5:05pm); a Telegram alert fires once when a system goes down and once on recovery; an agent
       ping older than 30 h shows amber. Gmail/Home Assistant pings failed twice in the long-lived worker session because its cached `myhub` definition lacks the new tools; verify on the first scheduled (fresh-session) run, restarting the agent worker if still missing. Also unchecked: the `myhub` agent can call
@@ -204,9 +190,8 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       `hrv_vs_baseline`, `hrv_base_low/high` and `coros_wellness` no longer does; older web rows stay as history.
       `queryTrainingLoadAssessment` is stored as new `coros:mcp_load_short/long/ratio` (kept out of the insights
       analysis, shown as "Live" load freshness on Wellness); the weekly web load, fatigue, ATI/CTI and recommended range
-      are unchanged. The timer picks it up on its next run; the dashboard needs a restart for the Load freshness line.
-      Optional backfill of MCP HRV and load back to 2026-09-01 (not run):
-      `python scripts/dayrating_store.py insights refresh --days 60 --source coros_health`. A daily-load history
+      are unchanged.
+      The backfill to 2026-09-01 was run and the live timer verified 2026-11-01 (1,094 values). A daily-load history
       before that is not available from the MCP.
 - [ ] Timer `assistant-system-health.timer` installed but unobserved; check `systemctl --user list-timers` and the
       `system_health` rows' `checked_at` after a few hours. Tune the 2 h interval as needed.
@@ -242,8 +227,6 @@ Known small gap: the dashboard's context-size figure reads 0 until the first tur
       `python scripts/dayrating_store.py insights refresh --days 90 --source coros_wellness`. Run 2026-10-19
       (1,340 values; ATI/CTI and the recommended range from 7/20, COROS HRV band from 8/22). The weekly insights run
       keeps them current.
-- [ ] HRV and load are only as fresh as the weekly COROS web pull. Moving them to the official MCP
-      (`querySleepHrv`, `queryTrainingLoadAssessment`) would let the 30-minute timer keep them current.
 - [ ] Not yet seen by a real phone: the tap-to-pin readouts were checked in a Playwright mobile emulation only.
 - [ ] The `wellness` and `journal` subagents are untested over Telegram.
 - [ ] `insights.analyze` still counts COROS sleep scores of 0 (nights COROS didn't score) as real values; the
@@ -331,8 +314,7 @@ See the Backlog section of `README.md`.
 - [ ] Hy-Vee: after a few days, read `state/hyvee_checks.jsonl` to see how long a session really lasts and whether the
       keep-alive (each passing check re-saves the session) extends it. If sessions still die in about a day, add a
       scheduled prompt asking Justin to run the shortcut.
-- [ ] Faster refresh: confirm `assistant-insights-refresh.timer` keeps firing (`systemctl --user list-timers`) and that the first
-      `myhub-refresh` runs (7am onward) land; tune the intervals if the footer shows amber sources.
+- [ ] Faster refresh: confirm `assistant-insights-refresh.timer` keeps firing (`systemctl --user list-timers`); tune the intervals if the footer shows amber sources.
 
 - [ ] Scheduled runs share the development checkout (decided 2026-10-19: no separate worktree). A failed run now carries a `[possible cause: checkout is on branch ...]` note, but keep dev work off the main checkout (use `git worktree add`) where possible. Verify `dayrating-weekly-insights` on its next Sunday 19:30 run (should be `ok`, no denials).
 
@@ -340,17 +322,11 @@ See the Backlog section of `README.md`.
 
 ## Weekly step-back review (built 2026-11-01, branch `feat/weekly-review`)
 
-- [ ] **Live run pending.** Built and tested with unit and dashboard tests plus `review_store.py gather` against a copy
-  of the real database (no failed sections). The agent itself (`.claude/agents/review.md`, model `claude-opus-5-5`)
-  has not been run. A fresh agent session is needed to see the new agent; then run
-  `python scripts/scheduler_run_now.py --name weekly-review` once and judge whether the findings are useful and
-  not padded.
-- [ ] **Register the task** (not registered by the build): the `scheduler_store.py add --name "weekly-review" ...`
-  command is in the README "Weekly step-back review" section (Saturday 10 AM, `--timeout-seconds 1200`, so it does not queue behind the 9 AM finance tasks).
-- [x] **Cost capture mechanism**: the dispatcher stores each run's cost in `scheduled_task_runs`; cost shown in `scheduler_store.py runs` (`cost_usd`, `duration_s`, `model_usage_json`). Takes effect on the next scheduler tick after merge.
-- [ ] **Record the cost** of the first 2-3 runs here (Opus; read it with `scheduler_store.py runs --task-id <id>`): date, cost,
-  findings kept. Drop back to Sonnet or trim the digest if the value does not justify it. The Opus exception in
-  `CLAUDE.md` is for this agent only.
+- Registered (Saturdays 10:00, `--timeout-seconds 1200`). First live test run 2026-11-01 worked: 5 findings, 128 s, no
+  denials. The first scheduled run is 2026-11-07.
+- [ ] **Record the cost** of the first 2-3 runs here (Opus; `python scripts/scheduler_store.py runs`, `cost_usd` and
+  `duration_s`): date, cost, findings kept. Drop back to Sonnet or trim the digest if the value does not justify it. The
+  Opus exception in `CLAUDE.md` is for this agent only.
 - [ ] **Reinstall the scheduler unit** (`scripts/install_systemd.sh`): `TimeoutStartSec` went from 360 to 3600 so a
   1200 s task is not killed, and the dispatcher now refreshes its heartbeat each minute during a task. Until
   reinstalled, a long task would be killed at 6 minutes. While a long review runs, other due tasks wait (ticks are
@@ -368,47 +344,27 @@ See the Backlog section of `README.md`.
 
 ## Concurrent sessions and dev chat (built 2026-11-01, branch `feat/concurrent-sessions`)
 
-Unit-tested with fake sessions only; nothing below has run against Telegram or the real SDK yet.
-- [ ] Add the group id to `BRIDGE_ALLOWED_CHAT_IDS` (last), set `BRIDGE_DEV_CHAT_IDS`, `TELEGRAM_ALERT_CHAT_ID` and
-  `DASHBOARD_ASK_CHAT_ID` (exact lines in the PR), restart worker and bridge, then `agent_ctl.py status` (no WARNING).
-- [ ] Live check: start a long task in the dev group, then send "turn off the lights" in the household chat and confirm
-  it answers while the dev turn is still running (`agent_ctl.py status` should list both turns).
-- [ ] Live check: in the dev group confirm the agent says it will use a worktree; in the household chat confirm no dev note.
-- [ ] Live check: send `/status@<botname>` in the group; confirm the bridge answers it.
-- [ ] Check `agent_ctl.py sessions` / SDK memory with two live `claude` processes (cap is 4, `MAX_CONCURRENT_SESSIONS`).
-- [ ] If Telegram upgrades the basic group to a supergroup, the id changes (see OPERATIONS.md); untested live.
+Live-verified 2026-11-01: the household chat answered in about 3 s during a 60-second dev turn; the dev group is configured.
+- [ ] Not checked live: the dev group's worktree note and the `/status@<botname>` reply, `agent_ctl.py sessions` / SDK memory
+  with two live `claude` processes (cap is 4, `MAX_CONCURRENT_SESSIONS`), and a basic group upgrading to a supergroup (the
+  id changes, see OPERATIONS.md).
 - Not checked: whether anything shared on disk (for example one browser profile) misbehaves when two sessions use the
   same tool at once; SQLite stores are fine.
 
 ## Fast lane, Tier 0 and 1 (built 2026-11-01, branch `feat/fast-lane`)
 
-Off by default (`agent_ctl.py fastlane on` to enable); unit-tested with stubs for Home Assistant, Todoist and the model.
-- [ ] Restart the worker (`systemctl --user restart assistant-agent-worker`), run `agent_ctl.py fastlane on`, then
-  `agent_ctl.py status` should show the lane ON with the task alive.
-- [ ] Live check, Tier 0 (one at a time, watch the reply and the result): "turn off the porch light" then "turn on the porch
-  light"; "add test item to my shopping list" (confirm it lands on the right Todoist project, then delete it); "rate today a
-  7" (check the Check-in page); "Achilles PT done" (and again: it must say already logged); "what's for dinner today?".
-- [ ] Live check, Tier 1 (3-5 s; the first messages after switching on pass to the agent until the model client is ready):
-  "add granola and oats to the Costco list", "I'd rate today a 7" ("I stretched yesterday" and "Claire fed the dog" now go to the agent unless a Tier 0 rule takes them).
-- [ ] Live check, garage: "close the double garage door" while it is open, and confirm "open the garage" /
-  "raise the garage door" are answered by the agent, not the fast lane.
-- [ ] Live check, ordering: start a long task (for example "build the hyvee cart"), then send "add milk to my Costco list";
-  the second must answer while the first is still running.
-- [ ] Watch the Agent page (Fast lane card) and `state/usage.jsonl` for a week: share of messages handled, median time per
-  tier, and any `pass:model_*` reasons; look for a message the lane took that it should not have and tighten the rules.
-- **Decision for the user (not made):** the plan said to stop if Tier 1's median passed 4 s. A cold process per call
-  measured about 5.7 s median, so a pre-started one-use client was built instead (measured median 3.4 s over 20 calls and 4.7 s over 39 in two runs, p90 4.8 s, worst 12 s, a few calls over
-  the 6 s timeout, a second message within about 5 s of the first goes to the agent). Accept that, or use an API key
-  (faster, no idle process), or ship Tier 0 only (leave the model out).
+ON since 2026-11-01 (`agent_ctl.py fastlane on`). Live-verified 2026-11-01: reads, garage status, the "already closed"
+path, porch on (no change), a list add (a real add) and a Tier 1 read.
+- [ ] Not verified live: habit log, day rating, a device actually moving, close garage actually closing, thermostat.
+- [ ] Tier 1 median measured 3.4-4.7 s, borderline around the 4 s target; no API key for now. Revisit with
+  `agent_ctl.py fastlane status` (and the Agent page Fast lane card, `state/usage.jsonl`) after a week: share of messages
+  handled, median per tier, any `pass:model_*` reasons, and any message the lane took that it should not have. Options if
+  too slow: an API key (faster, no idle process) or Tier 0 only.
+- Known point: "Costco List" and "Costco Staples" are separate lists, and the duplicate check only looks at the target
+  list. That is correct behaviour.
 - Known window: the worker can crash after a fast action's reply is queued but before the row is completed. The row is
   then redelivered to the agent with the "Retry" marker, so the user may get a second reply (the action itself is not
-  repeated by the lane; the agent is told to check state). The triage path's small SQLite calls stay on the event loop;
-  only the service calls (Home Assistant, Todoist, the services' databases) run in a thread.
-- Not verified live: the Haiku call inside the worker (measured separately from the CLI), the worker's fast-lane task
-  against real Telegram traffic, and the Todoist project names ("Costco list", "shopping list") against the real projects.
-- Possible follow-ups: Tier 2 stays the full agent. Candidates for later: undo ("undo that") through the fast lane, "also
-  add ... " style follow-ups, and raising Tier 1's coverage once the history shows which phrasings are common.
+  repeated by the lane; the agent is told to check state).
+- Possible follow-ups: undo ("undo that") through the fast lane, "also add ..." style follow-ups, and wider Tier 1
+  coverage once the history shows which phrasings are common.
 
-## Gmail read access (added 2026-10-31)
-
-- [ ] Read-only `gmail` agent added (`.claude/agents/gmail.md`; search_threads, get_thread, get_message, list_labels). Use cases are undecided, so no triage, digest, schedule or dashboard section exists. Needs a live check: ask it to find a recent email and confirm the tools resolve (a fresh agent session may be needed to pick up the new agent). It is an infrastructure exception to the agent + UI standard.

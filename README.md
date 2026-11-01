@@ -614,7 +614,7 @@ Summary tiles plus agent and login-expiry items).
   and a test fails if a required area has no provider. A provider that errors shows up as a visible warning, never silently
   missing.
 - **Calendar and tasks** come from a snapshot (`hub_items` table) because Google Calendar and Todoist are only reachable
-  through the agent connectors: the `myhub` agent copies them in via `myhub_store.py snapshot set` on a schedule. The page
+  through the agent connectors, so `scripts/hub_refresh.py` (run by `assistant-hub-refresh.timer`) reads them and writes the snapshot. The page
   says when they were last synced and flags them when older than 36 hours.
 - **No repeat nagging**: after each refresh `myhub_store.py notify-check` decides what to message. An item is announced once
   when new (and again only if it escalates); urgent items repeat every 6 h while awake; warn items are only repeated by one
@@ -626,12 +626,8 @@ Summary tiles plus agent and login-expiry items).
   notifying; the old `state/dashboard_dismissed.json` is imported once and renamed.
 - Not on the hub yet: Hy-Vee cart state; see `docs/TODO.md`. (Money now has its own Today tile from the Monarch snapshot.)
 
-Register once (calendar and tasks need the agent, so every 2 hours 7am-9pm):
-```
-python scripts/scheduler_store.py add --name "myhub-refresh" \
-  --prompt "Delegate to the myhub subagent to refresh the hub's calendar and task snapshot then run notify-check and send only what it says (otherwise stay silent)." \
-  --cron "0 7-21/2 * * *" --target-chat-id "<your chat_id>"
-```
+The old `myhub-refresh` scheduled task (the agent copying calendar and tasks) was retired on 2026-11-01 and is disabled; the timer below replaced it.
+
 Sleep, recovery, weather and habits are script-reachable, so `assistant-insights-refresh.timer` refreshes them every
 30 minutes (6am-10pm, no model tokens; `insights refresh --days 3 --source coros_health,weather,habits,journal`). The hub footer
 shows each source's last refresh (amber when older than twice its interval) and a **Refresh now** button for the script tier.
@@ -645,8 +641,8 @@ Safety guards: an empty read over 5+ stored items, a drop below 40% of 10+ store
 and shows a warning; the new read is accepted after 4 refusals in a row (about an hour), or at once with `python scripts/hub_refresh.py --force`.
 HA's Birthdays calendar is excluded (`EXCLUDED_CALENDARS`) to keep the set the old agent read.
 Needs `TODOIST_API_TOKEN` in `~/.config/scherbring-assistant/.env`. Install: `scripts/install_systemd.sh assistant-hub-refresh.timer`.
-The timer runs with `--notify`, which is held back while the `myhub-refresh` task above is enabled; disabling that task is the cutover
-(`docs/TODO.md`). The `myhub` agent now only calls `python scripts/hub_refresh.py` for an on-demand refresh.
+The timer runs with `--notify` and sends the hub notify-check message. Notifications are held back whenever the retired `myhub-refresh` task is enabled, so
+`python scripts/scheduler_store.py enable --name myhub-refresh` is the rollback. The `myhub` agent now only calls `python scripts/hub_refresh.py` for an on-demand refresh.
 
 ## Chores agent (kid chore chart)
 
