@@ -338,6 +338,33 @@ See the Backlog section of `README.md`.
 
 - [ ] Live-test the **Monarch Login** and **Google Drive Login** desktop shortcuts through a real expiry (only the "already working" path was exercised). The `.bat` copies are already on the Windows desktop.
 
+## Weekly step-back review (built 2026-11-01, branch `feat/weekly-review`)
+
+- [ ] **Live run pending.** Built and tested with unit and dashboard tests plus `review_store.py gather` against a copy
+  of the real database (no failed sections). The agent itself (`.claude/agents/review.md`, model `claude-opus-5-5`)
+  has not been run. A fresh agent session is needed to see the new agent; then run
+  `python scripts/scheduler_run_now.py --name weekly-review` once and judge whether the findings are useful and
+  not padded.
+- [ ] **Register the task** (not registered by the build): the `scheduler_store.py add --name "weekly-review" ...`
+  command is in the README "Weekly step-back review" section (Saturday 10 AM, `--timeout-seconds 1200`, so it does not queue behind the 9 AM finance tasks).
+- [ ] **Record the cost** of the first 2-3 runs here (Opus; dispatcher debug log and `/agent/usage`): date, cost,
+  findings kept. Drop back to Sonnet or trim the digest if the value does not justify it. The Opus exception in
+  `CLAUDE.md` is for this agent only.
+- [ ] **Reinstall the scheduler unit** (`scripts/install_systemd.sh`): `TimeoutStartSec` went from 360 to 3600 so a
+  1200 s task is not killed, and the dispatcher now refreshes its heartbeat each minute during a task. Until
+  reinstalled, a long task would be killed at 6 minutes. While a long review runs, other due tasks wait (ticks are
+  serial); a Saturday 10 AM run can delay other tasks due in that window by up to 20 minutes.
+- [ ] **Known gap, not redesigned:** `scheduler_dispatch.main()` marks a task dispatched before running it. If the
+  dispatcher process is killed mid-task (systemd timeout, reboot, OOM), that run is lost silently: no `ok` or
+  `failed` row is logged, only the `dispatched` one, and the task does not retry until its next cron time. The
+  heartbeat and the larger `TimeoutStartSec` reduce the chance for long tasks; the missed-run detection gap in
+  the scheduler notes still applies.
+- [ ] `home` and `lawn` and `profile_dates` digest sections read their tables directly (those features' rules live
+  in their CLIs/dashboard readers, not a service). Migrate them to services as part of the older-features item,
+  then point `review.py` at the services.
+- [ ] Finding titles show on the Today/Summary page, so they must not carry sensitive amounts. The agent file tells
+  it to keep them generic; check the first runs.
+
 ## Concurrent sessions and dev chat (built 2026-11-01, branch `feat/concurrent-sessions`)
 
 Unit-tested with fake sessions only; nothing below has run against Telegram or the real SDK yet.

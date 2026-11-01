@@ -212,6 +212,7 @@ def client(state):
     "/api/finance/reports",
     "/golf", "/golf/courses", "/api/golf", "/api/golf/courses",
     "/habits", "/habits?owner=Justin", "/api/habits", "/habits/analysis", "/api/habits/analysis",
+    "/review", "/review?show=all", "/review?show=dismissed", "/api/review",
     "/rating", "/rating/insights", "/api/rating", "/api/rating/insights",
     "/wellness", "/wellness/trends", "/wellness/trends?range=30&heat=hrv", "/wellness/trends?range=180",
     "/wellness/drivers", "/wellness/drivers?target=hrv&x=steps&y=hrv", "/api/wellness", "/api/wellness/trends",
@@ -231,7 +232,7 @@ def test_landing_page(client):
     assert "Ask or tell the assistant" in r.text
     assert 'rel="manifest"' in r.text and "apple-touch-icon" in r.text
     data = client.get("/api/summary").json()
-    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 12
+    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 13
     assert "SECRET-MERCHANT" not in r.text
 
 
@@ -340,7 +341,7 @@ def test_read_only_except_allowlisted_write_routes(client):
     allowed = {"/wellness/checkin", "/journal/questions", "/journal/questions/{slug}/update", "/ask", "/api/ask", "/attention/dismiss", "/attention/restore", "/me/attention/dismiss", "/me/attention/restore", "/me/refresh",
                "/meals", "/meals/{recipe_id}/update", "/meals/{recipe_id}/delete",
                "/golf/rounds", "/golf/rounds/undo", "/golf/courses", "/golf/sync",
-               "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating",
+               "/habits", "/habits/{habit_id}/log", "/habits/{habit_id}/undo", "/habits/{habit_id}/update", "/rating", "/review/{finding_id}/status",
                "/chores/kids", "/chores/kids/{kid_id}/update", "/chores/chores", "/chores/chores/{chore_id}/update",
                "/chores/payout", "/chores/backfill", "/chores/undo",
                "/kids/{kid_id}/chores/{chore_id}/done", "/kids/{kid_id}/chores/{chore_id}/undo",
@@ -1384,3 +1385,89 @@ def test_degraded_runs_are_visible_but_not_failures(client, state):
     total = runs["ok_24h"] + runs["degraded_24h"] + runs["fail_24h"]
     assert runs["success_rate_24h"] == (runs["ok_24h"] + 1) / total * 100
     assert runs["recent_degraded"][0]["summary"].startswith("[1 command(s) denied: Bash: echo $?]")
+
+
+# ---- weekly review (shared service: scripts/review.py) ----
+
+def _review_service():
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import review
+    return review
+
+
+def _finding(key="sleep-vs-calendar", **kw):
+    return {"key": key, "domain": "cross-domain", "title": kw.pop("title", "Late events cut into sleep"),
+            "why_it_matters": "Because <b>sleep</b>.", "evidence": "Three late events.",
+            "suggested_action": "Move one.", **kw}
+
+
+def test_review_page_empty_then_accept_dismiss_done_via_ui(client, state):
+    review = _review_service()
+    assert "No review has run yet" in client.get("/review").text
+    assert client.get("/api/review").json()["findings"] == []
+    db = state / "agent_results.db"
+    run = review.save_run("Two things.", [_finding(), _finding("passport-expiry", title="Passport renewal")], db_path=db)
+    fid = {f["key"]: f["id"] for f in run["findings"]}
+    page = client.get("/review").text
+    assert "Late events cut into sleep" in page and "<b>sleep</b>" not in page and "&lt;b&gt;sleep" in page
+    for key, status in (("sleep-vs-calendar", "accepted"), ("passport-expiry", "dismissed")):
+        r = client.post(f"/review/{fid[key]}/status", data={"status": status}, follow_redirects=False)
+        assert r.status_code == 303
+    assert client.post(f"/review/{fid['sleep-vs-calendar']}/status", data={"status": "done"}).status_code == 200
+    api = client.get("/api/review?show=all").json()
+    assert {f["key"]: f["status"] for f in api["findings"]} == {"sleep-vs-calendar": "done", "passport-expiry": "dismissed"}
+    assert api["counts"]["done"] == 1 and api["counts"]["dismissed"] == 1
+    assert client.get("/api/review").json()["findings"] == []  # open = new + accepted
+    # a bad status is shown as an error, not a crash, and changes nothing
+    r = client.post(f"/review/{fid['passport-expiry']}/status", data={"status": "bogus"}, follow_redirects=False)
+    assert r.status_code == 303 and "error=" in r.headers["location"]
+    assert review.get_finding(fid["passport-expiry"], db_path=db)["status"] == "dismissed"
+
+
+def test_review_error_redirect_is_url_encoded(client, state):
+    from urllib.parse import parse_qs, urlparse
+    r = client.post("/review/x%23y&z/status", data={"status": "done"}, follow_redirects=False)
+    assert r.status_code == 303
+    loc = r.headers["location"]
+    assert " " not in loc and "#" not in loc.split("?", 1)[1]
+    assert parse_qs(urlparse(loc).query)["error"] == ["no finding 'x#y&z'"]
+    assert "no finding" in client.get(loc).text
+
+
+def test_review_write_blocked_cross_origin(client, state):
+    review = _review_service()
+    db = state / "agent_results.db"
+    fid = review.save_run("One.", [_finding()], db_path=db)["findings"][0]["id"]
+    r = client.post(f"/review/{fid}/status", data={"status": "dismissed"},
+                    headers={"Origin": "https://evil.example"}, follow_redirects=False)
+    assert r.status_code == 403
+    assert review.get_finding(fid, db_path=db)["status"] == "new"
+
+
+def test_review_summary_tile_flags_new_findings(client, state):
+    review = _review_service()
+    db = state / "agent_results.db"
+    tile = next(t for t in client.get("/api/summary").json()["tiles"] if t["title"] == "Review")
+    assert tile["headline"] == "Nothing new"
+    fid = review.save_run("One.", [_finding()], db_path=db)["findings"][0]["id"]
+    data = client.get("/api/summary").json()
+    tile = next(t for t in data["tiles"] if t["title"] == "Review")
+    assert tile["headline"] == "1 new finding"
+    assert any(a["key"] == f"review:{fid}" for a in data["attention"])
+    review.set_status(fid, "accepted", db_path=db)
+    assert not any(a["key"].startswith("review:") for a in client.get("/api/summary").json()["attention"])
+
+
+def test_review_ui_and_service_see_the_same_data(client, state):
+    """A finding saved through the service (what review_store.py runs) is what the page and API show, and a
+    status set from the page is what the service reads back."""
+    review = _review_service()
+    db = state / "agent_results.db"
+    fid = review.save_run("Same data.", [_finding(title="Shared title")], db_path=db)["findings"][0]["id"]
+    api = client.get("/api/review").json()
+    assert api["latest"]["summary"] == "Same data."
+    assert api["findings"] == review.list_findings(status="new", db_path=db)
+    assert "Shared title" in client.get("/review").text
+    client.post(f"/review/{fid}/status", data={"status": "accepted"})
+    assert review.get_finding(fid, db_path=db)["status"] == "accepted"

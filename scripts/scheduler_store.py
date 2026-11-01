@@ -15,9 +15,11 @@ subset Claude Code's own cron scheduler supports. No third-party dependency.
 Usage:
     python scripts/scheduler_store.py add --name "weekly-meal-plan" \
         --prompt "Delegate to the meal-planner subagent to plan next week's dinners, ..." \
-        --cron "0 9 * * 0" --target-chat-id "482910..."
+        --cron "0 9 * * 0" --target-chat-id "482910..." [--timeout-seconds 1200]
     python scripts/scheduler_store.py list [--enabled-only]
     python scripts/scheduler_store.py get --name "weekly-meal-plan"
+    python scripts/scheduler_store.py update --name "weekly-review" [--new-prompt ...] [--new-cron ...] \
+        [--timeout-seconds N|0]
     python scripts/scheduler_store.py enable --name "weekly-meal-plan"
     python scripts/scheduler_store.py disable --name "weekly-meal-plan"
     python scripts/scheduler_store.py delete --name "weekly-meal-plan"
@@ -55,7 +57,34 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    _migrate(conn)
     return conn
+
+
+# Columns added after the first release. `CREATE TABLE IF NOT EXISTS` leaves an existing table alone, so a
+# database made before a column existed gets it here (additive and idempotent; existing rows read NULL).
+TASK_MIGRATIONS = {"timeout_seconds": "INTEGER"}
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(scheduled_tasks)")}
+    for col, decl in TASK_MIGRATIONS.items():
+        if col not in have:
+            try:
+                conn.execute(f"ALTER TABLE scheduled_tasks ADD COLUMN {col} {decl}")
+                conn.commit()
+            except sqlite3.OperationalError as exc:  # another connection added it first
+                if "duplicate column" not in str(exc):
+                    raise
+
+
+def _timeout_arg(value) -> int | None:
+    """Validate a --timeout-seconds value (30 s to 2 h); None = leave it to the dispatcher default."""
+    if value is None:
+        return None
+    if not 30 <= value <= 7200:
+        raise ValueError("--timeout-seconds must be between 30 and 7200")
+    return value
 
 
 def _utc_now_iso() -> str:
@@ -199,6 +228,11 @@ def cmd_add(args: argparse.Namespace) -> int:
         print(json.dumps({"error": f"invalid --cron: {exc}"}), file=sys.stderr)
         return 2
 
+    try:
+        timeout = _timeout_arg(args.timeout_seconds)
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}), file=sys.stderr)
+        return 2
     new_id = str(uuid.uuid4())
     conn = _connect()
     try:
@@ -206,10 +240,10 @@ def cmd_add(args: argparse.Namespace) -> int:
             conn.execute(
                 """
                 INSERT INTO scheduled_tasks (
-                    id, name, prompt, cron_expression, target_chat_id, enabled, created_at
-                ) VALUES (?, ?, ?, ?, ?, 1, ?)
+                    id, name, prompt, cron_expression, target_chat_id, enabled, created_at, timeout_seconds
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
                 """,
-                (new_id, args.name, args.prompt, args.cron, args.target_chat_id, _utc_now_iso()),
+                (new_id, args.name, args.prompt, args.cron, args.target_chat_id, _utc_now_iso(), timeout),
             )
         except sqlite3.IntegrityError:
             print(json.dumps({"error": f"a scheduled task named {args.name!r} already exists"}), file=sys.stderr)
@@ -290,8 +324,16 @@ def cmd_update(args: argparse.Namespace) -> int:
     if args.new_cron is not None:
         parse_cron(args.new_cron)
         fields["cron_expression"] = args.new_cron
+    if args.timeout_seconds is not None:
+        try:
+            # 0 clears it back to the dispatcher default.
+            fields["timeout_seconds"] = None if args.timeout_seconds == 0 else _timeout_arg(args.timeout_seconds)
+        except ValueError as exc:
+            print(json.dumps({"error": str(exc)}), file=sys.stderr)
+            return 2
     if not fields:
-        print(json.dumps({"error": "nothing to update; pass --new-prompt and/or --new-cron"}), file=sys.stderr)
+        print(json.dumps({"error": "nothing to update; pass --new-prompt, --new-cron and/or --timeout-seconds"}),
+              file=sys.stderr)
         return 1
     conn = _connect()
     try:
@@ -421,6 +463,8 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--prompt", required=True)
     add.add_argument("--cron", required=True)
     add.add_argument("--target-chat-id", dest="target_chat_id", required=True)
+    add.add_argument("--timeout-seconds", dest="timeout_seconds", type=int, default=None,
+                     help="run limit for this task, 30-7200 (default: the dispatcher's 300)")
     add.set_defaults(func=cmd_add)
 
     ls = sub.add_parser("list", help="List scheduled tasks.")
@@ -447,6 +491,8 @@ def build_parser() -> argparse.ArgumentParser:
     upd.add_argument("--name", default=None)
     upd.add_argument("--new-prompt", dest="new_prompt", default=None)
     upd.add_argument("--new-cron", dest="new_cron", default=None)
+    upd.add_argument("--timeout-seconds", dest="timeout_seconds", type=int, default=None,
+                     help="run limit, 30-7200; 0 resets to the dispatcher default (300)")
     upd.set_defaults(func=cmd_update)
 
     dele = sub.add_parser("delete", help="Delete a scheduled task and its run history.")

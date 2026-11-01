@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block page_header %}
+  <h1>Weekly review</h1>
+  <p class="subtitle">A step back across calendar, tasks, money, health, home and the assistant itself: what no single task would catch. Written by the assistant each Saturday, or on request ("take a step back").</p>
+{% endblock %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+  {% if error %}<p class="ask-note err" role="alert">{{ error }}</p>{% endif %}
+  {% set c = data.counts %}
+  <div class="grid stats">
+    <section class="card"><h2>New</h2><div class="metric {{ 'fail-count' if c.new }}">{{ c.new }}</div></section>
+    <section class="card"><h2>Accepted</h2><div class="metric">{{ c.accepted }}</div></section>
+    <section class="card"><h2>Done</h2><div class="metric ok-count">{{ c.done }}</div></section>
+    <section class="card"><h2>Dismissed</h2><div class="metric">{{ c.dismissed }}</div></section>
+  </div>
+
+  <section class="card">
+    <h2>Latest review</h2>
+    {% if data.latest %}
+      <p class="muted">{{ data.latest.created_at }} · {{ data.latest.finding_count }} finding{{ '' if data.latest.finding_count == 1 else 's' }}</p>
+      <div style="white-space: pre-wrap">{{ data.latest.summary }}</div>
+    {% else %}
+      <div class="empty-state">No review has run yet. The weekly review runs Saturday morning, or ask the assistant to "take a step back".</div>
+    {% endif %}
+  </section>
+
+  <nav class="habit-filter" aria-label="Filter findings">
+    {% for key, label in (('open', 'Open'), ('all', 'All'), ('new', 'New'), ('accepted', 'Accepted'), ('done', 'Done'), ('dismissed', 'Dismissed')) %}
+      <a href="/review?show={{ key }}" class="pill {{ 'pill-ok' if data.show == key else 'pill-muted' }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if data.findings %}
+    {% for f in data.findings %}
+    <article class="card" id="finding-{{ f.id }}">
+      <header>
+        <h3>{{ f.title }}</h3>
+        <div class="habit-meta">
+          <span class="pill pill-muted">{{ f.domain }}</span>
+          <span class="pill {{ 'pill-warn' if f.status == 'new' else ('pill-ok' if f.status in ('accepted', 'done') else 'pill-muted') }}">{{ f.status }}</span>
+          {% if f.times_raised > 1 %}<span class="muted">raised {{ f.times_raised }} times</span>{% endif %}
+          <span class="muted">{{ f.updated_at[:10] }}</span>
+        </div>
+      </header>
+      <p><strong>Why it matters.</strong> {{ f.why_it_matters }}</p>
+      <p><strong>Evidence.</strong> {{ f.evidence }}</p>
+      <p><strong>Suggested action.</strong> {{ f.suggested_action }}</p>
+      <form method="post" action="/review/{{ f.id }}/status" class="inline-form">
+        {% if f.status != 'accepted' %}<button class="button" name="status" value="accepted">Accept</button>{% endif %}
+        {% if f.status != 'done' %}<button class="button" name="status" value="done">Done</button>{% endif %}
+        {% if f.status != 'dismissed' %}<button class="link-button" name="status" value="dismissed">Dismiss</button>{% endif %}
+        {% if f.status in ('dismissed', 'done') %}<button class="link-button" name="status" value="new">Reopen</button>{% endif %}
+      </form>
+    </article>
+    {% endfor %}
+  {% else %}
+    <div class="card"><div class="empty-state">Nothing here{{ '' if data.show == 'all' else ' for this filter' }}. "Nothing new this week" is a valid review.</div></div>
+  {% endif %}
+{% endif %}
+{% endblock %}

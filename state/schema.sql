@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     target_chat_id     TEXT NOT NULL,          -- Telegram chat_id to reply into
     enabled            INTEGER NOT NULL DEFAULT 1,  -- 0/1
     created_at         TEXT NOT NULL,          -- ISO-8601 UTC
-    last_dispatched_at TEXT                    -- ISO-8601 UTC; NULL until first fire
+    last_dispatched_at TEXT,                   -- ISO-8601 UTC; NULL until first fire
+    timeout_seconds    INTEGER                 -- per-task run limit; NULL = the dispatcher default (300 s)
 );
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks (enabled);
@@ -814,3 +815,30 @@ CREATE TABLE IF NOT EXISTS golf_config (
     value       TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+
+-- Weekly step-back review (scripts/review.py; CLI scripts/review_store.py; page /review). One row per run, and
+-- one row per finding. A finding's `key` is a stable slug chosen by the review agent: raising it again updates
+-- that row (times_raised + 1) instead of adding a duplicate, and puts a dismissed or done one back to 'new'.
+CREATE TABLE IF NOT EXISTS review_runs (
+    id            TEXT PRIMARY KEY,     -- uuid4
+    created_at    TEXT NOT NULL,        -- local ISO
+    summary       TEXT NOT NULL,        -- the short run summary ("Nothing new this week" is valid)
+    finding_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS review_findings (
+    id               TEXT PRIMARY KEY,  -- uuid4
+    run_id           TEXT NOT NULL REFERENCES review_runs(id),  -- the run that last raised it
+    key              TEXT NOT NULL UNIQUE,
+    domain           TEXT NOT NULL,     -- calendar | tasks | money | wellness | ... | assistant | cross-domain | other
+    title            TEXT NOT NULL,
+    why_it_matters   TEXT NOT NULL,
+    evidence         TEXT NOT NULL,
+    suggested_action TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'new',  -- new | accepted | dismissed | done
+    times_raised     INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT NOT NULL,     -- local ISO
+    updated_at       TEXT NOT NULL      -- local ISO
+);
+CREATE INDEX IF NOT EXISTS idx_review_findings_status ON review_findings (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_review_findings_run ON review_findings (run_id);

@@ -82,6 +82,7 @@ SECTIONS = [
             {"group": "Agent", "label": "Live", "href": "/agent", "src": "agent:live"},
             {"label": "Usage", "href": "/agent/usage", "src": "agent:usage"},
             {"label": "Activity", "href": "/activity", "src": "activity:feed"},
+            {"group": "Weekly review", "label": "Findings", "href": "/review", "src": "review:review"},
             {"group": "Old pages", "label": "Archive", "href": "/archive", "src": "system:archive"},
         ],
     },

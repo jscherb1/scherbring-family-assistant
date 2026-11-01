@@ -4,7 +4,8 @@ Reads existing state from ../state/ (SQLite + JSON/JSONL/log files) and never wr
 it, with two exceptions: the landing page's one-shot "ask" box (routers/ask.py) queues a
 message in state/inbox.db for the agent, and the habits section (routers/habits.py) logs
 completions and edits habits through the shared service in scripts/habits.py, and the chores section (routers/chores.py)
-and kid page (routers/kids.py) do the same through scripts/chores.py. Run from the repo root:
+and kid page (routers/kids.py) do the same through scripts/chores.py, and the weekly review (routers/review.py)
+accepts, dismisses or closes findings through scripts/review.py. Run from the repo root:
 
     .venv/bin/python -m uvicorn dashboard.app:app --host 127.0.0.1 --port 5151
 """
@@ -16,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from .routers import (activity, agent, archive, ask, chores, dayrating, myhub, family, reauth, finance, ha, habits, golf, health, home, home_summary, kids, meals,
-                      journal, search, shopping_fitness, wellness)
+                      journal, review, search, shopping_fitness, wellness)
 from .web import APP_NAME, ARCHIVE, HERE
 
 app = FastAPI(
@@ -77,6 +78,7 @@ app.include_router(activity.router)
 app.include_router(family.router)
 app.include_router(home.router)
 app.include_router(habits.router)
+app.include_router(review.router)
 app.include_router(golf.router)
 app.include_router(ha.router)
 app.include_router(wellness.router)

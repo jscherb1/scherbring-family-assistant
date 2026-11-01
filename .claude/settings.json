@@ -41,6 +41,7 @@
       "Bash(python scripts/ha_store.py *)",
       "Bash(python scripts/money_store.py *)",
       "Bash(python scripts/dayrating_store.py *)",
+      "Bash(python scripts/review_store.py *)",
       "Bash(python scripts/wellness_store.py *)",
       "Bash(python scripts/journal_store.py *)",
       "Bash(python scripts/myhub_store.py *)",
@@ -62,6 +63,7 @@
       "mcp__claude_ai_Gmail__get_message",
       "mcp__claude_ai_Home_Assistant__llm__GetDateTime",
       "Edit(state/dayrating_tmp/**)",
+      "Edit(state/review_tmp/**)",
       "Edit(state/finance_reports/**)",
       "Edit(state/retirement/**)"
     ],
