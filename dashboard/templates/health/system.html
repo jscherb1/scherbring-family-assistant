@@ -2,7 +2,7 @@
 
 {% block page_header %}
   <h1>Logins &amp; Backups</h1>
-  <p class="subtitle">Manually refreshed logins and when they expire, backup freshness, and the scheduler heartbeat.</p>
+  <p class="subtitle">Manually refreshed logins and whether a real call to each one works right now, backup freshness, and the scheduler heartbeat.</p>
 {% endblock %}
 
 {% block content %}
@@ -16,18 +16,14 @@
       {% for s in cr.systems %}
       <section class="card">
         <h2>{{ s.label }}</h2>
-        {% if s.state == 'unknown' %}
-          <div class="metric">—</div><div class="metric-sub">no login recorded</div>
-        {% else %}
-          <div class="metric {{ 'fail-count' if s.state in ('warn', 'expired') }}">
-            {% if s.state == 'expired' %}expired{% else %}{{ s.days_left }} d{% endif %}</div>
-          <div class="metric-sub"><span class="pill {{ s.state|status_pill }}">{{ s.state }}</span>
-            logged in {{ s.authed_at|fmt_dt }} · expires {{ s.expires_at|fmt_dt }}</div>
-        {% endif %}
+        <div class="metric {{ 'fail-count' if s.state == 'expired' }}">{{ 'expired' if s.state == 'expired' else 'working' if s.state == 'ok' else '—' }}</div>
+        <div class="metric-sub"><span class="pill {{ s.state|status_pill }}">{{ s.state }}</span>
+          {% if s.checked_at %}live check {{ s.checked_at|fmt_dt }}{% else %}not checked yet{% endif %}
+          {% if s.authed_at %} · last login {{ s.authed_at|fmt_dt }}{% endif %}</div>
       </section>
       {% endfor %}
     </div>
-    <p class="footnote">Lifetimes are estimates; a warning shows within 2 days of expiry. COROS re-logs in by itself and isn't listed.</p>
+    <p class="footnote">Status comes from a real read against each service, not from login age. COROS re-logs in by itself and isn't listed.</p>
   {% endif %}
 
   <h2>Scheduler heartbeat</h2>
