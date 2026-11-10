@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import common
 
-REMIND_DAYS_BEFORE = 2  # matches scripts/credential_check.py
+LOGIN_KEYS = ("drive", "monarch", "hyvee")
 HEARTBEAT_STALE_MIN = 20  # matches scripts/watchdog_scheduler_health.py
 LABELS = {"hyvee": "Hy-Vee", "drive": "Google Drive", "monarch": "Monarch"}
 
@@ -20,48 +20,33 @@ def _local_aware(value):
 
 
 def get_credentials():
-    raw = common.read_json(common.state_dir() / "credential_check.json")
-    if not isinstance(raw, dict):
-        return {"error": "credential_check.json not found", "systems": []}
-    now = datetime.now().astimezone()
-    systems = []
-    for key, entry in raw.items():
-        if key == "hyvee":  # legacy entry; Hy-Vee's state comes from the connection check below
-            continue
-        authed = _local_aware(entry.get("authed_at")) if isinstance(entry, dict) else None
-        lifetime = (entry or {}).get("lifetime_days") if isinstance(entry, dict) else None
-        if not authed or not lifetime:
-            systems.append({"key": key, "label": LABELS.get(key, key), "state": "unknown"})
-            continue
-        expires = authed + timedelta(days=float(lifetime))
-        days_left = (expires - now).total_seconds() / 86400
-        state = "expired" if days_left < 0 else "warn" if days_left <= REMIND_DAYS_BEFORE else "ok"
-        systems.append({
-            "key": key, "label": LABELS.get(key, key), "state": state,
-            "authed_at": authed.isoformat(), "expires_at": expires.isoformat(),
-            "lifetime_days": float(lifetime), "days_left": round(days_left, 1),
-            "age_days": round((now - authed).total_seconds() / 86400, 1),
-            "probe_status": entry.get("status"),
-        })
-    systems.append(_hyvee_login(now))
-    return {"systems": systems}
-
-
-def _hyvee_login(now):
-    """Hy-Vee has no guessed lifetime: it is expired exactly when the one connection check says so."""
+    """Manually refreshed logins. State comes only from each system's last live check (scripts/system_health.py):
+    ok = a real read worked, expired = a real read was rejected, unknown = not checked or inconclusive.
+    Login age and guessed lifetimes are shown as information but never decide the state."""
     import sys
     sys.path.insert(0, str(common.SCRIPTS_DIR))
     sys.path.insert(0, str(common.SCRIPTS_DIR / "hyvee"))
     import hyvee_connection
     import system_health
-    row = next((s for s in system_health.get_status(db_path=common.db_path()) if s["key"] == "hyvee"), {})
-    st = row.get("status")
-    out = {"key": "hyvee", "label": "Hy-Vee", "state": {"ok": "ok", "down": "expired", "warn": "warn"}.get(st, "unknown"),
-           "probe_status": st, "detail": row.get("detail")}
-    t = hyvee_connection.login_time()
-    if t:
-        out.update(authed_at=t.isoformat(), age_days=round((now - t).total_seconds() / 86400, 1))
-    return out
+    now = datetime.now().astimezone()
+    rows = {s["key"]: s for s in system_health.get_status(db_path=common.db_path())}
+    raw = common.read_json(common.state_dir() / "credential_check.json")
+    raw = raw if isinstance(raw, dict) else {}
+    systems = []
+    for key in LOGIN_KEYS:
+        row = rows.get(key, {})
+        st = row.get("status")
+        out = {"key": key, "label": LABELS[key], "state": {"ok": "ok", "warn": "warn", "down": "expired"}.get(st, "unknown"),
+               "probe_status": st, "detail": row.get("detail"), "checked_at": row.get("checked_at")}
+        if key == "hyvee":
+            t = hyvee_connection.login_time()
+        else:
+            entry = raw.get(key)
+            t = _local_aware((entry or {}).get("authed_at")) if isinstance(entry, dict) and entry.get("authed_at") else None
+        if t:
+            out.update(authed_at=t.isoformat(), age_days=round((now - t).total_seconds() / 86400, 1))
+        systems.append(out)
+    return {"systems": systems}
 
 
 def _backup_dir() -> Path:

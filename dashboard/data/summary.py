@@ -78,10 +78,8 @@ def _credentials(attention):
     sysd = ops.get_system()
     systems = (sysd.get("credentials") or {}).get("systems", []) if _ok(sysd) else []
     for s in systems:
-        left = s.get("days_left")
-        if s.get("state") == "expired" or (left is not None and left <= 3):
-            word = "expired" if s.get("state") == "expired" or (left is not None and left <= 0) else f"expires in {left:.0f}d"
-            _flag(attention, f"cred:{s['key']}:{s.get('authed_at')}", f"{s['label']} login {word}",
+        if s.get("state") == "expired":
+            _flag(attention, f"cred:{s['key']}:{s.get('checked_at')}", f"{s['label']} login expired",
                   "/health/system", "Hy-Vee" if s["key"] == "hyvee" else None)
     return systems
 

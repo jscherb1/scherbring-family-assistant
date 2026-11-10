@@ -40,7 +40,7 @@
         {% for s in b.logins %}
           {% set st = {'ok': 'ok', 'warn': 'warn', 'expired': 'bad'}.get(s.state, 'unknown') %}
           <li class="st-{{ st }}"><a href="{{ '/reconnect' if st != 'ok' else '/health/system' }}"><i class="lamp"></i><span>{{ s.label }}</span>
-            <em>{% if s.state == 'expired' %}expired{% elif s.days_left is defined and s.days_left is not none %}{{ s.days_left|round(1) }} days left{% else %}{{ s.detail or s.state }}{% endif %}</em></a></li>
+            <em>{% if s.state == 'expired' %}expired{% else %}{{ s.detail or s.state }}{% endif %}</em></a></li>
         {% else %}<li class="st-unknown"><span>No logins recorded.</span></li>{% endfor %}
       </ul>
     </section>

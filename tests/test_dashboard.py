@@ -524,14 +524,19 @@ def test_home_output_escaped(client):
 # ---- logins & backups ----
 
 def test_credentials_states(state):
+    import system_health
     now = datetime.now().astimezone()
+    # An old login date (and a short guessed lifetime) must not turn a working login red.
     (state / "credential_check.json").write_text(json.dumps({
         "drive": {"authed_at": (now - timedelta(days=1)).isoformat(), "lifetime_days": 7, "status": "ok"},
-        "monarch": {"authed_at": (now - timedelta(days=20)).isoformat(), "lifetime_days": 14, "status": "ok"},
+        "monarch": {"authed_at": (now - timedelta(days=40)).isoformat(), "lifetime_days": 14, "status": "ok"},
     }))
+    system_health.record("monarch", "ok", "live read worked", db_path=ops.common.db_path())
+    for _ in range(system_health.DOWN_AFTER):  # one failure is only a warning
+        system_health.record("drive", "down", "login expired", db_path=ops.common.db_path())
     by = {s["key"]: s for s in ops.get_credentials()["systems"]}
     assert by["hyvee"]["state"] == "unknown"  # no connection check recorded in this test state
-    assert by["drive"]["state"] == "ok" and by["monarch"]["state"] == "expired"
+    assert by["monarch"]["state"] == "ok" and by["drive"]["state"] == "expired"
 
 
 def test_backups_list_only(tmp_path, monkeypatch, state):
