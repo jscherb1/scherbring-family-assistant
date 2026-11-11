@@ -1,0 +1,10 @@
+[Unit]
+Description=Save Rivian R2 trips and parked drain from Home Assistant history (no model tokens)
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO_ROOT@
+EnvironmentFile=-%h/.config/scherbring-assistant/.env
+Environment=PATH=@REPO_ROOT@/.venv/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@REPO_ROOT@/.venv/bin/python @REPO_ROOT@/scripts/rivian_store.py sync
+TimeoutStartSec=90

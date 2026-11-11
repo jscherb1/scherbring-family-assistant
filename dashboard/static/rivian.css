@@ -4,6 +4,8 @@
   --rv-soc: var(--accent);
   --rv-miles: #5cf2b0;
   --rv-range: #c4b5fd;
+  --rv-eff: #fbbf24;
+  --rv-drain: #fb7185;
   --rv-open: var(--amber);
   --rv-body: rgba(140, 200, 255, 0.10);
   --rv-line: rgba(140, 200, 255, 0.32);
@@ -95,11 +97,39 @@
 .wchart .s-soc { stroke: var(--rv-soc); fill: var(--rv-soc); }
 .wchart .s-range { stroke: var(--rv-range); fill: var(--rv-range); }
 .wchart .line.s-soc, .wchart .line.s-range { fill: none; }
-.wspk.s-eff .line { stroke: var(--rv-miles); }
+
+/* ---- efficiency, drain, trips ---- */
+.rv-eff-hero { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
+.rv-eff-hero > div { display: flex; align-items: baseline; gap: 6px; }
+.rv-eff-big { font: 700 46px/1 var(--mono); letter-spacing: -.02em; color: var(--rv-eff); }
+.rv-drain .rv-eff-big { color: var(--rv-drain); }
+.rv-eff-hero span { color: var(--text-muted); }
+.rv-eff-hero p { margin: 0; font-size: 14px; } .rv-eff-hero small { color: var(--text-muted); }
+.rv-lasttrip { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: var(--muted-bg); display: flex; flex-direction: column; gap: 3px; }
+.rv-lt-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.rv-lt-eff { font: 700 22px var(--mono); } .rv-lt-eff small { font: 400 12px var(--sans); color: var(--text-muted); }
+.rv-lt-facts { font-size: 13px; color: var(--text-muted); }
+.rv-rough { font: italic 500 12px var(--sans); color: var(--amber); margin-left: 4px; }
+.rv-rough-dot { color: var(--amber); margin-left: 3px; font-weight: 700; }
+.rv-table-wrap { overflow-x: auto; }
+.rv-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+.rv-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.rv-table td { padding: 7px 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+.rv-table .n { text-align: right; font-variant-numeric: tabular-nums; }
+.rv-table tr.rough td { color: var(--text-muted); }
+.rv-table td b { color: var(--rv-eff); }
+.rv-table tr.rough td b { color: inherit; font-weight: 500; }
+.card-wide .wplot svg { max-width: 640px; margin: 0 auto; }
+.rv-scatter svg { max-height: 260px; }
+.sw.s-eff { color: var(--rv-eff); } .sw.s-drain, .wbar.s-drain { color: var(--rv-drain); fill: var(--rv-drain); }
+.wchart .s-eff { stroke: var(--rv-eff); fill: var(--rv-eff); } .wchart .line.s-eff { fill: none; }
+.rv-scatter .sdot { fill: var(--rv-eff); }
 
 @media (max-width: 760px) {
   .rv-hero { grid-template-columns: 1fr; }
   .rv-energy { justify-content: center; }
   .rv-ring svg { width: 132px; }
   .rv-range b { font-size: 40px; }
+  .rv-table .hide-sm { display: none; }
+  .rv-eff-big { font-size: 38px; }
 }

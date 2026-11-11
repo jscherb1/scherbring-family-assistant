@@ -32,5 +32,10 @@ def get_trends(days: int = 30):
 
 
 @_safe
+def get_trips(days: int = 30):
+    return service.trips(days, db_path=common.db_path())
+
+
+@_safe
 def get_brief():
-    return service.brief()
+    return service.brief(db_path=common.db_path())
