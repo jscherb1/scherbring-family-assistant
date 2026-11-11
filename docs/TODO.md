@@ -273,10 +273,10 @@ writes are covered by tests with HA stubbed.
 App page `/home/ha/rivian` + `scripts/rivian.py` / `rivian_store.py`, verified live against the car (charging at
 the time). HA statistics for the R2 start 2026-11-10, so the trend charts are nearly empty at first.
 
-- [ ] **Needs the user:** apply the HA subview + chip. The write was blocked by the session's permission
-      classifier, so it wasn't applied. Spec: `docs/superpowers/specs/dashboard-backups/rivian-view-2026-11-10.json`
-      (insert `chip` at `views[0].cards[1].chips[4]` of `scherbring-family`, append `view`). Backup to undo:
-      `scherbring-family-2026-11-10.json` in the same folder.
+- HA subview + chip applied live 2026-11-10 (`scherbring-family/rivian`, chip in the overview nav). Spec:
+  `docs/superpowers/specs/dashboard-backups/rivian-view-2026-11-10.json`; undo by re-pushing
+  `scherbring-family-2026-11-10.json` from the same folder.
+- [ ] Open the HA Rivian view on a phone and the kitchen display once to eyeball layout (not screenshotted here).
 - [ ] After ~7 days of driving, sanity-check the estimated efficiency (mi/kWh) against the Rivian app; it counts
       idle drain, so expect it to read a little low. Adjust `efficiency()` thresholds if days look noisy.
 - [ ] Charge-time estimates on a 120 V trickle charge run to days; anything over 72 h shows "3+ days at this rate"
