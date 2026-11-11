@@ -7,20 +7,32 @@ error handling as the Family Board). Both front ends are thin wrappers over this
   - dashboard/routers/rivian.py  the Home > Home Assistant > Rivian page and its /api/ha/rivian twin
 
 status() is the live snapshot (energy, charging, vehicle, closures, tires, climate, health exceptions).
-trends(days) is daily history from HA long-term statistics (SOC, range, miles driven, estimated efficiency).
+trends(days) is daily history from HA long-term statistics (SOC, range, miles driven).
+sync() splits HA's raw history (kept ~10 days) into trips and parked-drain days and saves them in the
+rivian_trips / rivian_drain tables, so efficiency history outlives HA's purge; trips() reads them back.
+Run by the assistant-rivian-sync timer every 15 minutes, and by the CLI before answering.
 Failures raise RivianError with a CLI-style code: 1 = not found / unreachable, 2 = bad input.
 """
 
 from __future__ import annotations
 
+import bisect
+import sqlite3
+import urllib.parse
+import uuid
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import ha
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = REPO_ROOT / "state" / "agent_results.db"
+SCHEMA_PATH = REPO_ROOT / "state" / "schema.sql"
 
 PREFIX = "r2"  # the HA device is named "R2"; every entity id is <domain>.r2_<key>
 STALE_HOURS = 6
 MAX_ETA_MIN = 72 * 60  # longer estimates (e.g. a 120 V trickle charge) read as "3+ days", not a date
-TREND_DAYS = (7, 30)
+TREND_DAYS = (7, 30, 90)
 IMAGE_VIEWS = ("three_quarter", "side", "side_charging", "side_rear", "front", "rear", "overhead", "in_use")
 TIRES = (("front_left", "FL", "Front left"), ("front_right", "FR", "Front right"),
          ("rear_left", "RL", "Rear left"), ("rear_right", "RR", "Rear right"))
@@ -360,9 +372,13 @@ def status(now: datetime | None = None) -> dict:
     }
 
 
-def brief(now: datetime | None = None) -> dict:
+def brief(now: datetime | None = None, db_path=None) -> dict:
     """The one-line answer to "how's the car?" (also the dashboard Summary tile)."""
     s = status(now)
+    try:
+        last = trips(30, now, db_path)["last"]
+    except (RivianError, sqlite3.Error):
+        last = None
     e, ch, v = s["energy"], s["charging"], s["vehicle"]
     parts = [f"{e['soc_display']}", f"{e['range_mi']} mi" if e["range_mi"] is not None else None]
     if ch["active"]:
@@ -374,7 +390,8 @@ def brief(now: datetime | None = None) -> dict:
         parts.append(v["location"].lower() if v["location"] in ("Home", "Away") else v["location"])
     return {"headline": " · ".join(p for p in parts if p), "soc": e["soc"], "range_mi": e["range_mi"],
             "charging": ch["active"], "connected": ch["connected"], "locked": s["closures"]["locked"],
-            "open": s["closures"]["open"], "health": s["health"], "updated_ago": s["updated_ago"], "stale": s["stale"]}
+            "open": s["closures"]["open"], "health": s["health"], "updated_ago": s["updated_ago"], "stale": s["stale"],
+            "last_trip": {k: last[k] for k in ("when", "miles", "kwh", "efficiency", "confidence")} if last else None}
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +411,7 @@ def _stat_day(row: dict, tz) -> date | None:
     return dt.astimezone(tz).date()
 
 
-def _stats(days: int, now: datetime) -> tuple[dict, dict]:
+def _stats(days: int, now: datetime) -> dict:
     start = (now - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
     daily_ids = [eid("sensor", k) for k in ("battery_state_of_charge", "estimated_vehicle_range", "odometer",
                                              "cabin_temperature")] + \
@@ -402,14 +419,12 @@ def _stats(days: int, now: datetime) -> tuple[dict, dict]:
     base = {"type": "recorder/statistics_during_period", "start_time": start.astimezone(timezone.utc).isoformat(),
             "end_time": now.astimezone(timezone.utc).isoformat()}
     try:
-        daily, hourly = ha._ws_cached(f"rivian:{days}", [
+        (daily,) = ha._ws_cached(f"rivian:{days}", [
             {**base, "statistic_ids": daily_ids, "period": "day", "types": ["mean", "min", "max", "change"]},
-            {**base, "statistic_ids": [eid("sensor", "battery_state_of_charge")], "period": "hour",
-             "types": ["mean"]},
         ])
     except ha.HAError as exc:
         raise RivianError(exc.message, exc.code) from None
-    return daily or {}, hourly or {}
+    return daily or {}
 
 
 def _by_day(rows: list, field: str, tz, nd: int = 1) -> dict[str, float]:
@@ -421,61 +436,32 @@ def _by_day(rows: list, field: str, tz, nd: int = 1) -> dict[str, float]:
     return out
 
 
-def _soc_used_by_day(hourly_rows: list, capacity_kwh: float | None, tz) -> dict[str, float]:
-    """kWh drawn from the pack per local day: the sum of hour-to-hour SOC drops times capacity. Charging hours
-    (rises) are ignored, and idle drain counts as use, which is why efficiency is labelled an estimate."""
-    if not capacity_kwh:
-        return {}
-    used: dict[str, float] = {}
-    prev = None
-    for row in sorted(hourly_rows or [], key=lambda r: str(r.get("start"))):
-        v, d = row.get("mean"), _stat_day(row, tz)
-        if v is None or d is None:
-            continue
-        if prev is not None and v < prev:
-            used[d.isoformat()] = used.get(d.isoformat(), 0.0) + (prev - v) / 100 * capacity_kwh
-        prev = v
-    return {k: round(v, 2) for k, v in used.items()}
-
-
-def efficiency(miles: float, kwh: float) -> float | None:
-    """mi/kWh, only when there's enough driving and energy for the number to mean something."""
-    if miles is None or kwh is None or miles < 3 or kwh < 1:
-        return None
-    return round(miles / kwh, 2)
-
-
 def trends(days: int = 30, now: datetime | None = None) -> dict:
     if days not in TREND_DAYS:
         raise RivianError(f"days must be one of {', '.join(map(str, TREND_DAYS))}", 2)
     now = _now(now)
     tz = ha.local_tz()
     c = _Car(_states())
-    daily, hourly = _stats(days, now)
+    daily = _stats(days, now)
     dates = [(now.date() - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
     S = lambda key: daily.get(eid("sensor", key)) or []  # noqa: E731
 
     soc_min, soc_mean, soc_max = (_by_day(S("battery_state_of_charge"), f, tz) for f in ("min", "mean", "max"))
     miles = {d: v for d, v in _by_day(S("odometer"), "change", tz).items() if v >= 0}
-    used = _soc_used_by_day(hourly.get(eid("sensor", "battery_state_of_charge")), c.num("battery_capacity"), tz)
-    eff = {d: e for d in dates if (e := efficiency(miles.get(d), used.get(d))) is not None}
-
     last7 = dates[-7:]
     m7 = sum(miles.get(d, 0) for d in last7)
-    k7 = sum(used.get(d, 0) for d in last7)
     tires = {k: _by_day(S(f"tire_pressure_{k}"), "mean", tz) for k, _, _ in TIRES}
     have = sorted(set(soc_mean) | set(miles))
     return {
         "days": days, "dates": dates,
         "soc": {"min": soc_min, "mean": soc_mean, "max": soc_max},
         "range_mi": _by_day(S("estimated_vehicle_range"), "mean", tz, 0),
-        "miles": miles, "kwh_used": used, "efficiency": eff,
+        "miles": miles,
         "cabin_f": _by_day(S("cabin_temperature"), "mean", tz),
         "tires": tires,
         "totals": {
             "miles": round(sum(miles.get(d, 0) for d in dates), 1),
-            "miles_7d": round(m7, 1), "kwh_7d": round(k7, 1),
-            "efficiency_7d": efficiency(m7, k7),
+            "miles_7d": round(m7, 1),
             "driving_days": sum(1 for d in dates if miles.get(d, 0) >= 0.5),
             "avg_miles_per_driving_day": round(m7 / max(1, sum(1 for d in last7 if miles.get(d, 0) >= 0.5)), 1)
             if m7 else 0,
@@ -501,3 +487,288 @@ def image(view: str) -> tuple[bytes, str]:
         raise RivianError(exc.message, exc.code) from None
     ha._cache[key] = (ha.time.monotonic(), value)
     return value
+
+
+# ---------------------------------------------------------------------------
+# trips and parked drain (from HA raw history, saved locally)
+# ---------------------------------------------------------------------------
+#
+# A trip starts when the car leaves park and ends when it has been back in park for PARK_DEBOUNCE seconds
+# (so a stop at the mailbox doesn't split a drive). Energy is the SOC drop times pack capacity, read
+# SETTLE seconds after parking because the SOC keeps catching up for a minute or two. The odometer only moves in
+# 1 km steps (0.62 mi), and the SOC in 0.1% steps (~0.09 kWh), so trips under
+# GOOD_MILES are marked "rough"; under MIN_MILES (garage shuffles) they're
+# dropped. Parked drain is the SOC lost while parked and unplugged, over blocks of at least MIN_DRAIN_HOURS.
+
+PARK_DEBOUNCE = 60
+SETTLE = 120
+MIN_MILES = 0.5
+GOOD_MILES = 5.0
+MIN_DRAIN_HOURS = 1.0
+SYNC_DAYS = 3
+MOVING = {"drive", "reverse", "neutral"}
+OUTSIDE_TEMP = "sensor.openweathermap_temperature"
+HIST = {"gear": ("sensor", "gear_selector"), "odo": ("sensor", "odometer"), "soc": ("sensor", "battery_state_of_charge"),
+        "alt": ("sensor", "altitude"), "mode": ("sensor", "drive_mode"), "plug": ("binary_sensor", "charger_connection")}
+
+
+def connect(db_path: Path | str | None = None) -> sqlite3.Connection:
+    path = Path(db_path) if db_path else DB_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    return conn
+
+
+def _local_iso(dt: datetime) -> str:
+    return dt.astimezone(ha.local_tz()).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+class _Series:
+    """A time-ordered entity history with "value at time t" lookups."""
+
+    def __init__(self, points: list[tuple[datetime, str]], numeric: bool = True):
+        pts = sorted((t, (ha._num(v) if numeric else v)) for t, v in points if v not in MISSING)
+        self.t = [p[0] for p in pts if p[1] is not None]
+        self.v = [p[1] for p in pts if p[1] is not None]
+
+    def at(self, t: datetime):
+        i = bisect.bisect_right(self.t, t) - 1
+        return self.v[i] if i >= 0 else None
+
+    def low(self, t1: datetime, t2: datetime):
+        """Lowest value from t1 (the value then) through t2."""
+        vals = [self.at(t1)] + [v for t, v in zip(self.t, self.v) if t1 < t <= t2]
+        vals = [v for v in vals if v is not None]
+        return min(vals) if vals else None
+
+
+def _history(start: datetime, now: datetime) -> dict[str, _Series]:
+    ids = [eid(d, k) for d, k in HIST.values()] + [OUTSIDE_TEMP]
+    path = (f"/api/history/period/{urllib.parse.quote(start.astimezone(timezone.utc).isoformat())}"
+            f"?filter_entity_id={','.join(ids)}&end_time={urllib.parse.quote(now.astimezone(timezone.utc).isoformat())}"
+            "&minimal_response&no_attributes&significant_changes_only=0")
+    try:
+        raw = ha._open(path)
+    except ha.HAError as exc:
+        raise RivianError(exc.message, exc.code) from None
+    by_id: dict[str, list] = {}
+    for series in raw or []:
+        if not series:
+            continue
+        entity = series[0].get("entity_id")
+        by_id[entity] = [(ha._parse_ts(p.get("last_changed")), p.get("state")) for p in series]
+    out = {}
+    for key, (d, k) in HIST.items():
+        pts = [(t, v) for t, v in by_id.get(eid(d, k), []) if t]
+        out[key] = _Series(pts, numeric=key not in ("gear", "mode", "plug"))
+    out["temp"] = _Series([(t, v) for t, v in by_id.get(OUTSIDE_TEMP, []) if t])
+    return out
+
+
+def segments(gear: _Series, window_start: datetime, now: datetime) -> list[tuple[datetime, datetime]]:
+    """(start, end) of every drive in the gear history. A drive already under way at the window start is skipped
+    (an earlier sync saw its real start), and so is one still in progress."""
+    out, start, park_at = [], None, None
+    truncated = bool(gear.v) and gear.v[0] in MOVING and gear.t[0] <= window_start + timedelta(seconds=1)
+    for t, s in zip(gear.t, gear.v):
+        if s in MOVING:
+            if start is None:
+                start = t
+            elif park_at is not None and (t - park_at).total_seconds() > PARK_DEBOUNCE:
+                out.append((start, park_at))
+                start = t
+            park_at = None
+        elif s == "park" and start is not None and park_at is None:
+            park_at = t
+    if start is not None and park_at is not None and (now - park_at).total_seconds() > PARK_DEBOUNCE:
+        out.append((start, park_at))
+    if truncated and out and out[0][0] == gear.t[0]:
+        out = out[1:]
+    return out
+
+
+def _trip(seg: tuple[datetime, datetime], h: dict[str, _Series], capacity: float | None) -> dict | None:
+    s, e = seg
+    settled = e + timedelta(seconds=SETTLE)
+    odo0, odo1 = h["odo"].at(s), h["odo"].at(settled)
+    soc0, soc1 = h["soc"].at(s), h["soc"].low(e, settled)
+    if odo0 is None or odo1 is None:
+        return None
+    miles = odo1 - odo0
+    if miles < MIN_MILES:
+        return None
+    kwh = (soc0 - soc1) / 100 * capacity if soc0 is not None and soc1 is not None and capacity else None
+    minutes = (e - s).total_seconds() / 60
+    alt0, alt1 = h["alt"].at(s), h["alt"].at(settled)
+    eff = round(miles / kwh, 2) if kwh and kwh >= 0.05 else None
+    return {
+        "start_at": _local_iso(s), "end_at": _local_iso(e),
+        "miles": round(miles, 2), "kwh": round(kwh, 2) if kwh is not None else None, "efficiency": eff,
+        "soc_start": soc0, "soc_end": soc1, "odo_start": round(odo0, 2), "odo_end": round(odo1, 2),
+        "minutes": round(minutes, 1), "avg_mph": round(miles / (minutes / 60), 1) if minutes > 0 else None,
+        "drive_mode": _label(h["mode"].at(e - timedelta(seconds=1)), DRIVE_MODES),
+        "outside_f": _r(h["temp"].at(s + (e - s) / 2), 1),
+        "elevation_ft": _r(alt1 - alt0) if alt0 is not None and alt1 is not None else None,
+        "confidence": "good" if eff is not None and miles >= GOOD_MILES and kwh >= 1.0 else "rough",
+        "capacity_kwh": capacity,
+    }
+
+
+def _drain(h: dict[str, _Series], segs: list, window_start: datetime, now: datetime,
+           capacity: float | None) -> dict[str, dict]:
+    """SOC lost per local day while parked and unplugged. Blocks shorter than MIN_DRAIN_HOURS are ignored;
+    each block's loss is shared across the days it spans by hours."""
+    tz = ha.local_tz()
+    busy = [(s, e + timedelta(seconds=SETTLE)) for s, e in segs]
+    edges = {window_start, now, *[t for b in busy for t in b], *[t for t in h["plug"].t if window_start < t < now]}
+    edges = sorted(t for t in edges if window_start <= t <= now)
+
+    def idle(a, b):
+        mid = a + (b - a) / 2
+        return not any(s <= mid < e for s, e in busy) and h["plug"].at(mid) != "on"
+
+    blocks: list[list[datetime]] = []
+    for a, b in zip(edges, edges[1:]):
+        if not idle(a, b):
+            continue
+        if blocks and blocks[-1][1] == a:
+            blocks[-1][1] = b
+        else:
+            blocks.append([a, b])
+    days: dict[str, dict] = {}
+    for a, b in blocks:
+        hours = (b - a).total_seconds() / 3600
+        s0, s1 = h["soc"].at(a), h["soc"].at(b)
+        if hours < MIN_DRAIN_HOURS or s0 is None or s1 is None:
+            continue
+        drop = max(0.0, s0 - s1)
+        t = a
+        while t < b:
+            local = t.astimezone(tz)
+            nxt = min(b, (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                      .astimezone(timezone.utc))
+            piece = (nxt - t).total_seconds() / 3600
+            d = days.setdefault(local.date().isoformat(), {"parked_hours": 0.0, "drain_pct": 0.0})
+            d["parked_hours"] += piece
+            d["drain_pct"] += drop * piece / hours
+            t = nxt
+    for d in days.values():
+        d["parked_hours"] = round(d["parked_hours"], 2)
+        d["drain_pct"] = round(d["drain_pct"], 2)
+        d["drain_kwh"] = round(d["drain_pct"] / 100 * capacity, 2) if capacity else None
+    return days
+
+
+def sync(days: int = SYNC_DAYS, now: datetime | None = None, db_path=None) -> dict:
+    """Re-derive trips and parked drain for the last `days` local days from HA history and upsert them."""
+    if not 1 <= days <= 10:
+        raise RivianError("days must be 1-10 (Home Assistant keeps about 10 days of raw history)", 2)
+    now = _now(now)
+    window_start = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    capacity = _Car(_states()).num("battery_capacity")
+    h = _history(window_start, now)
+    segs = segments(h["gear"], window_start, now)
+    trips_ = [t for t in (_trip(seg, h, capacity) for seg in segs) if t]
+    drain = _drain(h, segs, window_start, now, capacity)
+    stamp = _local_iso(now)
+    with connect(db_path) as conn:
+        for t in trips_:
+            cols = [k for k in t]
+            conn.execute(
+                f"INSERT INTO rivian_trips (id, {', '.join(cols)}, created_at, updated_at) "
+                f"VALUES (?, {', '.join('?' for _ in cols)}, ?, ?) ON CONFLICT(start_at) DO UPDATE SET "
+                + ", ".join(f"{k} = excluded.{k}" for k in cols if k != "start_at") + ", updated_at = excluded.updated_at",
+                [str(uuid.uuid4()), *t.values(), stamp, stamp])
+        for day, d in drain.items():
+            conn.execute("INSERT INTO rivian_drain (day, parked_hours, drain_pct, drain_kwh, updated_at) "
+                         "VALUES (?, ?, ?, ?, ?) ON CONFLICT(day) DO UPDATE SET parked_hours = excluded.parked_hours, "
+                         "drain_pct = excluded.drain_pct, drain_kwh = excluded.drain_kwh, updated_at = excluded.updated_at",
+                         (day, d["parked_hours"], d["drain_pct"], d["drain_kwh"], stamp))
+        conn.execute("INSERT INTO rivian_sync (id, synced_at, window_start, trips, drain_days) VALUES (1, ?, ?, ?, ?) "
+                     "ON CONFLICT(id) DO UPDATE SET synced_at = excluded.synced_at, window_start = excluded.window_start, "
+                     "trips = excluded.trips, drain_days = excluded.drain_days",
+                     (stamp, _local_iso(window_start), len(trips_), len(drain)))
+    return {"synced_at": stamp, "window_start": _local_iso(window_start), "trips": len(trips_),
+            "drain_days": len(drain), "in_progress": h["gear"].at(now) in MOVING}
+
+
+def _ratio(miles: float, kwh: float) -> float | None:
+    return round(miles / kwh, 2) if kwh and kwh >= 0.05 and miles else None
+
+
+def temp_fit(points: list[tuple[float, float]]) -> dict | None:
+    """Least-squares line of efficiency against outside temperature (needs 5+ trips across 10+ degrees)."""
+    if len(points) < 5:
+        return None
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    if max(xs) - min(xs) < 10:
+        return None
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    slope = sum((x - mx) * (y - my) for x, y in points) / sxx
+    return {"slope": round(slope, 4), "intercept": round(my - slope * mx, 3),
+            "per_10f": round(slope * 10, 2)}
+
+
+def trips(days: int = 30, now: datetime | None = None, db_path=None) -> dict:
+    """Saved trips and parked drain for the last `days` local days, newest trip first."""
+    if days not in TREND_DAYS:
+        raise RivianError(f"days must be one of {', '.join(map(str, TREND_DAYS))}", 2)
+    now = _now(now)
+    since = (now - timedelta(days=days - 1)).strftime("%Y-%m-%dT00:00:00")
+    with connect(db_path) as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM rivian_trips WHERE start_at >= ? ORDER BY start_at DESC", (since,))]
+        drain_rows = {r["day"]: dict(r) for r in conn.execute(
+            "SELECT * FROM rivian_drain WHERE day >= ? ORDER BY day", (since[:10],))}
+        meta = conn.execute("SELECT * FROM rivian_sync WHERE id = 1").fetchone()
+        last_any = conn.execute("SELECT * FROM rivian_trips WHERE efficiency IS NOT NULL "
+                                "ORDER BY start_at DESC LIMIT 1").fetchone()
+    for r in rows:
+        st = datetime.fromisoformat(r["start_at"]).replace(tzinfo=ha.local_tz())
+        r["when"] = _clock(st, now).replace("today", "Today").replace("tomorrow", "Tomorrow") \
+            if st.date() >= now.date() - timedelta(days=6) else st.strftime("%b %-d %-I:%M %p")
+        if st.date() == now.date() - timedelta(days=1):
+            r["when"] = "Yesterday " + st.strftime("%-I:%M %p")
+        r["day"] = r["start_at"][:10]
+        r.pop("id", None)
+    with_eff = [r for r in rows if r["efficiency"] is not None]
+    miles = sum(r["miles"] for r in with_eff)
+    kwh = sum(r["kwh"] for r in with_eff)
+    by_day: dict[str, dict] = {}
+    for r in with_eff:
+        d = by_day.setdefault(r["day"], {"miles": 0.0, "kwh": 0.0, "trips": 0})
+        d["miles"] += r["miles"]
+        d["kwh"] += r["kwh"]
+        d["trips"] += 1
+    for d in by_day.values():
+        d["efficiency"] = _ratio(d["miles"], d["kwh"])
+        d["miles"], d["kwh"] = round(d["miles"], 1), round(d["kwh"], 2)
+    good = [r for r in with_eff if r["confidence"] == "good"]
+    fit = temp_fit([(r["outside_f"], r["efficiency"]) for r in good if r["outside_f"] is not None])
+    hours = sum(d["parked_hours"] for d in drain_rows.values())
+    pct = sum(d["drain_pct"] for d in drain_rows.values())
+    pct_day = round(pct / hours * 24, 2) if hours >= 6 else None
+    capacity = next((r["capacity_kwh"] for r in rows if r.get("capacity_kwh")), None)
+    eff_all = _ratio(miles, kwh)
+    kwh_day = round(pct_day / 100 * capacity, 2) if pct_day is not None and capacity else None
+    last = dict(last_any) if last_any else None
+    if last:
+        last.pop("id", None)
+        st = datetime.fromisoformat(last["start_at"]).replace(tzinfo=ha.local_tz())
+        last["when"] = next((r["when"] for r in rows if r["start_at"] == last["start_at"]), st.strftime("%b %-d %-I:%M %p"))
+    synced = datetime.fromisoformat(meta["synced_at"]).replace(tzinfo=ha.local_tz()) if meta else None
+    return {
+        "days": days, "trips": rows, "last": last,
+        "totals": {"count": len(rows), "with_efficiency": len(with_eff), "good": len(good),
+                   "miles": round(miles, 1), "kwh": round(kwh, 2), "efficiency": eff_all},
+        "by_day": by_day, "temp_fit": fit,
+        "drain": {"days": drain_rows, "parked_hours": round(hours, 1), "pct_per_day": pct_day,
+                  "kwh_per_day": kwh_day,
+                  "miles_per_day": round(kwh_day * eff_all, 1) if kwh_day is not None and eff_all else None},
+        "synced_at": meta["synced_at"] if meta else None,
+        "synced_ago": _ago(synced, now) if synced else None,
+    }
+

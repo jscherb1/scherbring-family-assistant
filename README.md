@@ -61,7 +61,7 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_holdings`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `golf_rounds`, `golf_courses`, `golf_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs`, `review_runs`, `review_findings` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_holdings`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `golf_rounds`, `golf_courses`, `golf_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs`, `review_runs`, `review_findings`, `rivian_trips`, `rivian_drain`, `rivian_sync` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -110,8 +110,8 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `scripts/wellness_store.py` | Zero-dep CLI over `wellness.py` for the wellness subagent (today / metric / trends / drivers / scatter / metrics) |
 | `scripts/ha.py` | Shared Home Assistant board + health service (REST + minimal websocket client, board definition, health rules, write allow-list; alarm/garage/locks read-only). The single code path used by `ha_store.py` and the Home > Home Assistant dashboard pages |
 | `scripts/ha_store.py` | Zero-dep CLI over `ha.py` for the ha-overview subagent (`health`, `board`, `set-temp`, `set-mode`, `toggle`) |
-| `scripts/rivian.py` | Shared Rivian R2 service over `ha.py` (read-only): live status (charge, range, charging with plain-English derate reasons, closures, tires, health exceptions) and trends from HA long-term statistics (daily SOC, range, miles, estimated mi/kWh). Used by `rivian_store.py` and the Home > Home Assistant > Rivian page |
-| `scripts/rivian_store.py` | Zero-dep CLI over `rivian.py` for the ha-overview subagent (`brief`, `status`, `trends`) |
+| `scripts/rivian.py` | Shared Rivian R2 service over `ha.py` (read-only): live status (charge, range, charging with plain-English derate reasons, closures, tires, health exceptions) trends from HA long-term statistics (daily SOC, range, miles), and trips / parked drain derived from HA raw history and saved locally. Used by `rivian_store.py` and the Home > Home Assistant > Rivian page |
+| `scripts/rivian_store.py` | Zero-dep CLI over `rivian.py` for the ha-overview subagent (`brief`, `status`, `trends`, `trips`, `sync`); `sync` is also what `assistant-rivian-sync.timer` runs |
 | `scripts/golf.py` | Shared golf service (differentials, best-8-of-last-20 x 0.96 handicap, round logging/undo, saved courses). The single code path used by both `golf_store.py` and the dashboard |
 | `scripts/golf_store.py` | Zero-dep CLI over `golf.py` for the golf subagent (round/course/handicap/import/sync sub-commands) |
 | `scripts/golf_sheet.py` | Google Sheets side of golf: read history, append new rounds to the "Handicap - 18 holes only" tab (best-effort mirror) |
@@ -722,14 +722,23 @@ view-only dashboards read it; nothing in the assistant controls the car.
 - **App:** Home > Home Assistant > Rivian (`/home/ha/rivian`, JSON at `/api/ha/rivian`). Car render (proxied from
   the integration's image entities), SOC ring with the charge-limit tick, range, a charging panel with ETA and
   derate reason, a top-down car diagram (tire pressures colored by the car's own status, open doors and
-  closures), a health card that lists only exceptions, and 7/30-day trends (SOC, miles per day, range,
-  estimated efficiency). A Summary tile shows charge and range.
+  closures), a health card that lists only exceptions, and 7/30/90-day efficiency and trends: overall mi/kWh, last
+  trip, efficiency by day, efficiency vs outside temperature (trend line once there are enough trips), parked drain
+  (% and kWh per day), a trips table, plus SOC, miles per day and range. A Summary tile shows charge and range.
 - **Home Assistant:** a `rivian` subview of the `scherbring-family` dashboard, reached from a car chip (shows
   SOC) in the overview's nav chips. Native cards only (gauge, tiles, statistics graphs, map with the day's route).
   The view JSON and the pre-change backup are in `docs/superpowers/specs/dashboard-backups/`.
 - **Agent:** `ha-overview` answers "how charged is the car?" with `python scripts/rivian_store.py brief`.
-- No schema change and no scheduled task. Entity ids all start `r2_`; `PREFIX` in `scripts/rivian.py` is the
-  one place to change if the HA device is renamed.
+- **Trips and parked drain:** the integration has no trip efficiency (upstream PR #280 was closed unmerged), so
+  `rivian.sync()` derives it from HA's raw history: a trip runs from leaving park to 60 s back in park, energy is
+  the SOC drop (read 2 min after parking) times pack capacity, outside temperature comes from
+  `sensor.openweathermap_temperature`. Trips under 0.5 mi are dropped; under 5 mi are marked rough (odometer moves
+  in 0.62 mi steps, SOC in 0.1% steps). Parked drain is SOC lost while parked and unplugged, in blocks of an hour
+  or more. Both are saved in `rivian_trips` / `rivian_drain` because HA keeps raw history only ~10 days.
+  `assistant-rivian-sync.timer` re-derives the last 3 days every 15 minutes (no model tokens; upserts by trip
+  start / day). Install: `scripts/install_systemd.sh assistant-rivian-sync.timer`. Backfill: `python
+  scripts/rivian_store.py sync --days 10`.
+- Entity ids all start `r2_`; `PREFIX` in `scripts/rivian.py` is the one place to change if the HA device is renamed.
 
 ## Home Assistant agent
 

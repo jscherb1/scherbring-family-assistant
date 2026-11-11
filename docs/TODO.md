@@ -277,8 +277,14 @@ the time). HA statistics for the R2 start 2026-11-10, so the trend charts are ne
   `docs/superpowers/specs/dashboard-backups/rivian-view-2026-11-10.json`; undo by re-pushing
   `scherbring-family-2026-11-10.json` from the same folder.
 - [ ] Open the HA Rivian view on a phone and the kitchen display once to eyeball layout (not screenshotted here).
-- [ ] After ~7 days of driving, sanity-check the estimated efficiency (mi/kWh) against the Rivian app; it counts
-      idle drain, so expect it to read a little low. Adjust `efficiency()` thresholds if days look noisy.
+- Trip efficiency + parked drain added 2026-11-11 (branch `feat/rivian-trips`): `rivian.sync()` derives trips from HA
+  raw history into `rivian_trips` / `rivian_drain`, run every 15 min by `assistant-rivian-sync.timer`. Verified on the
+  first three real trips (16.2 mi at 2.41 mi/kWh; a 3.7 mi downhill leg at 5.15 and the climb back at 1.72).
+- [ ] After a couple of weeks, compare the 30-day mi/kWh with the Rivian app's figure; tune `SETTLE`,
+      `PARK_DEBOUNCE` or `GOOD_MILES` in `scripts/rivian.py` if trips split or read off.
+- [ ] Parked drain only counts unplugged time, and the car is usually plugged in at home, so it fills in slowly
+      (mostly away-from-home parking). Revisit whether "plugged in but not charging" should count too.
+- [ ] Outside temperature is the home weather sensor, not the route. Fine around Rochester; wrong on road trips.
 - [ ] Charge-time estimates on a 120 V trickle charge run to days; anything over 72 h shows "3+ days at this rate"
       instead of an ETA. Revisit when a Level 2 charger is in.
 - [ ] Ideas, not built (view-only for now): evening "R2 not plugged in and under 40%" Telegram nudge; home

@@ -33,16 +33,43 @@ def _charts(t: dict) -> dict:
         ], y_min=0, y_max=100, y_fmt=lambda v: f"{int(v)}%", label="Battery state of charge", sync="rivian"),
         "miles": charts.timeseries(dates, [
             {"kind": "bars", "values": t["miles"], "cls": "s-miles", "label": "Miles driven", "fmt": mi},
-            {"kind": "info", "values": t["kwh_used"], "label": "Battery used", "fmt": lambda v: f"{_n(v)} kWh"},
-            {"kind": "info", "values": t["efficiency"], "label": "Efficiency (est.)", "fmt": lambda v: f"{_n(v)} mi/kWh"},
         ], height=150, label="Miles driven per day", sync="rivian"),
         "range": charts.timeseries(dates, [
             {"kind": "line", "values": t["range_mi"], "cls": "s-range", "label": "Estimated range", "fmt": mi,
              "dots": True},
         ], height=150, y_min=0, label="Estimated range", sync="rivian"),
-        "efficiency": charts.spark([{"date": d, "value": t["efficiency"].get(d)} for d in dates], cls="s-eff",
-                                   fmt=lambda v: f"{_n(v)} mi/kWh", label="Efficiency (est.)"),
     }
+    return out
+
+
+def _trip_charts(tr: dict, dates: list[str]) -> dict:
+    """Efficiency and parked-drain charts from trips(). Presentation only."""
+    eff = lambda v: f"{v:.2f}".rstrip("0").rstrip(".") + " mi/kWh"  # noqa: E731
+    by_day = tr["by_day"]
+    drain = tr["drain"]["days"]
+    out = {"efficiency": None, "temp": None, "drain": None}
+    if by_day:
+        out["efficiency"] = charts.timeseries(dates, [
+            {"kind": "line", "values": {d: v["efficiency"] for d, v in by_day.items() if v["efficiency"]},
+             "cls": "s-eff", "label": "Efficiency", "fmt": eff, "dots": True},
+            {"kind": "info", "values": {d: v["miles"] for d, v in by_day.items()}, "label": "Miles",
+             "fmt": lambda v: f"{_n(v)} mi"},
+            {"kind": "info", "values": {d: v["kwh"] for d, v in by_day.items()}, "label": "Energy",
+             "fmt": lambda v: f"{_n(v)} kWh"},
+            {"kind": "hline", "y": tr["totals"]["efficiency"], "cls": "target", "label": "Average", "fmt": eff},
+        ], height=150, y_min=0, label="Driving efficiency per day", sync="rivian")
+    pts = [{"date": r["day"], "x": r["outside_f"], "y": r["efficiency"]} for r in tr["trips"]
+           if r["efficiency"] is not None and r["outside_f"] is not None]
+    if pts:
+        out["temp"] = charts.scatter(pts, fit=tr["temp_fit"], x_fmt=lambda v: f"{_n(v)}°F", y_fmt=eff,
+                                     x_label="Outside temperature", y_label="Efficiency", height=190)
+    if drain:
+        out["drain"] = charts.timeseries(dates, [
+            {"kind": "bars", "values": {d: v["drain_pct"] for d, v in drain.items()}, "cls": "s-drain",
+             "label": "Parked drain", "fmt": lambda v: f"{_n(v)}%"},
+            {"kind": "info", "values": {d: v["parked_hours"] for d, v in drain.items()}, "label": "Parked unplugged",
+             "fmt": lambda v: f"{_n(v)} h"},
+        ], height=130, y_min=0, label="Battery lost while parked per day", sync="rivian")
     return out
 
 
@@ -51,6 +78,7 @@ def rivian_page(request: Request, days: int = 7):
     days = days if days in service.TREND_DAYS else 7
     status = data.get_status()
     trends = data.get_trends(days) if "error" not in status else {"error": status["error"]}
+    trips = data.get_trips(days)
     ring = None
     if "error" not in status:
         e = status["energy"]
@@ -58,7 +86,9 @@ def rivian_page(request: Request, days: int = 7):
                            sub=f"limit {e['limit']}%" if e["limit"] is not None else "charge",
                            label="State of charge", marker=e["limit"])
     return render(request, "rivian/status.html", "rivian", "status", "Rivian R2", data=status, trends=trends,
-                  days=days, ring=ring, charts=_charts(trends) if "error" not in trends else None)
+                  days=days, ring=ring, charts=_charts(trends) if "error" not in trends else None, trips=trips,
+                  trip_charts=_trip_charts(trips, trends["dates"]) if "error" not in trips and "error" not in trends
+                  else None)
 
 
 @router.get("/home/ha/rivian/image/{view}", include_in_schema=False)
@@ -78,4 +108,4 @@ def api_rivian(days: int = 30):
     trends = data.get_trends(days)
     if "error" in trends:
         return JSONResponse(trends, status_code=400 if trends.get("code") == 2 else 503)
-    return {"status": status, "trends": trends}
+    return {"status": status, "trends": trends, "trips": data.get_trips(days)}

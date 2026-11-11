@@ -845,3 +845,44 @@ CREATE TABLE IF NOT EXISTS review_findings (
 );
 CREATE INDEX IF NOT EXISTS idx_review_findings_status ON review_findings (status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_review_findings_run ON review_findings (run_id);
+
+-- Rivian R2 trips and parked drain (scripts/rivian.py; CLI scripts/rivian_store.py; page /home/ha/rivian).
+-- Derived from Home Assistant's raw history (kept ~10 days) by rivian.sync(), which the assistant-rivian-sync timer
+-- runs every 15 minutes; re-deriving the same window upserts, so start_at / day are the natural keys.
+CREATE TABLE IF NOT EXISTS rivian_trips (
+    id            TEXT PRIMARY KEY,      -- uuid4
+    start_at      TEXT NOT NULL UNIQUE,  -- local ISO, left park
+    end_at        TEXT NOT NULL,         -- local ISO, back in park (60 s debounce)
+    miles         REAL NOT NULL,
+    kwh           REAL,                  -- SOC drop x pack capacity
+    efficiency    REAL,                  -- mi/kWh; NULL when the SOC didn't drop measurably
+    soc_start     REAL,
+    soc_end       REAL,
+    odo_start     REAL,
+    odo_end       REAL,
+    minutes       REAL,
+    avg_mph       REAL,
+    drive_mode    TEXT,
+    outside_f     REAL,                  -- home weather sensor mid-trip
+    elevation_ft  INTEGER,               -- end minus start altitude
+    confidence    TEXT NOT NULL,         -- good | rough (under 5 mi: odometer 0.62 mi steps, SOC 0.1% steps)
+    capacity_kwh  REAL,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rivian_drain (
+    day           TEXT PRIMARY KEY,      -- local date
+    parked_hours  REAL NOT NULL,         -- parked, unplugged, not driving
+    drain_pct     REAL NOT NULL,         -- SOC points lost over those hours
+    drain_kwh     REAL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rivian_sync (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    synced_at     TEXT NOT NULL,
+    window_start  TEXT NOT NULL,
+    trips         INTEGER NOT NULL,
+    drain_days    INTEGER NOT NULL
+);

@@ -149,49 +149,117 @@
     </section>
   </div>
 
-  <h2 class="wsection">Trends</h2>
+  <h2 class="wsection">Efficiency &amp; trends</h2>
   {% if trends.error %}
     <div class="card"><div class="error-state">{{ trends.error }}</div></div>
   {% else %}
     {% set tot = trends.totals %}
     <div class="wrange">
-      {% for d in [7, 30] %}<a href="?days={{ d }}"{% if d == days %} class="active" aria-current="true"{% endif %}>{{ d }} days</a>{% endfor %}
+      {% for d in [7, 30, 90] %}<a href="?days={{ d }}"{% if d == days %} class="active" aria-current="true"{% endif %}>{{ d }} days</a>{% endfor %}
       <span class="wrange-dates">{% if trends.first_day %}History since {{ trends.first_day|fmt_date }}{% endif %}</span>
     </div>
     {% if trends.data_days < 3 %}
-      <p class="wplaceholder">Collecting data: Home Assistant started recording the R2 {{ 'today' if trends.data_days <= 1 else 'recently' }}. These charts fill in a little more each day.</p>
+      <p class="wplaceholder">Collecting data: Home Assistant started recording the R2 on Nov 10. These charts fill in a little more each day.</p>
     {% endif %}
+
+    {% if trips.error %}
+      <div class="card"><div class="error-state">{{ trips.error }}</div></div>
+    {% else %}
+    {% set tt, lt, dr = trips.totals, trips.last, trips.drain %}
     <div class="wgrid">
+      <section class="card rv-eff-card">
+        <h2>Efficiency</h2>
+        <div class="rv-eff-hero">
+          <div><b class="rv-eff-big">{{ '%.2f'|format(tt.efficiency) if tt.efficiency else '—' }}</b><span>mi/kWh</span></div>
+          <p>{{ tt.with_efficiency }} trip{{ '' if tt.with_efficiency == 1 else 's' }} · {{ tt.miles }} mi · {{ tt.kwh }} kWh<br>
+             <small>last {{ days }} days, total miles ÷ total energy</small></p>
+        </div>
+        {% if lt %}
+        <div class="rv-lasttrip">
+          <span class="rv-lt-label">Last trip · {{ lt.when }}</span>
+          <span class="rv-lt-eff">{{ '%.2f'|format(lt.efficiency) }} <small>mi/kWh</small>{% if lt.confidence == 'rough' %} <i class="rv-rough" title="Short trip: the odometer moves in 0.62 mi steps and the battery in 0.1% steps, so this one is approximate">≈ rough</i>{% endif %}</span>
+          <span class="rv-lt-facts">{{ lt.miles|round(1) }} mi · {{ lt.kwh }} kWh · {{ lt.minutes|round|int }} min{% if lt.avg_mph %} · {{ lt.avg_mph|round|int }} mph avg{% endif %}{% if lt.drive_mode %} · {{ lt.drive_mode }}{% endif %}{% if lt.outside_f is not none %} · {{ lt.outside_f|round|int }}°F out{% endif %}{% if lt.elevation_ft %} · {{ '%+d'|format(lt.elevation_ft) }} ft{% endif %}</span>
+        </div>
+        {% else %}
+          <p class="wplaceholder">No trips saved yet. Trips appear here within 15 minutes of parking.</p>
+        {% endif %}
+      </section>
+
+      <section class="card rv-drain">
+        <h2>Parked drain</h2>
+        {% if dr.pct_per_day is not none %}
+          <div class="rv-eff-hero">
+            <div><b class="rv-eff-big">{{ dr.pct_per_day }}</b><span>% per day</span></div>
+            <p>{{ dr.kwh_per_day }} kWh/day{% if dr.miles_per_day %} ≈ {{ dr.miles_per_day }} mi of range{% endif %}<br>
+               <small>over {{ dr.parked_hours }} h parked and unplugged</small></p>
+          </div>
+          {% if trip_charts and trip_charts.drain %}<div class="wplot">{{ trip_charts.drain }}</div><div class="wreadout" aria-live="polite"></div>{% endif %}
+        {% else %}
+          <p class="wplaceholder">Not enough unplugged parking yet{% if dr.parked_hours %} ({{ dr.parked_hours }} h so far){% endif %}. It needs about 6 hours parked off the charger; time on the charger doesn't count because the car tops itself up.</p>
+        {% endif %}
+        <p class="wnote">Battery lost while parked, unplugged and not driving: sleep, Gear Guard, cabin overheat protection and app wake-ups.</p>
+      </section>
+
+      <figure class="card wfig">
+        <figcaption><h2>Efficiency by day</h2><span class="wavg">{{ '%.2f'|format(tt.efficiency) if tt.efficiency else '—' }} <small>avg</small></span></figcaption>
+        {% if trip_charts and trip_charts.efficiency %}
+          <ul class="wlegend"><li><span class="sw s-eff"></span>mi/kWh that day</li><li><span class="sw target"></span>Average</li></ul>
+          <div class="wplot">{{ trip_charts.efficiency }}</div><div class="wreadout" aria-live="polite"></div>
+        {% else %}<p class="wplaceholder">Shows up after the first saved trip.</p>{% endif %}
+      </figure>
+
+      <figure class="card wfig">
+        <figcaption><h2>Efficiency vs temperature</h2>
+          {% if trips.temp_fit %}<span class="wavg">{{ '%+.2f'|format(trips.temp_fit.per_10f) }} <small>mi/kWh per 10°F</small></span>{% endif %}</figcaption>
+        {% if trip_charts and trip_charts.temp %}
+          <div class="wplot rv-scatter">{{ trip_charts.temp }}</div><div class="wreadout" aria-live="polite"></div>
+          {% if not trips.temp_fit %}<p class="wnote">A trend line appears after 5 longer trips across at least 10°F. Expect this to slope down hard as winter sets in.</p>{% endif %}
+        {% else %}<p class="wplaceholder">Each trip becomes a dot here: outside temperature against mi/kWh.</p>{% endif %}
+      </figure>
+
       <figure class="card wfig">
         <figcaption><h2>Driving</h2><span class="wavg">{{ tot.miles_7d }} mi <small>last 7 days</small></span></figcaption>
         <ul class="wlegend"><li><span class="sw s-miles"></span>Miles per day</li></ul>
         <div class="wplot">{{ charts.miles }}</div><div class="wreadout" aria-live="polite"></div>
       </figure>
       <figure class="card wfig">
-        <figcaption><h2>Efficiency <small class="rv-est">est.</small></h2>
-          <span class="wavg">{{ tot.efficiency_7d if tot.efficiency_7d is not none else '—' }} <small>mi/kWh, 7 days</small></span></figcaption>
-        <div class="rv-eff">
-          <dl class="wfacts">
-            <div><dt>Driven</dt><dd>{{ tot.miles_7d }} mi</dd></div>
-            <div><dt>Battery used</dt><dd>{{ tot.kwh_7d }} kWh</dd></div>
-            <div><dt>Per driving day</dt><dd>{{ tot.avg_miles_per_driving_day }} mi</dd></div>
-          </dl>
-          {% if charts.efficiency %}<div class="wspark">{{ charts.efficiency }}</div>{% endif %}
-        </div>
-        <p class="wnote">Miles divided by the battery drawn down. Overnight standby drain counts too, so this reads a little low.</p>
-      </figure>
-      <figure class="card wfig">
         <figcaption><h2>State of charge</h2><span class="wavg">{{ e.soc_display }} <small>now</small></span></figcaption>
         <ul class="wlegend"><li><span class="sw s-soc"></span>Daily average</li><li><span class="sw s-soc band"></span>Daily low–high</li><li><span class="sw target"></span>Charge limit</li></ul>
         <div class="wplot">{{ charts.soc }}</div><div class="wreadout" aria-live="polite"></div>
       </figure>
-      <figure class="card wfig">
+
+      <section class="card card-wide rv-trips">
+        <h2>Trips</h2>
+        {% if trips.trips %}
+        <div class="rv-table-wrap">
+        <table class="rv-table">
+          <thead><tr><th>When</th><th class="n">Miles</th><th class="n">kWh</th><th class="n">mi/kWh</th><th class="n hide-sm">Avg mph</th><th class="hide-sm">Mode</th><th class="n hide-sm">Outside</th><th class="n hide-sm">Elev.</th></tr></thead>
+          <tbody>
+          {% for r in trips.trips[:25] %}
+            <tr{% if r.confidence == 'rough' %} class="rough"{% endif %}>
+              <td>{{ r.when }}</td><td class="n">{{ r.miles|round(1) }}</td><td class="n">{{ r.kwh if r.kwh is not none else '—' }}</td>
+              <td class="n"><b>{{ '%.2f'|format(r.efficiency) if r.efficiency is not none else '—' }}</b>{% if r.confidence == 'rough' %}<span class="rv-rough-dot" title="Short trip, approximate">≈</span>{% endif %}</td>
+              <td class="n hide-sm">{{ r.avg_mph|round|int if r.avg_mph is not none else '—' }}</td><td class="hide-sm">{{ r.drive_mode or '—' }}</td>
+              <td class="n hide-sm">{{ (r.outside_f|round|int ~ '°') if r.outside_f is not none else '—' }}</td>
+              <td class="n hide-sm">{{ '%+d'|format(r.elevation_ft) if r.elevation_ft is not none else '—' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <p class="wnote">≈ marks trips under 5 miles: the odometer moves in 0.62 mi steps and the battery reading in 0.1% steps, so short trips swing a lot (elevation too: a downhill leg can read 5+ mi/kWh and the climb back 1.7).{% if trips.synced_ago %} Synced {{ trips.synced_ago }}.{% endif %}</p>
+        {% else %}
+          <p class="wplaceholder">No trips in this range yet.</p>
+        {% endif %}
+      </section>
+
+      <figure class="card wfig card-wide">
         <figcaption><h2>Estimated range</h2><span class="wavg">{{ e.range_mi }} mi <small>now</small></span></figcaption>
-        <div class="wplot">{{ charts.range }}</div><div class="wreadout" aria-live="polite"></div>
+        <div class="wplot rv-range-plot">{{ charts.range }}</div><div class="wreadout" aria-live="polite"></div>
       </figure>
     </div>
+    {% endif %}
   {% endif %}
-
   <p class="wfresh">
     <span>R2 · {{ '{:,}'.format(v.odometer_mi) if v.odometer_mi is not none else '—' }} mi</span>
     <span{% if data.stale %} class="stale"{% endif %}>Car last reported {{ data.updated_ago or 'unknown' }}</span>

@@ -1,0 +1,9 @@
+[Unit]
+Description=Sync Rivian R2 trips and parked drain every 15 minutes
+
+[Timer]
+OnCalendar=*-*-* *:00,15,30,45:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

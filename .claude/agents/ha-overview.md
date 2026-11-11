@@ -19,7 +19,8 @@ python scripts/ha_store.py set-mode --entity climate.claire_thermostat --value h
 python scripts/ha_store.py toggle --entity input_boolean.kid_door_alerts --value on|off
 python scripts/rivian_store.py brief
 python scripts/rivian_store.py status [--section energy|charging|vehicle|closures|tires|climate|health]
-python scripts/rivian_store.py trends [--days 7|30]
+python scripts/rivian_store.py trends [--days 7|30|90]
+python scripts/rivian_store.py trips [--days 7|30|90]      # syncs the last 3 days first
 ```
 
 Output is JSON. Errors are `{"error": ...}` on stderr: exit 1 means not found or Home Assistant
@@ -47,8 +48,12 @@ The dashboard's **Home > Home Assistant > Rivian** page runs the same code (`scr
   `headline` in one sentence. Mention anything in `health` with severity `bad` or `mid`, and any open
   closure or an unlocked car.
 - Tires, locks, doors, software: `status --section tires|closures|vehicle`.
-- "How far did we drive this week / what's our efficiency?": `trends --days 7` (`totals.miles_7d`,
-  `totals.efficiency_7d`). Efficiency is an estimate (idle drain counts), so say "about".
+- "How efficient was my last drive?": `trips --days 7`, answer from `last` (mi/kWh, miles, kWh, conditions).
+  If `confidence` is `rough` (under 5 miles), say it's approximate; short legs swing with elevation.
+- "What's our efficiency this week/month?": `trips --days 7|30`, `totals.efficiency` (total miles / total kWh over
+  `totals.with_efficiency` trips). `temp_fit.per_10f` is mi/kWh gained per 10°F warmer, once there are enough trips.
+- "How much does it lose sitting?": `drain.pct_per_day` / `drain.kwh_per_day` / `drain.miles_per_day` (parked and
+  unplugged only; null until about 6 hours of that). "How far did we drive?": `trends --days 7` (`totals.miles_7d`).
 - **View-only.** Nothing here can lock, unlock, start charging, change the charge limit or precondition.
   If asked, say the car is view-only in the assistant for now and point to the Rivian app.
 - If `stale` is true, say when the car last reported (`updated_ago`) so the numbers aren't mistaken for live.
