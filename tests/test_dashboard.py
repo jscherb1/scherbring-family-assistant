@@ -203,7 +203,7 @@ def client(state):
     "/health", "/health/schedule", "/meals", "/meals/r1", "/meals/r2",
     "/meals/results?q=chicken", "/api/status", "/api/schedule",
     "/api/recipes", "/api/recipes/r1", "/api/docs",
-    "/home", "/home/lawn", "/home/weather", "/home/ha", "/home/ha/health", "/api/ha/board", "/api/ha/health",
+    "/home", "/home/lawn", "/home/weather", "/home/ha", "/home/ha/health", "/api/ha/board", "/api/ha/health", "/home/ha/rivian",
     "/api/home/maintenance", "/api/home/lawn", "/api/home/weather",
     "/health/system", "/api/system",
     "/family", "/family/memories", "/api/family/profile", "/api/family/memories",
@@ -232,7 +232,7 @@ def test_landing_page(client):
     assert "Ask or tell the assistant" in r.text
     assert 'rel="manifest"' in r.text and "apple-touch-icon" in r.text
     data = client.get("/api/summary").json()
-    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 13
+    assert data["status"] in ("ok", "attention") and len(data["tiles"]) == 14
     assert "SECRET-MERCHANT" not in r.text
 
 

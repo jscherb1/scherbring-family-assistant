@@ -1,0 +1,570 @@
+{
+  "_about": "Rivian sub-view for the HA 'scherbring-family' dashboard (view-only). Apply: insert 'chip' at views[0].cards[1].chips[4] and append 'view' to views. Undo: re-push scherbring-family-2026-11-10.json.",
+  "chip": {
+    "type": "entity",
+    "entity": "sensor.r2_battery_state_of_charge",
+    "icon": "mdi:car-electric",
+    "content_info": "state",
+    "tap_action": {
+      "action": "navigate",
+      "navigation_path": "/scherbring-family/rivian"
+    },
+    "hold_action": {
+      "action": "none"
+    },
+    "double_tap_action": {
+      "action": "none"
+    }
+  },
+  "view": {
+    "title": "Rivian",
+    "path": "rivian",
+    "icon": "mdi:car-electric",
+    "type": "sections",
+    "max_columns": 3,
+    "subview": true,
+    "back_path": "/scherbring-family/overview-phone",
+    "badges": [
+      {
+        "type": "entity",
+        "entity": "device_tracker.r2",
+        "show_name": false,
+        "show_state": true,
+        "show_icon": true
+      },
+      {
+        "type": "entity",
+        "entity": "binary_sensor.r2_locked_state",
+        "show_name": false,
+        "show_state": true
+      },
+      {
+        "type": "entity",
+        "entity": "binary_sensor.r2_charging_status",
+        "show_name": false,
+        "show_state": true
+      },
+      {
+        "type": "entity",
+        "entity": "sensor.r2_odometer",
+        "name": "Odometer",
+        "show_name": true,
+        "show_state": true
+      }
+    ],
+    "sections": [
+      {
+        "type": "grid",
+        "cards": [
+          {
+            "type": "heading",
+            "heading": "R2",
+            "heading_style": "title",
+            "icon": "mdi:car-electric"
+          },
+          {
+            "type": "picture-entity",
+            "entity": "image.r2_three_quarter_dark",
+            "show_name": false,
+            "show_state": false,
+            "tap_action": {
+              "action": "none"
+            },
+            "hold_action": {
+              "action": "none"
+            },
+            "grid_options": {
+              "columns": "full"
+            }
+          },
+          {
+            "type": "gauge",
+            "entity": "sensor.r2_battery_state_of_charge",
+            "name": "Charge",
+            "min": 0,
+            "max": 100,
+            "needle": true,
+            "severity": {
+              "red": 0,
+              "yellow": 20,
+              "green": 40
+            },
+            "grid_options": {
+              "columns": 6,
+              "rows": "auto"
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_estimated_vehicle_range",
+            "name": "Range",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:map-marker-distance"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_battery_state_of_charge_limit",
+            "name": "Charge limit",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:battery-lock"
+          },
+          {
+            "type": "tile",
+            "entity": "binary_sensor.r2_charger_connection",
+            "name": "Charger",
+            "grid_options": {
+              "columns": 6
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "binary_sensor.r2_locked_state",
+            "name": "Locks",
+            "grid_options": {
+              "columns": 6
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "binary_sensor.r2_closure_state",
+            "name": "Doors & closures",
+            "grid_options": {
+              "columns": 6
+            }
+          }
+        ]
+      },
+      {
+        "type": "grid",
+        "visibility": [
+          {
+            "condition": "state",
+            "entity": "binary_sensor.r2_charger_connection",
+            "state": "on"
+          }
+        ],
+        "cards": [
+          {
+            "type": "heading",
+            "heading": "Charging",
+            "heading_style": "title",
+            "icon": "mdi:ev-station"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charger_state",
+            "name": "Status",
+            "grid_options": {
+              "columns": 12
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charging_speed",
+            "name": "Power",
+            "grid_options": {
+              "columns": 6
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charging_rate",
+            "name": "Adding",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:speedometer"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charging_time_remaining",
+            "name": "Time left",
+            "grid_options": {
+              "columns": 6
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charging_energy_delivered",
+            "name": "This session",
+            "grid_options": {
+              "columns": 6
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charging_range_added",
+            "name": "Range added",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:map-marker-plus"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charger_derate_status",
+            "name": "Limited by",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:speedometer-slow",
+            "visibility": [
+              {
+                "condition": "state",
+                "entity": "sensor.r2_charger_derate_status",
+                "state_not": "none"
+              }
+            ]
+          },
+          {
+            "type": "history-graph",
+            "title": "Last 12 hours",
+            "hours_to_show": 12,
+            "entities": [
+              {
+                "entity": "sensor.r2_charging_speed",
+                "name": "Power",
+                "color": "green"
+              }
+            ],
+            "grid_options": {
+              "columns": "full",
+              "rows": 4
+            }
+          }
+        ]
+      },
+      {
+        "type": "grid",
+        "cards": [
+          {
+            "type": "heading",
+            "heading": "Trends",
+            "heading_style": "title",
+            "icon": "mdi:chart-line"
+          },
+          {
+            "type": "statistics-graph",
+            "title": "Charge, 7 days",
+            "entities": [
+              {
+                "entity": "sensor.r2_battery_state_of_charge",
+                "name": "Charge",
+                "color": "#4fd8ff"
+              }
+            ],
+            "days_to_show": 7,
+            "period": "hour",
+            "stat_types": [
+              "mean"
+            ],
+            "chart_type": "line",
+            "grid_options": {
+              "columns": "full",
+              "rows": 4
+            }
+          },
+          {
+            "type": "statistics-graph",
+            "title": "Miles per day",
+            "entities": [
+              {
+                "entity": "sensor.r2_odometer",
+                "name": "Miles",
+                "color": "#5cf2b0"
+              }
+            ],
+            "days_to_show": 30,
+            "period": "day",
+            "stat_types": [
+              "change"
+            ],
+            "chart_type": "bar",
+            "grid_options": {
+              "columns": "full",
+              "rows": 4
+            }
+          },
+          {
+            "type": "statistics-graph",
+            "title": "Estimated range, 7 days",
+            "entities": [
+              {
+                "entity": "sensor.r2_estimated_vehicle_range",
+                "name": "Range",
+                "color": "#c4b5fd"
+              }
+            ],
+            "days_to_show": 7,
+            "period": "hour",
+            "stat_types": [
+              "mean"
+            ],
+            "chart_type": "line",
+            "grid_options": {
+              "columns": "full",
+              "rows": 4
+            }
+          }
+        ]
+      },
+      {
+        "type": "grid",
+        "cards": [
+          {
+            "type": "heading",
+            "heading": "Tires",
+            "heading_style": "title",
+            "icon": "mdi:tire"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_front_left",
+            "name": "Front left",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:tire"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_front_right",
+            "name": "Front right",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:tire"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_rear_left",
+            "name": "Rear left",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:tire"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_rear_right",
+            "name": "Rear right",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:tire"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_front_left_status",
+            "name": "Front left tire warning",
+            "grid_options": {
+              "columns": 12
+            },
+            "icon": "mdi:car-tire-alert",
+            "color": "red",
+            "visibility": [
+              {
+                "condition": "state",
+                "entity": "sensor.r2_tire_pressure_front_left_status",
+                "state_not": "ok"
+              }
+            ]
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_front_right_status",
+            "name": "Front right tire warning",
+            "grid_options": {
+              "columns": 12
+            },
+            "icon": "mdi:car-tire-alert",
+            "color": "red",
+            "visibility": [
+              {
+                "condition": "state",
+                "entity": "sensor.r2_tire_pressure_front_right_status",
+                "state_not": "ok"
+              }
+            ]
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_rear_left_status",
+            "name": "Rear left tire warning",
+            "grid_options": {
+              "columns": 12
+            },
+            "icon": "mdi:car-tire-alert",
+            "color": "red",
+            "visibility": [
+              {
+                "condition": "state",
+                "entity": "sensor.r2_tire_pressure_rear_left_status",
+                "state_not": "ok"
+              }
+            ]
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_tire_pressure_rear_right_status",
+            "name": "Rear right tire warning",
+            "grid_options": {
+              "columns": 12
+            },
+            "icon": "mdi:car-tire-alert",
+            "color": "red",
+            "visibility": [
+              {
+                "condition": "state",
+                "entity": "sensor.r2_tire_pressure_rear_right_status",
+                "state_not": "ok"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "grid",
+        "cards": [
+          {
+            "type": "heading",
+            "heading": "Where",
+            "heading_style": "title",
+            "icon": "mdi:map-marker"
+          },
+          {
+            "type": "map",
+            "entities": [
+              {
+                "entity": "device_tracker.r2"
+              }
+            ],
+            "hours_to_show": 24,
+            "theme_mode": "auto",
+            "grid_options": {
+              "columns": "full",
+              "rows": 5
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_power_state",
+            "name": "Power",
+            "grid_options": {
+              "columns": 6
+            }
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_gear_selector",
+            "name": "Gear",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:car-shift-pattern"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_drive_mode",
+            "name": "Drive mode",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:steering"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_cabin_temperature",
+            "name": "Cabin",
+            "grid_options": {
+              "columns": 6
+            }
+          }
+        ]
+      },
+      {
+        "type": "grid",
+        "cards": [
+          {
+            "type": "heading",
+            "heading": "Health",
+            "heading_style": "title",
+            "icon": "mdi:car-wrench"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_12v_battery_health",
+            "name": "12V battery",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:car-battery"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_battery_thermal_status",
+            "name": "Battery temp",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:thermometer-alert"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_brake_fluid_level",
+            "name": "Brake fluid low",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:car-brake-fluid-level"
+          },
+          {
+            "type": "tile",
+            "entity": "binary_sensor.r2_wiper_fluid_level",
+            "name": "Washer fluid",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:wiper-wash"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_charging_fault",
+            "name": "Charging fault",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:ev-plug-type1"
+          },
+          {
+            "type": "tile",
+            "entity": "sensor.r2_software_ota_status",
+            "name": "Software update",
+            "grid_options": {
+              "columns": 6
+            },
+            "icon": "mdi:update"
+          },
+          {
+            "type": "tile",
+            "entity": "update.r2_software",
+            "name": "Software",
+            "grid_options": {
+              "columns": 12
+            },
+            "tap_action": {
+              "action": "none"
+            },
+            "icon_tap_action": {
+              "action": "none"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

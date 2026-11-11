@@ -279,16 +279,22 @@ def category_bars(items: list[dict], *, height: int = 140, cls: str = "", fmt=_n
 
 
 def ring(value, *, max_value: float = 100, zone: str | None = None, center: str = "", sub: str = "",
-         label: str = "", pending: bool = False, tip: dict | None = None) -> Markup:
-    """A Whoop-style ring gauge. `zone` (good/mid/bad/low/ok/high) picks the arc colour."""
+         label: str = "", pending: bool = False, tip: dict | None = None, marker: float | None = None) -> Markup:
+    """A Whoop-style ring gauge. `zone` (good/mid/bad/low/ok/high) picks the arc colour. `marker` (same scale as
+    value) draws a tick across the ring, e.g. a charge limit."""
     frac = 0 if value is None else max(0.0, min(1.0, value / max_value))
     cls = f"ring z-{zone or 'none'}{' pending' if pending or value is None else ''}"
     tip_attr = f' {_tip(tip)}' if tip else ""
+    tick = ""
+    if marker is not None:
+        a = math.radians(-90 + 360 * max(0.0, min(1.0, marker / max_value)))
+        tick = (f'<line class="ring-marker" x1="{60 + 42 * math.cos(a):.1f}" y1="{60 + 42 * math.sin(a):.1f}" '
+                f'x2="{60 + 58 * math.cos(a):.1f}" y2="{60 + 58 * math.sin(a):.1f}"/>')
     return Markup(
         f'<svg class="{cls}" viewBox="0 0 120 120" role="img" aria-label="{escape(label)}: {escape(center)}"{tip_attr}>'
         f'<circle class="ring-track" cx="60" cy="60" r="50" pathLength="100"/>'
         f'<circle class="ring-arc" cx="60" cy="60" r="50" pathLength="100" '
-        f'stroke-dasharray="{frac * 100:.1f} 100" transform="rotate(-90 60 60)"/>'
+        f'stroke-dasharray="{frac * 100:.1f} 100" transform="rotate(-90 60 60)"/>{tick}'
         f'<text class="ring-val" x="60" y="62" text-anchor="middle">{escape(center or "—")}</text>'
         f'<text class="ring-sub" x="60" y="82" text-anchor="middle">{escape(sub)}</text>'
         f'<title>{escape(label)}: {escape(center or "no data yet")}</title></svg>')

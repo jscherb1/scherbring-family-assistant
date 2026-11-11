@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/wellness.css?v={{ asset_version() }}">
+<link rel="stylesheet" href="/static/rivian.css?v={{ asset_version() }}">
+{% endblock %}
+
+{% block page_header %}
+  <h1>Rivian R2</h1>
+  <p class="subtitle">Live from Home Assistant. View-only: nothing here controls the car.
+    {% if data.updated_ago %}Car last reported {{ data.updated_ago }}.{% endif %}</p>
+{% endblock %}
+
+{% macro door(d, x, y1, y2, side) -%}
+  {% set rot = 32 if side == 'l' else -32 %}
+  <line class="rv-door{{ ' open' if d.open }}{{ ' unk' if d.open is none }}" x1="{{ x }}" y1="{{ y1 }}" x2="{{ x }}" y2="{{ y2 }}"
+        {% if d.open %}transform="rotate({{ rot }} {{ x }} {{ y1 }})"{% endif %}><title>{{ d.label }}: {{ 'open' if d.open else 'closed' }}{% if d.locked is not none %}, {{ 'locked' if d.locked else 'unlocked' }}{% endif %}</title></line>
+{%- endmacro %}
+
+{% macro tire(t, x, y, side) -%}
+  <rect class="rv-tire z-{{ t.zone }}" x="{{ x }}" y="{{ y }}" width="16" height="44" rx="5"><title>{{ t.label }} tire: {{ t.psi }} psi, {{ t.status_label or 'no status' }}</title></rect>
+  {% set tx = x - 10 if side == 'l' else x + 26 %}
+  <text class="rv-psi z-{{ t.zone }}" x="{{ tx }}" y="{{ y + 22 }}" text-anchor="{{ 'end' if side == 'l' else 'start' }}">{{ t.psi if t.psi is not none else '—' }}</text>
+  <text class="rv-psi-u" x="{{ tx }}" y="{{ y + 37 }}" text-anchor="{{ 'end' if side == 'l' else 'start' }}">{{ 'psi' if t.ok else t.status_label|lower }}</text>
+{%- endmacro %}
+
+{% block content %}
+{% if data.error %}
+  <div class="card"><div class="error-state">{{ data.error }}</div></div>
+{% else %}
+{% set e, ch, v, cl = data.energy, data.charging, data.vehicle, data.closures %}
+<div class="rv">
+
+  <section class="card rv-hero">
+    <figure class="rv-car">
+      <img src="/home/ha/rivian/image/{{ data.image }}" alt="The R2{{ ', plugged in' if ch.connected }}" decoding="async"
+           onerror="this.parentNode.classList.add('noimg')">
+      <figcaption>
+        <span class="rv-name">R2</span>
+        <span class="rv-state">{{ ch.label if ch.connected else v.power_label or '' }}{% if v.location %} · {{ v.location }}{% endif %}</span>
+      </figcaption>
+    </figure>
+    <div class="rv-energy">
+      <div class="rv-ring">{{ ring }}</div>
+      <div class="rv-energy-facts">
+        <div class="rv-range"><b>{{ e.range_mi if e.range_mi is not none else '—' }}</b><span>mi range</span></div>
+        {% if e.cold_label %}<div class="rv-cold">❄ {{ e.cold_label }}</div>{% endif %}
+        <dl class="wfacts">
+          <div><dt>Energy left</dt><dd>{{ e.kwh_remaining if e.kwh_remaining is not none else '—' }} kWh</dd></div>
+          <div><dt>Pack</dt><dd>{{ e.capacity_kwh if e.capacity_kwh is not none else '—' }} kWh</dd></div>
+          <div><dt>Per 1%</dt><dd>{{ e.miles_per_pct if e.miles_per_pct is not none else '—' }} mi</dd></div>
+          <div><dt>Odometer</dt><dd>{{ '{:,}'.format(v.odometer_mi) if v.odometer_mi is not none else '—' }} mi</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <div class="ha-strip rv-strip">
+    {% if cl.locked is not none %}<span class="ha-chip{{ ' ha-chip-warn' if not cl.locked }}">{{ '🔒 Locked' if cl.locked else '🔓 Unlocked' }}</span>{% endif %}
+    {% if cl.all_closed is not none %}<span class="ha-chip{{ ' ha-chip-warn' if cl.open }}">{% if cl.open %}🚪 {{ cl.open|join(', ') }} open{% else %}✓ All closed{% endif %}</span>{% endif %}
+    {% if v.location %}<span class="ha-chip">{{ '🏠' if v.home else '📍' }} {{ v.location }}{% if v.location_since %} · {{ v.location_since }}{% endif %}</span>{% endif %}
+    {% if ch.active %}<span class="ha-chip rv-chip-charge">⚡ Charging{% if ch.kw %} · {{ ch.kw }} kW{% endif %}</span>
+    {% elif ch.connected %}<span class="ha-chip">🔌 {{ ch.label }}</span>{% endif %}
+    {% if v.power_label %}<span class="ha-chip">{{ v.power_label }}{% if v.gear %} · {{ v.gear }}{% endif %}{% if v.moving and v.speed_mph %} · {{ v.speed_mph }} mph{% endif %}</span>{% endif %}
+    {% if v.drive_mode %}<span class="ha-chip">🛞 {{ v.drive_mode }}</span>{% endif %}
+    {% if data.climate.cabin_f is not none %}<span class="ha-chip">🌡️ Cabin {{ data.climate.cabin_f }}°{% if data.climate.preconditioning %} · conditioning{% endif %}</span>{% endif %}
+    {% if data.climate.pet_mode %}<span class="ha-chip">🐾 Pet mode</span>{% endif %}
+    {% if v.trailer %}<span class="ha-chip">🚚 Trailer</span>{% endif %}
+    {% if v.software %}<span class="ha-chip{{ ' ha-chip-warn' if v.update_available }}">⬆️ {{ v.software }}{% if v.update_available %} → {{ v.software_latest }}{% endif %}</span>{% endif %}
+  </div>
+
+  {% if ch.connected %}
+  <section class="card rv-charge">
+    <div class="rv-charge-head">
+      <h2>{{ '⚡ ' if ch.active }}{{ ch.label }}</h2>
+      {% if ch.eta_display %}<p class="rv-eta">To {{ e.limit }}% by <b>{{ ch.eta_display }}</b> <small>({{ ch.remaining_display }})</small></p>
+      {% elif ch.remaining_display %}<p class="rv-eta">To {{ e.limit }}%: <b>{{ ch.remaining_display }}</b></p>{% endif %}
+    </div>
+    <div class="rv-bar" role="img" aria-label="Charged to {{ e.soc_display }} of a {{ e.limit }}% limit">
+      <i class="rv-bar-fill{{ ' active' if ch.active }}" style="width: {{ e.soc or 0 }}%"></i>
+      {% if e.limit %}<b class="rv-bar-limit" style="left: {{ e.limit }}%"><span>{{ e.limit }}%</span></b>{% endif %}
+      <span class="rv-bar-now">{{ e.soc_display }}</span>
+    </div>
+    <dl class="wfacts rv-charge-facts">
+      <div><dt>Power</dt><dd>{{ ch.kw if ch.kw is not none else '—' }} kW</dd></div>
+      <div><dt>Adding</dt><dd>{{ ch.mph if ch.mph is not none else '—' }} mi/hr</dd></div>
+      <div><dt>This session</dt><dd>{{ ch.energy_kwh if ch.energy_kwh is not none else '—' }} kWh</dd></div>
+      <div><dt>Range added</dt><dd>{{ ch.range_added_mi if ch.range_added_mi is not none else '—' }} mi</dd></div>
+      <div><dt>Plugged in</dt><dd>{{ ch.elapsed_display or '—' }}</dd></div>
+      {% if ch.cost %}<div><dt>Cost</dt><dd>${{ '%.2f'|format(ch.cost) }}</dd></div>{% endif %}
+    </dl>
+    {% if ch.derate_text %}<p class="wnote rv-derate">🐢 {{ ch.derate_text }}</p>{% endif %}
+    <p class="wnote">Charge schedule: {{ ch.schedule.display }}{% if ch.schedule.enabled and ch.schedule.amps %} at {{ ch.schedule.amps }} A{% endif %}.</p>
+  </section>
+  {% endif %}
+
+  <div class="wgrid">
+    <section class="card rv-diagram-card">
+      <h2>Tires &amp; closures</h2>
+      {% set t = data.tires %}
+      <svg class="rv-diagram" viewBox="-24 0 308 380" role="img" aria-label="Top-down view of the car with tire pressures and open closures">
+        <text class="rv-dir" x="130" y="16" text-anchor="middle">FRONT</text>
+        <path class="rv-body" d="M90 34 Q130 22 170 34 Q190 42 192 80 L192 312 Q190 346 170 352 Q130 360 90 352 Q70 346 68 312 L68 80 Q70 42 90 34 Z"/>
+        <path class="rv-frunk{{ ' open' if cl.frunk.open }}" d="M92 42 Q130 32 168 42 Q182 50 183 92 L77 92 Q78 50 92 42 Z"><title>Frunk: {{ 'open' if cl.frunk.open else 'closed' }}</title></path>
+        <path class="rv-glass" d="M82 104 L178 104 L172 136 L88 136 Z"/>
+        <rect class="rv-roof" x="86" y="142" width="88" height="120" rx="10"/>
+        <path class="rv-glass" d="M88 268 L172 268 L176 292 L84 292 Z"/>
+        <path class="rv-liftgate{{ ' open' if cl.liftgate.open }}" d="M77 300 L183 300 Q182 340 168 346 Q130 354 92 346 Q78 340 77 300 Z"><title>Liftgate: {{ 'open' if cl.liftgate.open else 'closed' }}</title></path>
+        {{ door(cl.doors[0], 68, 112, 196, 'l') }}
+        {{ door(cl.doors[2], 68, 200, 278, 'l') }}
+        {{ door(cl.doors[1], 192, 112, 196, 'r') }}
+        {{ door(cl.doors[3], 192, 200, 278, 'r') }}
+        {% for w, cx, cy in [(cl.windows[0], 78, 154), (cl.windows[1], 182, 154), (cl.windows[2], 78, 238), (cl.windows[3], 182, 238), (cl.windows[4], 130, 322)] %}
+          {% if w.open %}<circle class="rv-win-open" cx="{{ cx }}" cy="{{ cy }}" r="5"><title>{{ w.label }} open</title></circle>{% endif %}
+        {% endfor %}
+        {{ tire(t[0], 48, 74, 'l') }}{{ tire(t[1], 196, 74, 'r') }}
+        {{ tire(t[2], 48, 274, 'l') }}{{ tire(t[3], 196, 274, 'r') }}
+        <text class="rv-lock{{ ' warn' if cl.locked == false }}" x="130" y="198" text-anchor="middle">{{ '🔒' if cl.locked else '🔓' if cl.locked == false else '' }}</text>
+        <text class="rv-lock-l" x="130" y="220" text-anchor="middle">{{ 'Locked' if cl.locked else 'Unlocked' if cl.locked == false else '' }}</text>
+      </svg>
+      <ul class="wlegend rv-legend">
+        <li><span class="sw z-good"></span>Tire OK</li><li><span class="sw z-mid"></span>Low</li>
+        <li><span class="sw z-bad"></span>Very low / puncture</li><li><span class="sw rv-sw-open"></span>Open</li>
+      </ul>
+    </section>
+
+    <section class="card rv-health">
+      <h2>Health</h2>
+      {% if data.health_ok and not data.health %}
+        <p class="rv-allgood">✓ All systems normal</p>
+        <p class="wnote">Tires, 12V battery, fluids, battery temperature, charging and software are all fine.</p>
+      {% else %}
+        <ul class="rv-issues">
+          {% for h in data.health %}
+          <li class="sev-{{ h.severity }}"><b>{{ h.title }}</b>{% if h.detail %}<span>{{ h.detail }}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <dl class="wfacts">
+        <div><dt>Software</dt><dd>{{ v.software or '—' }}</dd></div>
+        <div><dt>Updates</dt><dd>{{ v.ota_label or '—' }}</dd></div>
+        <div><dt>Driver</dt><dd>{{ v.driver or '—' }}</dd></div>
+        <div><dt>Mode</dt><dd>{{ v.drive_mode or '—' }}</dd></div>
+        <div><dt>Cabin</dt><dd>{{ data.climate.cabin_f if data.climate.cabin_f is not none else '—' }}°F</dd></div>
+        <div><dt>Charge limit</dt><dd>{{ e.limit if e.limit is not none else '—' }}%</dd></div>
+        <div><dt>Schedule</dt><dd>{{ ch.schedule.display }}</dd></div>
+        <div><dt>Location</dt><dd>{{ v.location or '—' }}</dd></div>
+      </dl>
+    </section>
+  </div>
+
+  <h2 class="wsection">Trends</h2>
+  {% if trends.error %}
+    <div class="card"><div class="error-state">{{ trends.error }}</div></div>
+  {% else %}
+    {% set tot = trends.totals %}
+    <div class="wrange">
+      {% for d in [7, 30] %}<a href="?days={{ d }}"{% if d == days %} class="active" aria-current="true"{% endif %}>{{ d }} days</a>{% endfor %}
+      <span class="wrange-dates">{% if trends.first_day %}History since {{ trends.first_day|fmt_date }}{% endif %}</span>
+    </div>
+    {% if trends.data_days < 3 %}
+      <p class="wplaceholder">Collecting data: Home Assistant started recording the R2 {{ 'today' if trends.data_days <= 1 else 'recently' }}. These charts fill in a little more each day.</p>
+    {% endif %}
+    <div class="wgrid">
+      <figure class="card wfig">
+        <figcaption><h2>Driving</h2><span class="wavg">{{ tot.miles_7d }} mi <small>last 7 days</small></span></figcaption>
+        <ul class="wlegend"><li><span class="sw s-miles"></span>Miles per day</li></ul>
+        <div class="wplot">{{ charts.miles }}</div><div class="wreadout" aria-live="polite"></div>
+      </figure>
+      <figure class="card wfig">
+        <figcaption><h2>Efficiency <small class="rv-est">est.</small></h2>
+          <span class="wavg">{{ tot.efficiency_7d if tot.efficiency_7d is not none else '—' }} <small>mi/kWh, 7 days</small></span></figcaption>
+        <div class="rv-eff">
+          <dl class="wfacts">
+            <div><dt>Driven</dt><dd>{{ tot.miles_7d }} mi</dd></div>
+            <div><dt>Battery used</dt><dd>{{ tot.kwh_7d }} kWh</dd></div>
+            <div><dt>Per driving day</dt><dd>{{ tot.avg_miles_per_driving_day }} mi</dd></div>
+          </dl>
+          {% if charts.efficiency %}<div class="wspark">{{ charts.efficiency }}</div>{% endif %}
+        </div>
+        <p class="wnote">Miles divided by the battery drawn down. Overnight standby drain counts too, so this reads a little low.</p>
+      </figure>
+      <figure class="card wfig">
+        <figcaption><h2>State of charge</h2><span class="wavg">{{ e.soc_display }} <small>now</small></span></figcaption>
+        <ul class="wlegend"><li><span class="sw s-soc"></span>Daily average</li><li><span class="sw s-soc band"></span>Daily low–high</li><li><span class="sw target"></span>Charge limit</li></ul>
+        <div class="wplot">{{ charts.soc }}</div><div class="wreadout" aria-live="polite"></div>
+      </figure>
+      <figure class="card wfig">
+        <figcaption><h2>Estimated range</h2><span class="wavg">{{ e.range_mi }} mi <small>now</small></span></figcaption>
+        <div class="wplot">{{ charts.range }}</div><div class="wreadout" aria-live="polite"></div>
+      </figure>
+    </div>
+  {% endif %}
+
+  <p class="wfresh">
+    <span>R2 · {{ '{:,}'.format(v.odometer_mi) if v.odometer_mi is not none else '—' }} mi</span>
+    <span{% if data.stale %} class="stale"{% endif %}>Car last reported {{ data.updated_ago or 'unknown' }}</span>
+    <a href="/api/ha/rivian">JSON</a>
+  </p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/wellness.js?v={{ asset_version() }}" defer></script>{% endblock %}
