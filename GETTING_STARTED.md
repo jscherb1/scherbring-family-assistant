@@ -155,6 +155,7 @@ and its `state/schema.sql` tables):
 | Home maintenance cadence tracking | `home-maintenance` |
 | Smart home control (Home Assistant) | `home-assistant` |
 | Home Assistant status, health and recommendations (also on the dashboard under Home > Home Assistant) | `ha-overview` |
+| Rivian R2 charge, range, charging, locks and tires, view-only (also on the dashboard under Home > Home Assistant > Rivian) | `ha-overview` |
 | Weekly workout planning (COROS) | `fitness` |
 | Monarch Money budgeting/tagging/reports/retirement modeling, plus the dashboard's Money overview (budget vs plan, spending, net worth, review queue) | `finance`, `finance-reporter`, `retirement`, `finance-advisor` |
 | Hy-Vee grocery cart automation | `hyvee` |

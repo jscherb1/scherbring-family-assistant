@@ -1,0 +1,105 @@
+/* Rivian page (Home > Home Assistant > Rivian). Uses the style.css tokens and the wellness.css chart classes. */
+
+:root {
+  --rv-soc: var(--accent);
+  --rv-miles: #5cf2b0;
+  --rv-range: #c4b5fd;
+  --rv-open: var(--amber);
+  --rv-body: rgba(140, 200, 255, 0.10);
+  --rv-line: rgba(140, 200, 255, 0.32);
+}
+
+.rv { display: flex; flex-direction: column; gap: 16px; }
+.rv .card { margin: 0; }
+
+/* ---- hero ---- */
+.rv-hero { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: center;
+  background: radial-gradient(120% 90% at 30% 60%, rgba(79, 216, 255, 0.10), transparent 60%), var(--card-bg); }
+.rv-car { margin: 0; position: relative; min-height: 160px; display: flex; flex-direction: column; justify-content: center; }
+.rv-car img { width: 100%; height: auto; display: block; filter: drop-shadow(0 18px 22px rgba(0, 0, 0, .55)); }
+.rv-car.noimg img { display: none; }
+.rv-car.noimg::before { content: "R2"; font: 700 64px/1 var(--mono); color: var(--muted-bg); text-align: center; padding: 40px 0; }
+.rv-car figcaption { display: flex; align-items: baseline; gap: 10px; margin-top: 4px; }
+.rv-name { font: 700 22px/1 var(--mono); letter-spacing: .08em; }
+.rv-state { color: var(--text-muted); font-size: 14px; }
+.rv-energy { display: flex; align-items: center; gap: 18px; }
+.rv-ring svg { width: 168px; max-width: 100%; height: auto; display: block; }
+.rv-ring .ring-arc { stroke: var(--rv-soc); }
+.rv-ring .ring.z-mid .ring-arc { stroke: var(--w-mid); } .rv-ring .ring.z-bad .ring-arc { stroke: var(--w-bad); }
+.ring-marker { stroke: var(--text); stroke-width: 3; stroke-linecap: round; opacity: .85; }
+.rv-energy-facts { flex: 1; min-width: 0; }
+.rv-range { display: flex; align-items: baseline; gap: 8px; }
+.rv-range b { font: 700 52px/1 var(--mono); letter-spacing: -.02em; }
+.rv-range span { color: var(--text-muted); }
+.rv-cold { color: var(--accent); font-size: 13px; margin-top: 4px; }
+.rv-energy-facts .wfacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.rv-strip { margin: 0; }
+.rv-chip-charge { border-color: var(--ok); color: var(--ok); }
+
+/* ---- charging ---- */
+.rv-charge { border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.rv-charge-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; }
+.rv-charge-head h2 { margin: 0; }
+.rv-eta { margin: 0; } .rv-eta small { color: var(--text-muted); }
+.rv-bar { position: relative; height: 22px; margin: 30px 0 8px; border-radius: 11px; background: var(--muted-bg); overflow: visible; }
+.rv-bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 11px; background: linear-gradient(90deg, #1fa37a, var(--ok)); }
+.rv-bar-fill.active { background-size: 40px 100%;
+  background-image: linear-gradient(90deg, #1fa37a, var(--ok)), repeating-linear-gradient(115deg, transparent 0 10px, rgba(255,255,255,.18) 10px 20px);
+  background-blend-mode: overlay; animation: rv-flow 1.4s linear infinite; }
+@keyframes rv-flow { to { background-position: 40px 0, 40px 0; } }
+@media (prefers-reduced-motion: reduce) { .rv-bar-fill.active { animation: none; } }
+.rv-bar-limit { position: absolute; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
+.rv-bar-limit span { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font: 600 11px var(--mono); color: var(--text-muted); }
+.rv-bar-now { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font: 700 12px var(--mono); color: var(--on-accent); }
+.rv-charge-facts { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.rv-derate { color: var(--text); }
+
+/* ---- car diagram ---- */
+.rv-diagram { width: 100%; max-width: 300px; height: auto; display: block; margin: 4px auto 0; }
+.rv-body { fill: var(--rv-body); stroke: var(--rv-line); stroke-width: 1.5; }
+.rv-frunk, .rv-liftgate { fill: rgba(140, 200, 255, 0.05); stroke: var(--rv-line); stroke-width: 1; }
+.rv-frunk.open, .rv-liftgate.open { fill: color-mix(in srgb, var(--rv-open) 35%, transparent); stroke: var(--rv-open); }
+.rv-glass { fill: rgba(79, 216, 255, 0.10); stroke: none; }
+.rv-roof { fill: rgba(5, 8, 13, 0.55); stroke: var(--rv-line); stroke-width: 1; }
+.rv-door { stroke: var(--rv-line); stroke-width: 5; stroke-linecap: round; transition: transform .3s; }
+.rv-door.open { stroke: var(--rv-open); }
+.rv-door.unk { stroke-dasharray: 3 4; }
+.rv-win-open { fill: var(--rv-open); }
+.rv-tire { fill: #1a2633; stroke: var(--w-axis); stroke-width: 1.5; }
+.rv-tire.z-good { stroke: var(--w-good); } .rv-tire.z-mid { stroke: var(--w-mid); fill: color-mix(in srgb, var(--w-mid) 25%, #1a2633); }
+.rv-tire.z-bad { stroke: var(--w-bad); fill: color-mix(in srgb, var(--w-bad) 30%, #1a2633); }
+.rv-psi { font: 700 22px var(--mono); fill: var(--text); }
+.rv-psi.z-mid { fill: var(--w-mid); } .rv-psi.z-bad { fill: var(--w-bad); }
+.rv-psi-u { font: 10.5px var(--mono); fill: var(--text-muted); letter-spacing: .04em; }
+.rv-dir { font: 600 10px var(--mono); fill: var(--text-muted); letter-spacing: .2em; }
+.rv-lock { font-size: 22px; }
+.rv-lock-l { font: 600 11px var(--mono); fill: var(--text-muted); letter-spacing: .08em; text-transform: uppercase; }
+.rv-legend { justify-content: center; }
+.sw.rv-sw-open { color: var(--rv-open); }
+
+/* ---- health ---- */
+.rv-allgood { font-size: 20px; font-weight: 700; color: var(--ok); margin: 6px 0 0; }
+.rv-issues { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.rv-issues li { padding: 8px 12px; border-radius: 10px; background: var(--muted-bg); border-left: 3px solid var(--w-axis); display: flex; flex-direction: column; }
+.rv-issues li span { font-size: 13px; color: var(--text-muted); }
+.rv-issues .sev-bad { border-left-color: var(--w-bad); } .rv-issues .sev-mid { border-left-color: var(--w-mid); }
+.rv-issues .sev-info { border-left-color: var(--accent); }
+.rv-health .wfacts { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+
+/* ---- trends ---- */
+.rv-est { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.rv-eff .wspark { margin-top: 12px; }
+.sw.s-soc { color: var(--rv-soc); } .sw.s-miles, .wbar.s-miles { color: var(--rv-miles); fill: var(--rv-miles); }
+.sw.s-range { color: var(--rv-range); }
+.wchart .s-soc { stroke: var(--rv-soc); fill: var(--rv-soc); }
+.wchart .s-range { stroke: var(--rv-range); fill: var(--rv-range); }
+.wchart .line.s-soc, .wchart .line.s-range { fill: none; }
+.wspk.s-eff .line { stroke: var(--rv-miles); }
+
+@media (max-width: 760px) {
+  .rv-hero { grid-template-columns: 1fr; }
+  .rv-energy { justify-content: center; }
+  .rv-ring svg { width: 132px; }
+  .rv-range b { font-size: 40px; }
+}

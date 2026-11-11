@@ -40,6 +40,7 @@
       "Bash(python scripts/fastlane_store.py *)",
       "Bash(python scripts/golf_store.py *)",
       "Bash(python scripts/ha_store.py *)",
+      "Bash(python scripts/rivian_store.py *)",
       "Bash(python scripts/money_store.py *)",
       "Bash(python scripts/dayrating_store.py *)",
       "Bash(python scripts/review_store.py *)",

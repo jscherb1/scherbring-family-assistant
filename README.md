@@ -34,7 +34,7 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `.claude/agents/dayrating.md` | Day-rating subagent: daily 1-10 rating with a note, the nightly nudge, and the weekly insights report (stats plus an AI-written story) |
 | `.claude/agents/journal.md` | Journal subagent: the 8:30 PM nightly check-in (day rating + yes/no journal questions + open daily habits in one message), recording the reply, managing questions, and "what does X do to my HRV/sleep/mood" |
 | `.claude/agents/wellness.md` | Wellness subagent (read-only, Whoop-style): today's recovery, sleep and vitals against your normal, trends over time, and what drives the day rating / HRV / sleep / resting HR |
-| `.claude/agents/ha-overview.md` | Home Assistant status/health subagent — same data as the dashboard's Home > Home Assistant pages: what needs attention, recommendations, thermostat/door/garage state, and a few allow-listed changes (thermostats, kid door alerts, Christmas lights) |
+| `.claude/agents/ha-overview.md` | Home Assistant status/health subagent — same data as the dashboard's Home > Home Assistant pages: what needs attention, recommendations, thermostat/door/garage state, and a few allow-listed changes (thermostats, kid door alerts, Christmas lights), plus read-only Rivian R2 status via `rivian_store.py` |
 | `.claude/agents/golf.md` | Golf subagent: 18-hole rounds and handicap (mirrors the Handicap Google Sheet), logging rounds, reading scorecard photos sent in chat |
 | `.claude/agents/habits.md` | Habits subagent — habit/streak tracker (daily or weekly goals, no-goal counters), logging, streaks, and the daily at-risk nudge |
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
@@ -110,6 +110,8 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `scripts/wellness_store.py` | Zero-dep CLI over `wellness.py` for the wellness subagent (today / metric / trends / drivers / scatter / metrics) |
 | `scripts/ha.py` | Shared Home Assistant board + health service (REST + minimal websocket client, board definition, health rules, write allow-list; alarm/garage/locks read-only). The single code path used by `ha_store.py` and the Home > Home Assistant dashboard pages |
 | `scripts/ha_store.py` | Zero-dep CLI over `ha.py` for the ha-overview subagent (`health`, `board`, `set-temp`, `set-mode`, `toggle`) |
+| `scripts/rivian.py` | Shared Rivian R2 service over `ha.py` (read-only): live status (charge, range, charging with plain-English derate reasons, closures, tires, health exceptions) and trends from HA long-term statistics (daily SOC, range, miles, estimated mi/kWh). Used by `rivian_store.py` and the Home > Home Assistant > Rivian page |
+| `scripts/rivian_store.py` | Zero-dep CLI over `rivian.py` for the ha-overview subagent (`brief`, `status`, `trends`) |
 | `scripts/golf.py` | Shared golf service (differentials, best-8-of-last-20 x 0.96 handicap, round logging/undo, saved courses). The single code path used by both `golf_store.py` and the dashboard |
 | `scripts/golf_store.py` | Zero-dep CLI over `golf.py` for the golf subagent (round/course/handicap/import/sync sub-commands) |
 | `scripts/golf_sheet.py` | Google Sheets side of golf: read history, append new rounds to the "Handicap - 18 holes only" tab (best-effort mirror) |
@@ -711,6 +713,23 @@ python scripts/scheduler_store.py add --name "home-maintenance-weekly-check" \
   --prompt "Delegate to the home-maintenance subagent to run the weekly proactive home maintenance due-check." \
   --cron "0 9 * * 0" --target-chat-id "<your chat_id>"
 ```
+
+## Rivian (R2)
+
+The R2 comes into Home Assistant through the `rivian` HACS integration (bretterer/home-assistant-rivian). Two
+view-only dashboards read it; nothing in the assistant controls the car.
+
+- **App:** Home > Home Assistant > Rivian (`/home/ha/rivian`, JSON at `/api/ha/rivian`). Car render (proxied from
+  the integration's image entities), SOC ring with the charge-limit tick, range, a charging panel with ETA and
+  derate reason, a top-down car diagram (tire pressures colored by the car's own status, open doors and
+  closures), a health card that lists only exceptions, and 7/30-day trends (SOC, miles per day, range,
+  estimated efficiency). A Summary tile shows charge and range.
+- **Home Assistant:** a `rivian` subview of the `scherbring-family` dashboard, reached from a car chip (shows
+  SOC) in the overview's nav chips. Native cards only (gauge, tiles, statistics graphs, map with the day's route).
+  The view JSON and the pre-change backup are in `docs/superpowers/specs/dashboard-backups/`.
+- **Agent:** `ha-overview` answers "how charged is the car?" with `python scripts/rivian_store.py brief`.
+- No schema change and no scheduled task. Entity ids all start `r2_`; `PREFIX` in `scripts/rivian.py` is the
+  one place to change if the HA device is renamed.
 
 ## Home Assistant agent
 

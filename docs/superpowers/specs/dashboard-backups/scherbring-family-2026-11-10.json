@@ -1,0 +1,832 @@
+{
+  "views": [
+    {
+      "title": "Overview",
+      "path": "overview-phone",
+      "layout": {
+        "grid-template-columns": "35% 30% 15% 15%",
+        "grid-template-rows": "8% 15% 15% 15% 40%",
+        "grid-template-areas": "\"header info info nav \"\n\"rac mealPlan familyCalendar familyCalendar  \"\n\"climateRuth mealPlan familyCalendar familyCalendar\"\n\"climateClaire mealPlan familyCalendar familyCalendar\"\n\"weather mealPlan familyCalendar familyCalendar \"\n"
+      },
+      "badges": [],
+      "cards": [
+        {
+          "type": "custom:mushroom-title-card",
+          "title": "Scherbring Family Overview",
+          "alignment": "center",
+          "view_layout": {
+            "grid-area": "header"
+          },
+          "card_mod": {
+            "style": "ha-card {\n  size: 11\n  padding-top: 5px !important;\n}\n"
+          }
+        },
+        {
+          "type": "custom:mushroom-chips-card",
+          "chips": [
+            {
+              "type": "action",
+              "tap_action": {
+                "action": "navigate",
+                "navigation_path": "/scherbring-family/climate"
+              },
+              "icon": "mdi:home-thermometer"
+            },
+            {
+              "type": "action",
+              "tap_action": {
+                "action": "navigate",
+                "navigation_path": "/scherbring-family/Calendar"
+              },
+              "icon": "mdi:calendar"
+            },
+            {
+              "type": "action",
+              "tap_action": {
+                "action": "navigate",
+                "navigation_path": "/scherbring-family/Media"
+              },
+              "icon": "mdi:youtube-tv"
+            },
+            {
+              "type": "action",
+              "tap_action": {
+                "action": "navigate",
+                "navigation_path": "/scherbring-family/Security"
+              },
+              "icon": "mdi:shield-home"
+            },
+            {
+              "type": "entity",
+              "entity": "cover.single_garage_door",
+              "name": "Single Garage",
+              "use_entity_picture": false
+            },
+            {
+              "type": "entity",
+              "entity": "binary_sensor.double_garage_door",
+              "tap_action": {
+                "action": "none"
+              },
+              "hold_action": {
+                "action": "none"
+              },
+              "double_tap_action": {
+                "action": "none"
+              }
+            },
+            {
+              "type": "action",
+              "tap_action": {
+                "action": "perform-action",
+                "perform_action": "script.1710683336661",
+                "target": {}
+              },
+              "icon": "mdi:cast-connected"
+            },
+            {
+              "type": "template",
+              "entity": "input_boolean.kid_door_alerts",
+              "icon": "{{ 'mdi:bell-ring' if is_state('input_boolean.kid_door_alerts', 'on') else 'mdi:bell-off' }}",
+              "icon_color": "{{ 'amber' if is_state('input_boolean.kid_door_alerts', 'on') else 'grey' }}",
+              "content": "{{ 'On' if is_state('input_boolean.kid_door_alerts', 'on') else 'Off' }}",
+              "tap_action": {
+                "action": "perform-action",
+                "perform_action": "input_boolean.toggle",
+                "target": {
+                  "entity_id": "input_boolean.kid_door_alerts"
+                }
+              },
+              "hold_action": {
+                "action": "none"
+              },
+              "double_tap_action": {
+                "action": "none"
+              }
+            }
+          ],
+          "alignment": "center",
+          "view_layout": {
+            "grid-area": "nav"
+          }
+        },
+        {
+          "type": "custom:mushroom-chips-card",
+          "chips": [
+            {
+              "type": "alarm-control-panel",
+              "entity": "alarm_control_panel.alarmo"
+            },
+            {
+              "type": "weather",
+              "entity": "weather.openweathermap",
+              "show_temperature": true,
+              "show_conditions": true
+            },
+            {
+              "type": "template",
+              "content": "{{now().strftime(\"%I:%M %p\")}}",
+              "icon": "mdi:clock"
+            },
+            {
+              "type": "template",
+              "content": "{{now().strftime(\"%m/%d/%Y\")}}",
+              "icon": "mdi:calendar-badge"
+            }
+          ],
+          "alignment": "center",
+          "view_layout": {
+            "grid-area": "info"
+          }
+        },
+        {
+          "type": "custom:clock-weather-card",
+          "entity": "weather.pirateweather",
+          "hide_today_section": true,
+          "hide_forecast_section": false,
+          "hide_clock": false,
+          "hide_date": false,
+          "view_layout": {
+            "grid-area": "weather"
+          }
+        },
+        {
+          "type": "custom:atomic-calendar-revive",
+          "name": "Meal Planning",
+          "enableModeChange": true,
+          "entities": [
+            {
+              "entity": "calendar.meal_planning",
+              "name": "Meal planning",
+              "maxDaysToShow": 5
+            }
+          ],
+          "showLastCalendarWeek": false,
+          "showDeclined": true,
+          "dateFormat": "LL",
+          "showDescription": false,
+          "showWeekDay": true,
+          "showDatePerEvent": true,
+          "showTimeRemaining": false,
+          "showAllDayHours": false,
+          "showCalendarName": false,
+          "showProgressBar": true,
+          "showEventDate": true,
+          "showRelativeTime": false,
+          "showDate": true,
+          "view_layout": {
+            "grid-area": "mealPlan"
+          }
+        },
+        {
+          "type": "custom:atomic-calendar-revive",
+          "name": "Calendar",
+          "enableModeChange": true,
+          "entities": [
+            {
+              "entity": "calendar.scherbring_family",
+              "name": "Scherbring family"
+            },
+            {
+              "entity": "calendar.kids_school_calendar",
+              "name": "Kids school calendar"
+            }
+          ],
+          "view_layout": {
+            "grid-area": "familyCalendar"
+          }
+        },
+        {
+          "type": "custom:mushroom-climate-card",
+          "entity": "climate.claire_thermostat",
+          "collapsible_controls": false,
+          "fill_container": false,
+          "hvac_modes": [
+            "heat",
+            "off"
+          ],
+          "show_temperature_control": true,
+          "layout": "horizontal",
+          "name": "Claire's Room",
+          "view_layout": {
+            "grid-area": "climateClaire"
+          }
+        },
+        {
+          "type": "custom:mushroom-climate-card",
+          "entity": "climate.ruth_thermostat",
+          "icon_type": "icon",
+          "hvac_modes": [
+            "heat",
+            "off"
+          ],
+          "show_temperature_control": true,
+          "layout": "horizontal",
+          "name": "Ruth's Room",
+          "view_layout": {
+            "grid-area": "climateRuth"
+          }
+        },
+        {
+          "type": "custom:mushroom-climate-card",
+          "entity": "climate.basement_bedroom_thermostat",
+          "collapsible_controls": false,
+          "fill_container": false,
+          "hvac_modes": [
+            "heat",
+            "off"
+          ],
+          "show_temperature_control": true,
+          "layout": "horizontal",
+          "name": "Basement Bedroom"
+        },
+        {
+          "type": "map",
+          "entities": [
+            {
+              "entity": "person.justin_scherbring"
+            },
+            {
+              "entity": "person.caroline_scherbring"
+            }
+          ],
+          "theme_mode": "auto"
+        }
+      ],
+      "type": "masonry"
+    },
+    {
+      "title": "Climate",
+      "path": "climate",
+      "icon": "mdi:home-thermometer",
+      "badges": [],
+      "cards": [
+        {
+          "graph": "line",
+          "type": "sensor",
+          "detail": 1,
+          "entity": "sensor.lumi_lumi_weather_temperature",
+          "name": "Claire’s Room Temp"
+        },
+        {
+          "graph": "line",
+          "type": "sensor",
+          "entity": "sensor.lumi_lumi_weather_temperature_2",
+          "detail": 1,
+          "name": "Ruth’s Room Temp"
+        },
+        {
+          "graph": "line",
+          "type": "sensor",
+          "entity": "sensor.zb_temp_masterbedroom_temperature",
+          "detail": 1,
+          "name": "Master Bedroom Temp"
+        },
+        {
+          "graph": "line",
+          "type": "sensor",
+          "entity": "sensor.zb_temp_basement_temperature",
+          "detail": 1,
+          "name": "Basement Temp"
+        },
+        {
+          "graph": "line",
+          "type": "sensor",
+          "detail": 1,
+          "entity": "sensor.entryway_temperature",
+          "name": "Entryway Temp"
+        },
+        {
+          "graph": "line",
+          "type": "sensor",
+          "detail": 1,
+          "entity": "sensor.zb_basement_bedroom_temp_temperature",
+          "name": "Basement Bedroom Temp"
+        },
+        {
+          "graph": "line",
+          "type": "sensor",
+          "entity": "sensor.zb_temp_garage_temperature",
+          "detail": 1,
+          "name": "Garage Temp"
+        },
+        {
+          "graph": "line",
+          "type": "sensor",
+          "entity": "sensor.zb_temp_office_temperature",
+          "detail": 1,
+          "name": "Office Temp"
+        },
+        {
+          "type": "thermostat",
+          "entity": "climate.entryway",
+          "features": [
+            {
+              "type": "climate-hvac-modes",
+              "hvac_modes": [
+                "heat",
+                "cool",
+                "heat_cool",
+                "off"
+              ]
+            }
+          ],
+          "show_current_as_primary": true
+        },
+        {
+          "type": "thermostat",
+          "entity": "climate.claire_thermostat",
+          "features": [
+            {
+              "type": "climate-hvac-modes",
+              "hvac_modes": [
+                "heat",
+                "off"
+              ]
+            }
+          ],
+          "show_current_as_primary": true
+        },
+        {
+          "type": "thermostat",
+          "entity": "climate.ruth_thermostat",
+          "features": [
+            {
+              "type": "climate-hvac-modes",
+              "hvac_modes": [
+                "heat",
+                "off"
+              ]
+            }
+          ],
+          "show_current_as_primary": true
+        },
+        {
+          "type": "thermostat",
+          "features": [
+            {
+              "type": "climate-hvac-modes",
+              "hvac_modes": [
+                "heat",
+                "off"
+              ]
+            }
+          ],
+          "show_current_as_primary": true,
+          "entity": "climate.basement_bedroom_thermostat"
+        },
+        {
+          "type": "thermostat",
+          "entity": "climate.basement_thermostat",
+          "name": "Basement",
+          "features": [
+            {
+              "type": "climate-hvac-modes",
+              "hvac_modes": [
+                "heat",
+                "off"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "custom:mushroom-entity-card",
+          "entity": "input_boolean.ruth_s_space_heater_switch"
+        },
+        {
+          "type": "custom:mushroom-entity-card",
+          "entity": "input_boolean.claire_s_space_heater_switch"
+        },
+        {
+          "type": "custom:auto-entities",
+          "card": {
+            "type": "entities",
+            "title": "Ruth Space Heater"
+          },
+          "filter": {
+            "include": [
+              {
+                "entity_id": "*ruths_space_heater*"
+              }
+            ]
+          },
+          "sort": {
+            "method": "state"
+          }
+        },
+        {
+          "type": "custom:auto-entities",
+          "card": {
+            "type": "entities",
+            "title": "Claire's Space Heater"
+          },
+          "filter": {
+            "include": [
+              {
+                "entity_id": "*claires_space_heater*"
+              }
+            ]
+          },
+          "sort": {
+            "method": "state"
+          }
+        },
+        {
+          "type": "custom:auto-entities",
+          "card": {
+            "type": "entities"
+          },
+          "filter": {
+            "include": [
+              {
+                "entity_id": "*zb_outlet_basement*"
+              }
+            ],
+            "exclude": []
+          }
+        },
+        {
+          "type": "history-graph",
+          "entities": [
+            {
+              "entity": "switch.claires_space_heater_power_switch",
+              "name": "Claire"
+            },
+            {
+              "entity": "switch.ruths_space_heater_power_switch",
+              "name": "Ruth"
+            },
+            {
+              "entity": "switch.zb_outlet_basementheater_switch",
+              "name": "Basement"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "Media",
+      "icon": "mdi:youtube-tv",
+      "badges": [],
+      "cards": [
+        {
+          "type": "media-control",
+          "entity": "media_player.basement_tv"
+        },
+        {
+          "type": "media-control",
+          "entity": "media_player.living_room_tv"
+        },
+        {
+          "type": "custom:mushroom-media-player-card",
+          "entity": "media_player.living_room",
+          "show_volume_level": true,
+          "use_media_info": false,
+          "volume_controls": [
+            "volume_set",
+            "volume_mute",
+            "volume_buttons"
+          ]
+        },
+        {
+          "type": "media-control",
+          "entity": "media_player.kitchen_display_tv"
+        }
+      ]
+    },
+    {
+      "icon": "mdi:shield-home",
+      "path": "Security",
+      "badges": [],
+      "cards": [
+        {
+          "type": "custom:mushroom-alarm-control-panel-card",
+          "states": [
+            "armed_home",
+            "armed_away",
+            "armed_night"
+          ],
+          "entity": "alarm_control_panel.alarmo",
+          "name": "Scherbring House Alarm"
+        },
+        {
+          "show_state": false,
+          "show_name": true,
+          "camera_view": "auto",
+          "fit_mode": "cover",
+          "type": "picture-entity",
+          "name": "Living Room",
+          "entity": "camera.tapo_c100_e09e_hd_stream"
+        },
+        {
+          "show_state": true,
+          "show_name": true,
+          "camera_view": "auto",
+          "type": "picture-entity",
+          "entity": "camera.basement_hd_stream",
+          "name": "Basement"
+        },
+        {
+          "type": "custom:mushroom-chips-card",
+          "chips": [
+            {
+              "type": "entity",
+              "entity": "button.basement_move_left",
+              "name": "Move Left",
+              "content_info": "none",
+              "tap_action": {
+                "action": "toggle"
+              }
+            },
+            {
+              "type": "entity",
+              "entity": "button.basement_move_right",
+              "content_info": "none",
+              "tap_action": {
+                "action": "toggle"
+              }
+            },
+            {
+              "type": "entity",
+              "entity": "button.basement_move_up",
+              "content_info": "none",
+              "tap_action": {
+                "action": "toggle"
+              }
+            },
+            {
+              "type": "entity",
+              "entity": "button.basement_move_down",
+              "content_info": "none",
+              "tap_action": {
+                "action": "toggle"
+              }
+            }
+          ]
+        },
+        {
+          "type": "entities",
+          "entities": [
+            {
+              "entity": "binary_sensor.zb_doorsensor_frontdoor_opening",
+              "name": "Front Door"
+            },
+            {
+              "entity": "binary_sensor.zb_doorsensor_garage_opening",
+              "name": "Garage Door"
+            },
+            {
+              "entity": "binary_sensor.zb_doorsensor_backdoor_opening",
+              "name": "Back Door"
+            },
+            {
+              "entity": "binary_sensor.lumi_lumi_sensor_magnet_aq2_opening",
+              "name": "Claire's Door"
+            },
+            {
+              "entity": "binary_sensor.zb_doorsensor_ruth_opening",
+              "name": "Ruth's Door"
+            },
+            {
+              "entity": "binary_sensor.double_garage_door"
+            },
+            {
+              "entity": "binary_sensor.single_garage_door"
+            },
+            {
+              "entity": "binary_sensor.bed_presence_2b3d70_bed_occupied_either"
+            }
+          ]
+        },
+        {
+          "type": "custom:mushroom-cover-card",
+          "entity": "cover.single_garage_door"
+        },
+        {
+          "type": "light",
+          "entity": "light.claires_light_light",
+          "name": "Claire’s Light"
+        }
+      ]
+    },
+    {
+      "path": "Calendar",
+      "icon": "mdi:calendar",
+      "badges": [],
+      "cards": [
+        {
+          "type": "custom:atomic-calendar-revive",
+          "name": "Calendar",
+          "enableModeChange": true,
+          "entities": [
+            {
+              "entity": "calendar.scherbring_family",
+              "name": "Scherbring family"
+            },
+            {
+              "entity": "calendar.kids_school_calendar",
+              "name": "Kids school calendar"
+            }
+          ]
+        },
+        {
+          "initial_view": "listWeek",
+          "type": "calendar",
+          "entities": [
+            "calendar.meal_planning"
+          ],
+          "title": "Meal plan"
+        },
+        {
+          "type": "custom:mushroom-chips-card",
+          "chips": [
+            {
+              "type": "action",
+              "tap_action": {
+                "action": "navigate",
+                "navigation_path": "/calendar"
+              },
+              "icon": "mdi:calendar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Battery Levels",
+      "path": "battery-levels",
+      "icon": "mdi:battery-charging-wireless-40",
+      "badges": [],
+      "cards": [
+        {
+          "type": "custom:auto-entities",
+          "card": {
+            "type": "entities",
+            "title": "Battery warning"
+          },
+          "filter": {
+            "include": [
+              {
+                "attributes": {
+                  "device_class": "battery"
+                }
+              }
+            ]
+          },
+          "sort": {
+            "method": "state"
+          }
+        }
+      ]
+    },
+    {
+      "type": "sections",
+      "max_columns": 4,
+      "icon": "mdi:sprinkler",
+      "path": "irrigation",
+      "sections": [
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "tile",
+              "entity": "counter.irrigation_days_since_watered"
+            },
+            {
+              "type": "tile",
+              "entity": "switch.tz3000_okaz9tjs_ts011f"
+            },
+            {
+              "type": "tile",
+              "entity": "input_number.pirate_weather_rain_chance_today",
+              "features_position": "bottom",
+              "vertical": false,
+              "name": "Rain Chance"
+            },
+            {
+              "type": "tile",
+              "features_position": "bottom",
+              "vertical": false,
+              "entity": "input_number.pirate_weather_precip_amount_today",
+              "name": "Rain Amount"
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.rain_amount_integral_sensor"
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.openweathermap_rain"
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.24_hour_rain_amount"
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.48_hour_rain_amount"
+            },
+            {
+              "type": "tile",
+              "entity": "sensor.72_hour_rain_amount"
+            },
+            {
+              "type": "tile",
+              "entity": "input_boolean.irrigation_notification_acknowledged"
+            }
+          ]
+        },
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "New section"
+            },
+            {
+              "type": "custom:mushroom-number-card",
+              "entity": "input_number.irrigation_frequency_days"
+            }
+          ]
+        }
+      ],
+      "header": {
+        "card": {
+          "type": "markdown",
+          "text_only": true,
+          "content": "# Irrigation Information"
+        }
+      }
+    },
+    {
+      "type": "sections",
+      "max_columns": 4,
+      "icon": "mdi:lightbulb",
+      "path": "",
+      "sections": [
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Lights",
+              "heading_style": "title"
+            },
+            {
+              "type": "tile",
+              "entity": "light.claires_light_light"
+            },
+            {
+              "type": "tile",
+              "entity": "switch.christmas_tree",
+              "vertical": false,
+              "tap_action": {
+                "action": "toggle"
+              },
+              "features_position": "bottom"
+            },
+            {
+              "type": "tile",
+              "entity": "switch.christmas_lights",
+              "name": "Front Christmas Lights",
+              "vertical": false,
+              "tap_action": {
+                "action": "toggle"
+              },
+              "features_position": "bottom"
+            },
+            {
+              "type": "tile",
+              "entity": "switch.zb_outlet_backyard_christmas_switch",
+              "name": "Backyard Christmas Lights",
+              "vertical": false,
+              "tap_action": {
+                "action": "toggle"
+              },
+              "features_position": "bottom"
+            }
+          ]
+        },
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Automations",
+              "heading_style": "title"
+            },
+            {
+              "type": "tile",
+              "entity": "automation.turn_off_christmas_tree_lights"
+            },
+            {
+              "type": "tile",
+              "entity": "automation.turn_on_christmas_lights"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "title": "Scherbring Family"
+}

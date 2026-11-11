@@ -62,6 +62,7 @@ SECTIONS = [
             {"label": "Weather alerts", "href": "/home/weather", "src": "home:weather"},
             {"group": "Home Assistant", "label": "Family board", "href": "/home/ha", "src": "ha:board"},
             {"label": "HA health", "href": "/home/ha/health", "src": "ha:health"},
+            {"label": "Rivian", "href": "/home/ha/rivian", "src": "rivian:status"},
         ],
     },
     {

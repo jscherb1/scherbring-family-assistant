@@ -5,7 +5,7 @@ already safe to show (no finance amounts, no memory text).
 """
 from datetime import timedelta
 
-from . import (activity, agent, chores, common, family, golf, habits, health, home, money, ops, review, schedule,
+from . import (activity, agent, chores, common, family, golf, habits, health, home, money, ops, review, rivian, schedule,
                shopping_fitness, wellness)
 from .. import dismissals
 from ..web import fmt_dt
@@ -157,6 +157,23 @@ def _wellness_tile():
             "state": "warn" if rec["zone"] == "bad" else "ok"}
 
 
+def _rivian_tile():
+    b = rivian.get_brief()
+    href = "/home/ha/rivian"
+    if not _ok(b):
+        return {"title": "Rivian", "href": href, "headline": "Unknown", "sub": b.get("error", "") if isinstance(b, dict) else "",
+                "state": "ok"}
+    bad = [h["title"] for h in b["health"] if h["severity"] == "bad"]
+    parts = bad[:1] or ([f"{', '.join(b['open'])} open"] if b["open"] else [])
+    parts.append("charging" if b["charging"] else "plugged in" if b["connected"] else "")
+    if b["locked"] is False and not b["open"]:
+        parts.append("unlocked")
+    headline = " · ".join(x for x in (f"{round(b['soc'])}%" if b["soc"] is not None else "",
+                                      f"{b['range_mi']} mi" if b["range_mi"] is not None else "") if x) or "No data"
+    return {"title": "Rivian", "href": href, "headline": headline, "sub": " · ".join(p for p in parts if p),
+            "state": "warn" if bad else "ok"}
+
+
 def _chores_tile():
     o = chores.get_overview()
     href = "/chores"
@@ -269,7 +286,7 @@ def get_summary():
     schedule_tile = _schedule_tile(attention)
     systems = _credentials(attention)
     tiles = [
-        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _golf_tile(), _wellness_tile(), _chores_tile(),
+        agent_tile, schedule_tile, _home_tile(attention), _habits_tile(attention), _golf_tile(), _wellness_tile(), _chores_tile(), _rivian_tile(),
         _meals_tile(), _finance_tile(),
         _fitness_tile(), _family_tile(), _hyvee_tile(systems), _review_tile(attention),
     ]

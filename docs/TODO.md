@@ -268,6 +268,22 @@ writes are covered by tests with HA stubbed.
       Telegram. If wanted, register `ha_store.py health --brief` with `scheduler_store.py add`.
 - [ ] Pre-existing, unrelated: `tests/test_journal.py::test_cli` fails on `main` too.
 
+## Rivian R2 dashboards (built 2026-11-10, branch `feat/rivian-dashboard`)
+
+App page `/home/ha/rivian` + `scripts/rivian.py` / `rivian_store.py`, verified live against the car (charging at
+the time). HA statistics for the R2 start 2026-11-10, so the trend charts are nearly empty at first.
+
+- [ ] **Needs the user:** apply the HA subview + chip. The write was blocked by the session's permission
+      classifier, so it wasn't applied. Spec: `docs/superpowers/specs/dashboard-backups/rivian-view-2026-11-10.json`
+      (insert `chip` at `views[0].cards[1].chips[4]` of `scherbring-family`, append `view`). Backup to undo:
+      `scherbring-family-2026-11-10.json` in the same folder.
+- [ ] After ~7 days of driving, sanity-check the estimated efficiency (mi/kWh) against the Rivian app; it counts
+      idle drain, so expect it to read a little low. Adjust `efficiency()` thresholds if days look noisy.
+- [ ] Charge-time estimates on a 120 V trickle charge run to days; anything over 72 h shows "3+ days at this rate"
+      instead of an ETA. Revisit when a Level 2 charger is in.
+- [ ] Ideas, not built (view-only for now): evening "R2 not plugged in and under 40%" Telegram nudge; home
+      charging cost from kWh × utility rate.
+
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 
 - `habits-daily-nudge` is registered (daily 7 PM) and live-tested 2026-10-12: silent path verified (nothing at risk).
