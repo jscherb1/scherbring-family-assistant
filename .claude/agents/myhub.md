@@ -66,6 +66,10 @@ cheap read and record the verdict. Do all four, every time, even if an earlier o
 | `home_assistant` | `GetDateTime` | it returns a time |
 
 For each, run `python scripts/system_health_store.py record <key> ok|warn|down --detail "<short reason>"`.
+Make each record call its own plain Bash command, exactly in that form: no `cd`, no `for` loop, no `;` or `&&`
+chaining, no variables. Chained or looped commands don't match the permission rule, get denied, and the scheduler
+marks the whole run `failed` even though the pings worked. Four pings means four separate `record` calls (run
+them in parallel if you like).
 Use `ok` on success. If the tool is missing or the call fails, use `warn` with the error in one short line
 (never `unknown`; and never record `ok` without having just made the call). Auth/login errors are `warn` too: the
 service turns two in a row into `down` and sends the Telegram alert itself, so you don't message anything.
