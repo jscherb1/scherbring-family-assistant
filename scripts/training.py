@@ -275,6 +275,33 @@ def set_config(key: str, value, db_path=None) -> dict:
     return get_config(db_path)
 
 
+def _lthr_zone_bounds(raw) -> dict:
+    """Zone bpm ranges from the account's current LTHR zones ({hr, index}: upper bound of zones 0..4).
+
+    Preferred over per-activity bounds, which can reflect a different zone method (e.g. % of max HR).
+    Z0 is below the first bound, Z1 starts at it, later zones start 1 bpm above the previous bound,
+    and Z5 is open-ended.
+    """
+    try:
+        uppers = {int(z["index"]): int(z["hr"]) for z in json.loads(raw or "[]")}
+    except (ValueError, KeyError, TypeError):
+        return {}
+    if not all(i in uppers for i in range(5)):
+        return {}
+    out = {0: (None, uppers[0]), 1: (uppers[0], uppers[1])}
+    for z in (2, 3, 4):
+        out[z] = (uppers[z - 1] + 1, uppers[z])
+    out[5] = (uppers[4], None)
+    return out
+
+
+def _detail_zone_bounds(raw) -> dict:
+    try:
+        return {int(b["zone"]): (b.get("low"), b.get("high")) for b in json.loads(raw or "[]")}
+    except (ValueError, KeyError, TypeError):
+        return {}
+
+
 def zone_definitions(db_path=None) -> dict:
     conn = connect(db_path)
     try:
@@ -285,12 +312,7 @@ def zone_definitions(db_path=None) -> dict:
             updated[r["key"]] = r["updated_at"]
     finally:
         conn.close()
-    bounds = {}
-    try:
-        for b in json.loads(cfg.get("hr_zone_bounds") or "[]"):
-            bounds[int(b["zone"])] = (b.get("low"), b.get("high"))
-    except (ValueError, KeyError, TypeError):
-        bounds = {}
+    bounds = _lthr_zone_bounds(cfg.get("lthr_zone")) or _detail_zone_bounds(cfg.get("hr_zone_bounds"))
     zones = []
     for z in range(6):
         low, high = bounds.get(z, (None, None))
@@ -298,7 +320,7 @@ def zone_definitions(db_path=None) -> dict:
             high = 137
         zones.append({"zone": z, "label": ZONE_LABELS[z], "low": low, "high": high})
     return {"lthr": int(cfg["lthr"]), "max_hr": int(cfg["max_hr"]), "zones": zones,
-            "updated_at": max((updated.get(k) for k in ("lthr", "max_hr", "hr_zone_bounds") if updated.get(k)),
+            "updated_at": max((updated.get(k) for k in ("lthr", "max_hr", "lthr_zone", "hr_zone_bounds") if updated.get(k)),
                               default=None)}
 
 
