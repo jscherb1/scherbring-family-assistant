@@ -509,7 +509,7 @@ python scripts/scheduler_store.py add --name "training-sync" \
   --prompt "Delegate to the training subagent to run the scheduled COROS training sync. Run python scripts/training_store.py sync (exactly that, one command, no follow-up commands). If it succeeds, reply with nothing (stay silent). If it fails or reports errors, reply with one short line saying the training sync failed and the error." \
   --cron "0 6-22/2 * * *" --target-chat-id "<your chat_id>"
 ```
-  (Not registered yet; see `docs/TODO.md`.)
+  (Registered 2026-11-21.)
 
 ## Wellness dashboard
 
