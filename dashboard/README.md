@@ -16,7 +16,7 @@ nav never touches a router. Page URLs did not change.
 | Tab | Pages |
 |---|---|
 | Today | Today (`/`), Week (`/week`) |
-| Me | Wellness Today/Trends/Drivers, Check-in, Journal, Insights, Habits Streaks/Analysis, Fitness |
+| Me | Wellness Today/Trends/Drivers, Check-in, Journal, Insights, Habits Streaks/Analysis, Training, Fitness |
 | Family | Chores Today/Chores & kids/Money, Kid chart (`/kids`), Profile, Kids memories |
 | Home | Menu, Recipes, Groceries (`/hyvee`), Maintenance, Lawn & garden, Weather alerts |
 | Money | Overview, Tagging, Reports & planning |
@@ -89,6 +89,7 @@ other family members.
 | | Tagging | `/finance/tagging` | Live needs-review and no-WHO-tag counts with the oldest few (merchant, amount), then the agent's WHO-tagging history, learned mapping and rule proposals |
 | | Reports & Planning | `/finance/reports` | Report history with Drive links, advisor-profile completeness, non-monetary retirement settings |
 | Hy-Vee | Overview | `/hyvee` | Purchase history, most-bought items, learned preferences, cart builds |
+| Training | Volume & zones | `/training`, `/api/training*` | Weekly miles or time with a 4-week rolling average, longest run per week, zone mix and easy share (Z0-Z2), recent activities, sport filter (default running). Same `scripts/training.py` service as the `training` agent; reads the COROS activities synced into SQLite |
 | Fitness | Overview | `/fitness` | This week's plan, COROS push status, library. Planned workouts only (no completion tracking) |
 | Meal Planner | Recipes | `/meals`, `/meals/<id>` | Browse, search, filter and sort the recipe database; view a recipe; add, edit and delete recipes (same service as the meal-planner agent, `scripts/recipes.py`) |
 | | Menu & Insights | `/meals/plan` | Upcoming menu (from the meal-planner's logged plans), recently cooked, stale recipes, collection counts |
@@ -115,7 +116,7 @@ finance report text and advisor/retirement profile values) show summaries only. 
 show dollar amounts and merchants (decided 2026-10-21: the dashboard is only reachable on localhost/Tailscale).
 
 JSON for the same data lives under `/api/*` (`/api/status`, `/api/schedule`, `/api/system`,
-`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/meals/plan`, `/api/habits`, `/api/ha/*`, `/api/wellness*`, `/api/journal/*`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.
+`/api/recipes`, `/api/home/*`, `/api/family/*`, `/api/finance/*`, `/api/hyvee`, `/api/fitness`, `/api/training*`, `/api/meals/plan`, `/api/habits`, `/api/ha/*`, `/api/wellness*`, `/api/journal/*`, `/api/chores*`, `/api/activity`), with interactive docs at `/api/docs`.
 
 ## Run it
 

@@ -221,6 +221,10 @@ def client(state):
     "/api/journal/questions", "/api/journal/impact",
     "/chores", "/chores/manage", "/chores/ledger", "/kids", "/api/chores", "/api/chores/ledger",
     "/meals/plan", "/api/meals/plan", "/activity", "/activity?agent=retirement", "/api/activity",
+    "/training", "/training?metric=time&range=90&bucket=month&sports=running&sports=cycling",
+    "/training?start=2026-01-01&end=2026-02-01&bucket=day", "/api/training", "/api/training/volume",
+    "/api/training/zones", "/api/training/zones?bucket=week&share=1", "/api/training/share",
+    "/api/training/easy", "/api/training/longest", "/api/training/activities",
 ])
 def test_routes_ok(client, path):
     assert client.get(path).status_code == 200
@@ -1476,3 +1480,103 @@ def test_review_ui_and_service_see_the_same_data(client, state):
     assert "Shared title" in client.get("/review").text
     client.post(f"/review/{fid}/status", data={"status": "accepted"})
     assert review.get_finding(fid, db_path=db)["status"] == "accepted"
+
+
+# ---- training ----
+
+def seed_training(state, days_ago_rows=None):
+    """Sync fake COROS rows through the service's own upsert (no network). Rows are (label, days_ago, sport,
+    miles, secs, zone_secs); default: two outdoor/treadmill runs and a ride, all inside the last 30 days."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import training as svc
+    from datetime import date
+    today = date.today()
+    mi = 1609.344
+    rows_spec = days_ago_rows or [("o1", 2, 100, 5.0, 3000, [0, 600, 1200, 600, 600, 0]),
+                                  ("t1", 4, 101, 3.0, 1800, [0, 300, 900, 300, 300, 0]),
+                                  ("c1", 5, 200, 20.0, 3600, [0, 0, 3000, 600, 0, 0])]
+    rows = [{"labelId": lab, "sportType": sp, "name": "Ride" if sp == 200 else "Run",
+             "date": (today - timedelta(days=d)).strftime("%Y%m%d"), "startTime": 1790000000,
+             "startTimezone": -24, "distance": m * mi, "workoutTime": secs, "totalTime": secs + 30, "avgHr": 150,
+             "trainingLoad": 55, "avgCadence": 170, "ascent": 5} for lab, d, sp, m, secs, _ in rows_spec]
+    zones = {lab: z for lab, _, _, _, _, z in rows_spec}
+
+    def detail(label, sport):
+        z = zones[label]
+        t = sum(z) or 1
+        items = [{"zoneIndex": i, "leftScope": 100 + 10 * i, "rightScope": 110 + 10 * i, "second": v,
+                  "percent": v / t * 100} for i, v in enumerate(z)]
+        return {"zoneList": [{"type": 126, "zoneItemList": items}], "summary": {"maxHr": 180}}
+
+    svc.sync(state / "agent_results.db", all_sports=True, today=today, fetch_list_pages=lambda s, e: rows,
+             fetch_detail=detail, fetch_account=lambda: {"zoneData": {"lthr": 171, "lthrZone": []}, "maxHr": 193})
+    return svc
+
+
+def test_training_empty_state(client):
+    r = client.get("/training")
+    assert r.status_code == 200
+    assert "No training data yet" in r.text and "python scripts/training_store.py sync" in r.text
+    assert client.get("/api/training/volume").status_code == 200
+
+
+def test_training_page_renders_with_data(client, state):
+    seed_training(state)
+    r = client.get("/training")
+    assert r.status_code == 200
+    for text in ("Weekly miles", "Time by zone", "Zone share over time", "Easy share per week", "Longest run per week",
+                 "Recent activities", "Z2 ", "bpm", "8.0", "<svg"):
+        assert text in r.text, text
+    assert "Traceback" not in r.text and "UndefinedError" not in r.text
+    assert "Ride" not in r.text  # cycling is not in the default (running) selection
+    assert "/training" in client.get("/wellness").text  # nav entry
+
+
+def test_training_default_window_is_30_days_and_toggle_changes_output(client, state):
+    seed_training(state, [("old", 45, 100, 10.0, 6000, [0, 0, 6000, 0, 0, 0]),
+                          ("new", 3, 100, 4.0, 2400, [0, 0, 2400, 0, 0, 0])])
+    summ = client.get("/api/training").json()["summary"]
+    assert summ["days"] == 30 and summ["activities"] == 1 and summ["total_distance_mi"] == 4.0
+    dist = client.get("/training").text
+    tm = client.get("/training?metric=time").text
+    assert "Weekly miles" in dist and "Weekly time" in tm and "Weekly time" not in dist
+    assert 'aria-pressed' not in tm or "Hours per week" in tm
+    assert "Hours per week" in tm and "Miles per week" in dist
+    wide = client.get("/training?range=90").text
+    assert "14 mi" in wide or "14.0" in wide  # 10 + 4 once the older run is in range
+
+
+def test_training_sports_filter_and_indoor_outdoor(client, state):
+    seed_training(state)
+    run = client.get("/api/training").json()["summary"]
+    assert run["activities"] == 2 and run["total_distance_mi"] == 8.0  # outdoor + treadmill
+    both = client.get("/api/training?sports=running&sports=cycling").json()["summary"]
+    assert both["activities"] == 3 and both["total_distance_mi"] == 28.0
+    assert "Ride" in client.get("/training?sports=running,cycling").text
+    cyc = client.get("/training?sports=cycling").text
+    assert "Ride" in cyc and 'aria-pressed="true"' in cyc
+
+
+def test_training_invalid_params_are_friendly(client, state):
+    seed_training(state)
+    for url in ("/training?range=7", "/training?range=abc", "/training?start=nope", "/training?metric=bogus",
+                "/training?bucket=year", "/training?sports=swimming", "/training?start=2026-05-01&end=2026-01-01"):
+        r = client.get(url)
+        assert r.status_code == 200, url
+        assert 'role="alert"' in r.text and "Traceback" not in r.text, url
+        assert "Training filters" in r.text  # controls stay so it can be fixed
+    for url in ("/api/training/volume?metric=bogus", "/api/training/zones?bucket=year",
+                "/api/training/volume?start=nope", "/api/training?sports=swimming"):
+        assert client.get(url).status_code == 400, url
+
+
+def test_training_ui_and_service_share_data(client, state):
+    svc = seed_training(state)
+    db = state / "agent_results.db"
+    assert client.get("/api/training/volume").json() == svc.volume(db_path=db)
+    assert client.get("/api/training/zones?bucket=week&share=1").json() == svc.zone_share(bucket="week", db_path=db)
+    assert client.get("/api/training").json()["summary"] == svc.summary(db_path=db)
+    assert client.get("/api/training/activities").json() == svc.activities(db_path=db)
+    page = client.get("/training").text
+    mi = svc.summary(db_path=db)["total_distance_mi"]
+    assert f"{mi:g}" in page and f"{svc.summary(db_path=db)['activities']}</dd>" in page

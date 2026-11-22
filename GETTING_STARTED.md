@@ -147,6 +147,7 @@ and its `state/schema.sql` tables):
 | Instant answers for short commands ("add milk to the Costco list", "turn off the porch lights", "log stretching"): no subagent, the worker's fast lane (off until `python scripts/agent_ctl.py fastlane on`) | (none: infrastructure) |
 | Daily 1-10 day rating with insights on what drives it | `dayrating` |
 | Nightly check-in (rate the day, yes/no journal, open habits in one message) | `journal` |
+| Running volume and heart-rate zones: miles/time this week or month, longest run, easy vs hard share, COROS sync (the Training dashboard page) | `training` |
 | Wellness summary: recovery, sleep and HRV trends, what drives them (the Wellness dashboard pages) | `wellness` |
 | "What needs my attention?", today/this week at a glance, the dashboard's Today page | `myhub` |
 | Kid chore chart with dollar payouts and streaks | `chores` |

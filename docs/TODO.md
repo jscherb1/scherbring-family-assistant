@@ -290,6 +290,28 @@ the time). HA statistics for the R2 start 2026-11-10, so the trend charts are ne
 - [ ] Ideas, not built (view-only for now): evening "R2 not plugged in and under 40%" Telegram nudge; home
       charging cost from kWh × utility rate.
 
+## Training page (built 2026-11-21, branch `feat/training-page`; tested with fakes only)
+
+`scripts/training.py` / `training_store.py`, `training` agent, `/training` dashboard page (Me tab). Everything is
+covered by unit tests with injected fake COROS fetchers; nothing has run against real COROS data yet.
+
+- [ ] **Live sync never run.** `python scripts/training_store.py sync` (first run backfills the full history, ~664 runs,
+      about 2.5 min) has not been run against real COROS. Run it once by hand, check `errors` / `partial`, then eyeball
+      `/training`. COROS allows one web session per account, so it can sign Justin out of COROS elsewhere.
+- [ ] **Scheduled task not registered.** Register the 2-hourly sync (command in README, "Training" section:
+      `scheduler_store.py add --name "training-sync" ... --cron "0 6-22/2 * * *"`), then confirm the first run in
+      `scheduler_store.py runs` (silent on success, so check the run log rather than waiting for a message).
+- [ ] **Outdoor-run zone seconds inconsistency.** COROS zone seconds can sum to more than moving time on some outdoor
+      runs while the percentages stay consistent; the service falls back to percent x moving time when seconds are
+      off by more than 2%. Spot-check a few outdoor runs against the COROS app.
+- [ ] **Z0 counted as easy** (easy = Z0-Z2) is a choice; confirm it is what Justin wants (`z1_z2_pct` is the
+      Z1-Z2-only alternative already returned).
+- [ ] Restarts to pick this up: dashboard (`systemctl --user restart assistant-dashboard`), agent worker (new
+      `.claude/agents/training.md` and the settings allow rule), and the scheduler task registration above.
+- Ideas, not built: pace at a given heart rate (aerobic efficiency) chart; weekly ramp warning (>10% week over week);
+  training-load overlay (ATI/CTI are already in `insight_daily`); planned-vs-actual against `fitness_weekly_plans`;
+  link or move the Wellness / Fitness pages into the same Training area.
+
 ## Habits tracker (built 2026-10-12; agent and dashboard verified live)
 
 - `habits-daily-nudge` is registered (daily 7 PM) and live-tested 2026-10-12: silent path verified (nothing at risk).

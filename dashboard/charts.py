@@ -29,7 +29,7 @@ from markupsafe import Markup
 
 W = 480                                     # viewBox width shared by every time-series chart
 PAD_L, PAD_R, PAD_T, PAD_B = 38, 8, 10, 22
-NOTES = {"pending": "Not synced yet", "partial": "Day in progress", "missing": "No data"}
+NOTES = {"pending": "Not synced yet", "partial": "Day in progress", "missing": "No data", "nodata": "No data"}
 
 
 def _n(v: float) -> str:
@@ -96,10 +96,14 @@ def _domain(layers, y_min, y_max):
 
 
 def timeseries(dates: list[str], layers: list[dict], *, height: int = 170, y_min=None, y_max=None,
-               y_fmt=_n, label: str = "", sync: str = "trend", y_ticks: list[float] | None = None) -> Markup:
+               y_fmt=_n, label: str = "", sync: str = "trend", y_ticks: list[float] | None = None,
+               labels: dict | None = None) -> Markup:
     """A date-axis chart from layers (see module docstring). Returns an inline <svg>. `y_ticks` fixes the
-    gridlines (and the domain to their span) for axes that need round values, like clock times."""
+    gridlines (and the domain to their span) for axes that need round values, like clock times.
+    `labels` ({date: text}) replaces the default "Nov 16" axis and tooltip text, e.g. for week or month buckets.
+    A status of "pending" or "nodata" draws the dashed stub instead of a bar."""
     n = len(dates)
+    day_label = (lambda d, long=False: labels.get(d, _day_label(d, long))) if labels else _day_label
     plot_w, plot_h = W - PAD_L - PAD_R, height - PAD_T - PAD_B
     lo, hi, ticks = (y_ticks[0], y_ticks[-1], y_ticks) if y_ticks else _domain(layers, y_min, y_max)
     slot = plot_w / max(n, 1)
@@ -119,7 +123,7 @@ def timeseries(dates: list[str], layers: list[dict], *, height: int = 170, y_min
     step = max(1, round(n / 6))
     for j, i in enumerate(range(n - 1, -1, -step)):
         out.append(f'<text class="xlab{" xl-alt" if j % 2 else ""}" x="{x(i):.1f}" y="{height - 6}" '
-                   f'text-anchor="middle">{_day_label(dates[i])}</text>')
+                   f'text-anchor="middle">{escape(day_label(dates[i]))}</text>')
 
     status = next((ly["status"] for ly in layers if ly.get("status")), {})
     bar_w = max(1.0, slot * 0.72)
@@ -181,7 +185,7 @@ def timeseries(dates: list[str], layers: list[dict], *, height: int = 170, y_min
 
     # Not-yet-in days: a dashed stub on the baseline, so "waiting" never reads as zero.
     for i, d in enumerate(dates):
-        if status.get(d) == "pending":
+        if status.get(d) in ("pending", "nodata"):
             out.append(f'<line class="pending-mark" x1="{x(i):.1f}" x2="{x(i):.1f}" y1="{PAD_T + plot_h:.1f}" '
                        f'y2="{PAD_T + plot_h - 14:.1f}"/>')
 
@@ -189,7 +193,7 @@ def timeseries(dates: list[str], layers: list[dict], *, height: int = 170, y_min
     for i, d in enumerate(dates):
         rows = _tip_rows(layers, d)
         note = NOTES.get(status.get(d, "final"), "") if status else ""
-        tip = {"d": _day_label(d, True), "rows": rows, "note": note}
+        tip = {"d": day_label(d, True), "rows": rows, "note": note}
         title = "; ".join(f"{r[0]} {r[1]}" for r in rows) or note
         out.append(f'<rect class="hit" x="{PAD_L + i * slot:.1f}" y="{PAD_T}" width="{slot:.2f}" height="{plot_h}" '
                    f'data-i="{i}" data-x="{x(i):.1f}" {_tip(tip)}><title>{escape(tip["d"])}: '

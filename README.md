@@ -40,7 +40,10 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `.claude/agents/home-maintenance.md` | Home-maintenance subagent — recurring indoor maintenance items (HVAC filters, smoke detector batteries, etc.), completion log, and the weekly proactive due-check |
 | `.claude/agents/home-assistant.md` | Home-assistant subagent (Phases 1-3) — ad-hoc smart-home control/query via the hosted Home Assistant connector plus a local `ha` MCP server (vendor/ha-mcp) for automation/script/scene/helper/dashboard authoring and history/log debugging; proactive monitoring is a later phase |
 | `vendor/ha-mcp/` | Vendored [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) (PyPI package, `.venv`) — runs as a loopback-only local HTTP server (`systemd/assistant-ha-mcp.service`) that Claude connects to via the `ha` entry in `.mcp.json` |
+| `.claude/agents/training.md` | Training subagent (read-only except COROS sync): weekly/monthly miles and time, longest run, heart-rate-zone mix and easy share, sport filters, and the scheduled 2-hourly COROS sync (silent unless it fails) |
 | `.claude/agents/fitness.md` | Fitness subagent (Phases 1-3) — plans weekly workouts by reusing the COROS Training Hub library, gated on approval, writes to Coros + the "Running" Google Calendar |
+| `scripts/training.py` | Shared training service (stdlib): COROS activity sync (idempotent, backfill + incremental), weekly volume, zone time/share, easy share, longest run, summary, zone definitions. The single code path used by `training_store.py` and the `/training` dashboard page |
+| `scripts/training_store.py` | Zero-dep CLI over `training.py` for the training subagent (sync / sports / volume / zones / share / easy / longest / summary / activities / zone-defs / config) |
 | `scripts/fitness_store.py` | Zero-dep CLI for fitness data (workout-library cache sync/list, weekly-plan add/list/update sub-commands) |
 | `scripts/fitness/` | Playwright + API browser layer for COROS Training Hub — `login_test.py` (session), `library_sync.py` (Workout Library scrape), `workout_sync.py` (logs the Workouts habit from recorded COROS activities; daily `workouts-habit-sync` task), `schedule_ops.py` (list-week / add-existing-workout / remove-workout, via the real Coros API, not drag-and-drop), `coros_web.py` (selector/URL/endpoint constants), `coros_session.py` (shared helpers), `coros_mcp.py` (OAuth client for COROS's official MCP server: sleep, steps, stress; one-time sign-in via `auth-url` / `auth-finish`, token in `state/coros_mcp_token.json`) |
 | `.claude/agents/finance.md` | Finance subagent (Phase 1) — Monarch transaction review + WHO tagging, rule proposals, historical sweeps |
@@ -61,7 +64,7 @@ You (Telegram) → telegram_bridge.py → inbox (SQLite) → agent_worker.py (Cl
 | `scripts/retirement_workbook.py` | Builds the user-editable `.xlsx` retirement modeling workbook (xlsxwriter) |
 | `scripts/drive_upload.py` | Path-based Google Drive upload/in-place-update CLI (own OAuth token) for the binary `.xlsx` workbook |
 | `.mcp.json` | Project MCP config (Todoist HTTP/OAuth, local `ha`, vendored `monarch`). Gitignored. See `.mcp.json.example`. |
-| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_holdings`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `golf_rounds`, `golf_courses`, `golf_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs`, `review_runs`, `review_findings`, `rivian_trips`, `rivian_drain`, `rivian_sync` |
+| `state/schema.sql` | SQLite schema for `agent_results`, `recipes`, `scheduled_tasks`, `scheduled_task_runs`, `kid_memories`, `kid_memory_triggers`, `lawn_garden_plants`, `lawn_garden_products`, `lawn_garden_program`, `lawn_garden_treatments`, `lawn_garden_issues`, `lawn_garden_config`, `profile_people`, `profile_people_facts`, `profile_facts`, `weather_config`, `weather_alerts`, `home_maintenance_items`, `home_maintenance_completions`, `hyvee_purchase_history`, `hyvee_item_prefs`, `hyvee_feedback_log`, `hyvee_cart_runs`, `finance_who_map`, `finance_tag_log`, `finance_rule_proposals`, `finance_report_log`, `finance_config`, `money_sync_runs`, `money_accounts`, `money_transactions`, `money_budget_totals`, `money_budget_lines`, `money_networth_history`, `money_recurring`, `money_holdings`, `money_config`, `fitness_workout_library`, `fitness_weekly_plans`, `habits`, `habit_logs`, `habit_config`, `golf_rounds`, `golf_courses`, `golf_config`, `day_ratings`, `insight_daily`, `insight_reports`, `journal_questions`, `journal_answers`, `calendar_load`, `hub_items`, `system_health`, `chore_kids`, `chores`, `chore_assignments`, `chore_completions`, `chore_ledger`, `chore_config`, `ha_health_runs`, `review_runs`, `review_findings`, `rivian_trips`, `rivian_drain`, `rivian_sync`, `activities`, `activity_zone_time`, `training_config` |
 | `state/agent_results.db` | The state store (auto-created; gitignored — holds personal data) |
 | `scripts/state_store.py` | Zero-dep CLI the subagents call to write/read continuity results |
 | `scripts/recipes.py` | Shared recipe service (rules, add/edit/delete, cooking history, feedback) used by both the CLI and the dashboard |
@@ -478,6 +481,35 @@ python scripts/scheduler_store.py add --name "habits-daily-nudge" \
   --prompt "Delegate to the habits subagent to run the daily at-risk check." \
   --cron "0 19 * * *" --target-chat-id "<your chat_id>"
 ```
+
+## Training (running volume + heart-rate zones)
+
+Weekly and monthly running volume (miles and time) and heart-rate-zone time, from the COROS activities that
+`sync` pulls into SQLite. The `training` subagent and the dashboard's **Training** page (`/training`, under the
+Me tab, JSON twins `/api/training*`) run the **same code** (`scripts/training.py`) over the same tables
+(`activities`, `activity_zone_time`, `training_config`).
+
+- **Questions it answers**: miles / time this week or month, weekly volume with a 4-week rolling average,
+  longest run per week, zone mix, and whether the easy share is rising. "Easy" means zones 0-2 (below Z3); Z0 is the
+  sub-Z1 band. Zones are COROS's own LTHR-based ones (LTHR 171, max HR 193; `zone-defs` shows the bpm bounds).
+- **Sports**: default `running` (outdoor + treadmill, walks excluded). `--sports` takes `cycling`, `strength`,
+  `hiking`, `walking`, `other`, `all`, a comma list or a raw COROS sport id. Zone detail is fetched for the default
+  sport unless `sync --all-sports` is used.
+- **CLI** (JSON out, exit 1 not found / 2 bad input / 3 COROS sync failure):
+  `python scripts/training_store.py summary|volume|zones|share|easy|longest|activities|sports|zone-defs|config|sync`
+  (`--sports`, `--start`, `--end`, and `--bucket total|day|week|month` where relevant).
+- **Data source and backfill**: `python scripts/training_store.py sync` uses the COROS web login in
+  `scripts/fitness/`. The first run (or `sync --full`) backfills the full COROS history (about 664 runs, about
+  2.5 minutes). Later runs are incremental: they list from the latest stored day minus 14 days and fetch zone
+  detail only for activities that lack it. Idempotent upsert by COROS activity id.
+- **Scheduled sync** (silent on success, one message only if it fails): every 2 hours, 6am-10pm (cron fields match
+  local wall-clock time):
+```
+python scripts/scheduler_store.py add --name "training-sync" \
+  --prompt "Delegate to the training subagent to run the scheduled COROS training sync. Run python scripts/training_store.py sync (exactly that, one command, no follow-up commands). If it succeeds, reply with nothing (stay silent). If it fails or reports errors, reply with one short line saying the training sync failed and the error." \
+  --cron "0 6-22/2 * * *" --target-chat-id "<your chat_id>"
+```
+  (Not registered yet; see `docs/TODO.md`.)
 
 ## Wellness dashboard
 
