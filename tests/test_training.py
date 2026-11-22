@@ -310,6 +310,15 @@ def test_threshold_change_is_picked_up(db):
     assert d["lthr"] == 175 and d["max_hr"] == 190 and d["updated_at"]
 
 
+def test_zone_definitions_prefer_account_lthr_zones_over_activity_bounds(db):
+    seed(db, [row("a", "2026-11-16")])
+    lthr_zone = [{"hr": 137, "index": 0}, {"hr": 154, "index": 1}, {"hr": 162, "index": 2},
+                 {"hr": 174, "index": 3}, {"hr": 181, "index": 4}, {"hr": 436, "index": 5}]
+    training.set_config("lthr_zone", json.dumps(lthr_zone), db)
+    z = {d["zone"]: (d["low"], d["high"]) for d in training.zone_definitions(db)["zones"]}
+    assert z == {0: (None, 137), 1: (137, 154), 2: (155, 162), 3: (163, 174), 4: (175, 181), 5: (181, None)}
+
+
 # ---- config + validation ----
 
 def test_config_roundtrip_and_default_sports_drive_default_selection(db):
