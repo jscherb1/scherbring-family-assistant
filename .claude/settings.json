@@ -54,6 +54,7 @@
       "Bash(python scripts/chores_store.py *)",
       "Bash(python scripts/kid_memories_store.py *)",
       "Bash(python scripts/fitness_store.py *)",
+      "Bash(python scripts/training_store.py *)",
       "Bash(python scripts/fitness/library_sync.py *)",
       "Bash(python scripts/fitness/schedule_ops.py *)",
       "Bash(python scripts/fitness/workout_sync.py *)",

@@ -886,3 +886,41 @@ CREATE TABLE IF NOT EXISTS rivian_sync (
     trips         INTEGER NOT NULL,
     drain_days    INTEGER NOT NULL
 );
+
+-- Training: COROS activities (running volume, heart-rate-zone time). Written by scripts/training.py.
+CREATE TABLE IF NOT EXISTS activities (
+    id             TEXT PRIMARY KEY,
+    coros_id       TEXT NOT NULL UNIQUE,   -- COROS labelId
+    sport_type     INTEGER NOT NULL,       -- COROS sportType (100 run, 101 treadmill, 200 bike, ...)
+    sport_name     TEXT,
+    name           TEXT,
+    is_indoor      INTEGER NOT NULL DEFAULT 0,
+    start_local    TEXT,                   -- local ISO, from startTime + startTimezone
+    day            TEXT NOT NULL,          -- local YYYY-MM-DD
+    distance_m     REAL,
+    moving_s       INTEGER,
+    elapsed_s      INTEGER,
+    avg_hr         INTEGER,
+    max_hr         INTEGER,
+    training_load  INTEGER,
+    avg_cadence    REAL,
+    ascent_m       REAL,
+    raw_json       TEXT,
+    synced_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activities_day ON activities(day);
+CREATE INDEX IF NOT EXISTS idx_activities_sport ON activities(sport_type);
+
+CREATE TABLE IF NOT EXISTS activity_zone_time (
+    activity_id  TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+    zone         INTEGER NOT NULL CHECK (zone BETWEEN 0 AND 5),  -- 0 = below Z1, 1..5 = COROS Z1..Z5
+    seconds      INTEGER NOT NULL,
+    percent      REAL,
+    PRIMARY KEY (activity_id, zone)
+);
+
+CREATE TABLE IF NOT EXISTS training_config (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);

@@ -1,0 +1,51 @@
+/* Training page: zone colours (cool to hot) and the few elements not shared with the Wellness chart cards.
+   Zones are also named in every legend, tooltip and label, never colour alone. */
+:root {
+  --tz0: #94a3b8; --tz1: #38bdf8; --tz2: #34d399; --tz3: #fbbf24; --tz4: #fb923c; --tz5: #f87171;
+}
+.sw.tz0, .wbar.tz0 { color: var(--tz0); fill: var(--tz0); } .sw.tz1, .wbar.tz1 { color: var(--tz1); fill: var(--tz1); }
+.sw.tz2, .wbar.tz2 { color: var(--tz2); fill: var(--tz2); } .sw.tz3, .wbar.tz3 { color: var(--tz3); fill: var(--tz3); }
+.sw.tz4, .wbar.tz4 { color: var(--tz4); fill: var(--tz4); } .sw.tz5, .wbar.tz5 { color: var(--tz5); fill: var(--tz5); }
+.wchart .wbar.tz { stroke: var(--card-bg); stroke-width: .6; }
+.wchart .line.s-ati { stroke: var(--w-ati); }
+.wchart .line.s-ratio { stroke: var(--text); }
+
+.tr-controls { display: flex; flex-direction: column; gap: 10px; }
+.tr-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.tr-row > .tr-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; min-width: 64px; }
+.tr-row a.tr-pill, .tr-dates button { padding: 6px 12px; border-radius: 999px; background: var(--muted-bg); color: var(--text); text-decoration: none; font-size: 14px; border: 0; font: inherit; font-size: 14px; cursor: pointer; }
+.tr-row a.tr-pill.active, .tr-row a.tr-pill.on { background: var(--accent); color: var(--on-accent); }
+.tr-row a.tr-pill small { opacity: .75; }
+.tr-dates { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; color: var(--text-muted); }
+.tr-dates input[type=date] { font: inherit; color: var(--text); background: var(--muted-bg); border: 0; border-radius: 8px; padding: 5px 8px; color-scheme: dark; }
+.tr-notice { padding: 10px 12px; border-radius: 10px; border-left: 3px solid var(--w-mid); background: var(--muted-bg); }
+
+.tr-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 0; }
+.tr-tiles div { background: var(--muted-bg); border-radius: 12px; padding: 10px 12px; }
+.tr-tiles dt { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.tr-tiles dd { margin: 2px 0 0; font-size: 22px; font-weight: 700; }
+.tr-tiles dd small { display: block; font-size: 12px; font-weight: 400; color: var(--text-muted); }
+
+.tr-zones { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.tr-zones li { display: grid; grid-template-columns: minmax(110px, 150px) 1fr minmax(96px, auto); gap: 10px; align-items: center; font-size: 14px; }
+.tr-zones .z-name small { color: var(--text-muted); display: block; font-size: 12px; }
+.tr-zones .bar { height: 14px; background: var(--muted-bg); border-radius: 7px; overflow: hidden; }
+.tr-zones .bar i { display: block; height: 100%; border-radius: 7px; background: currentColor; }
+.tr-zones .val { text-align: right; font-variant-numeric: tabular-nums; }
+.tr-zones .val small { color: var(--text-muted); }
+.tr-zones .tz0 { color: var(--tz0); } .tr-zones .tz1 { color: var(--tz1); } .tr-zones .tz2 { color: var(--tz2); }
+.tr-zones .tz3 { color: var(--tz3); } .tr-zones .tz4 { color: var(--tz4); } .tr-zones .tz5 { color: var(--tz5); }
+.tr-zones .z-name { color: var(--text); }
+
+.tr-table-wrap { overflow-x: auto; }
+.tr-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tr-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); font-weight: 500; padding: 4px 8px; white-space: nowrap; }
+.tr-table td { padding: 7px 8px; border-top: 1px solid var(--w-grid); white-space: nowrap; }
+.tr-table td.num, .tr-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tr-table td.name { white-space: normal; min-width: 140px; }
+.tr-cmd { display: inline-block; padding: 4px 10px; border-radius: 8px; background: var(--muted-bg); font-family: ui-monospace, monospace; font-size: 14px; }
+.tr-legend-wide { margin-top: 2px; }
+@media (max-width: 640px) {
+  .tr-zones li { grid-template-columns: 1fr; gap: 2px; }
+  .tr-zones .val { text-align: left; }
+}

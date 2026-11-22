@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% from "wellness/_macros.html" import figure %}
+
+{% block head %}<link rel="stylesheet" href="/static/wellness.css?v={{ asset_version() }}"><link rel="stylesheet" href="/static/training.css?v={{ asset_version() }}">{% endblock %}
+
+{% block page_header %}
+  <h1>Training</h1>
+  <p class="subtitle">Running volume and time in each heart-rate zone, synced from COROS. Hover a bar for detail (tap on a phone).</p>
+{% endblock %}
+
+{% macro nav_link(item, target='#training') -%}
+<a class="tr-pill{{ ' active' if item.active }}{{ ' on' if item.on }}" href="{{ item.href }}"
+   {% if item.active %}aria-current="true"{% endif %}{% if item.on is defined %} aria-pressed="{{ 'true' if item.on else 'false' }}"{% endif %}
+   hx-get="{{ item.href }}" hx-target="#training" hx-select="#training" hx-swap="outerHTML" hx-push-url="true">{{ item.label }}{% if item.count is defined %} <small>{{ item.count }}</small>{% endif %}</a>
+{%- endmacro %}
+
+{% block content %}
+{% if fatal and not q %}
+  <div class="card"><div class="error-state">{{ fatal }}</div></div>
+{% else %}
+<div class="wellness training" id="training">
+
+  {% if empty %}
+  <section class="card empty-state" aria-labelledby="tr-empty">
+    <h2 id="tr-empty">No training data yet</h2>
+    <p>The first COROS sync has not run, so there is nothing to chart. Run it once and this page fills in:</p>
+    <p><code class="tr-cmd">{{ sync_command }}</code></p>
+    <p class="wnote">After that the scheduled sync keeps it current.</p>
+  </section>
+  {% else %}
+
+  <form class="card tr-controls" method="get" action="/training" aria-label="Training filters">
+    <div class="tr-row" role="group" aria-label="Sports"><span class="tr-label">Sports</span>
+      {% for c in chips %}{{ nav_link(c) }}{% endfor %}
+    </div>
+    <div class="tr-row" role="group" aria-label="Range"><span class="tr-label">Range</span>
+      {% for r in ranges %}{{ nav_link(r) }}{% endfor %}
+    </div>
+    <div class="tr-dates"><span class="tr-label">Custom</span>
+      <label>From <input type="date" name="start" value="{{ q.start }}"></label>
+      <label>to <input type="date" name="end" value="{{ q.end }}"></label>
+      {% if q.metric != 'distance' %}<input type="hidden" name="metric" value="{{ q.metric }}">{% endif %}
+      {% if q.bucket != 'week' %}<input type="hidden" name="bucket" value="{{ q.bucket }}">{% endif %}
+      {% for s in (q.sports or []) %}<input type="hidden" name="sports" value="{{ s }}">{% endfor %}
+      <button type="submit" class="tr-pill">Apply</button>
+    </div>
+    <div class="tr-row" role="group" aria-label="Weekly volume metric"><span class="tr-label">Volume</span>
+      {% for m in metrics %}{{ nav_link(m) }}{% endfor %}
+      <span class="tr-label" style="margin-left:12px">Zones by</span>
+      {% for b in buckets %}{{ nav_link(b) }}{% endfor %}
+    </div>
+  </form>
+
+  {% if input_error %}
+  <div class="card"><div class="tr-notice" role="alert">{{ input_error }}</div></div>
+  {% elif fatal %}
+  <div class="card"><div class="error-state">{{ fatal }}</div></div>
+  {% else %}
+  {% set f = fmt %}
+
+  <p class="wnote">Showing {{ sel_label }} from {{ summary.start }} to {{ summary.end }}.
+    {% if not chosen %}Weekly volume, easy share and longest run show the last 12 weeks; pick a range to change them.{% endif %}</p>
+
+  <section class="card" aria-label="Headline numbers">
+    <dl class="tr-tiles">
+      <div><dt>Distance</dt><dd>{{ f.mi(summary.total_distance_mi) }} <small>miles</small></dd></div>
+      <div><dt>Time</dt><dd>{{ f.dur(summary.total_time_s) }}</dd></div>
+      <div><dt>Activities</dt><dd>{{ summary.activities }}</dd></div>
+      <div><dt>Avg per week</dt><dd>{{ f.mi(summary.avg_weekly_distance_mi) }} <small>mi · {{ f.dur(summary.avg_weekly_time_s) }}</small></dd></div>
+      <div><dt>Time in Z3+</dt><dd>{{ f.pct(summary.z3_plus_pct) }}</dd></div>
+      <div><dt>Easy (Z0-Z2)</dt><dd>{{ f.pct(summary.easy_pct) }}</dd></div>
+    </dl>
+    {% if summary.zone_total_s == 0 and summary.activities %}<p class="wnote">Zone data has not been fetched for these activities yet.</p>{% endif %}
+    {% if not summary.activities %}<p class="wnote">No activities in this window for the selected sports.</p>{% endif %}
+  </section>
+
+  <h2 class="wsection">Volume</h2>
+  <div class="wgrid">
+    {{ figure("Weekly " ~ ("miles" if q.metric == 'distance' else "time"), charts.volume, none, none,
+              [(("Miles" if q.metric == 'distance' else "Time"), "s-load"), ("4-week avg", "avg")],
+              note="Monday-start weeks; weeks with no activity show as zero. Total " ~ (f.mi(volume.total.distance_mi) ~ " mi" if q.metric == 'distance' else f.dur(volume.total.time_s)) ~ " over " ~ volume.rows|length ~ " weeks.") }}
+    {{ figure("Longest run per week", charts.longest, none, none, [("Longest " ~ ("by distance" if q.metric == 'distance' else "by time"), "s-ati")],
+              note="Follows the Miles/Time toggle.") }}
+    {{ figure("Easy share per week", charts.easy, none, none, [("Easy (Z0-Z2)", "s-ratio"), ("Z1-Z2 only", "s-ati")],
+              note="Share of heart-rate time below Z3. Weeks without zone data are dashed stubs, not zero." ~ (" Overall " ~ f.pct(easy.total.easy_pct) ~ " easy." if easy.total.easy_pct is not none else "")) }}
+  </div>
+
+  <h2 class="wsection">Heart-rate zones</h2>
+  <figure class="card wfig card-wide" aria-label="Time in each heart-rate zone">
+    <figcaption><h2>Time by zone</h2><span class="wavg">{{ f.dur(zone_total_s) }} <small>with zone data</small></span></figcaption>
+    <ol class="tr-zones">
+      {% for r in zone_rows %}
+      <li class="{{ r.zone.cls }}">
+        <span class="z-name"><b>{{ r.zone.name }}</b> <small>{{ r.zone.range or '' }}</small></span>
+        <span class="bar" aria-hidden="true"><i style="width: {{ '%.1f'|format(r.pct) }}%"></i></span>
+        <span class="val"><b>{{ r.minutes }} min</b> <small>{{ '%.0f'|format(r.pct) }}%</small></span>
+      </li>
+      {% endfor %}
+    </ol>
+    <p class="wnote">{{ zone_window }}. Zone bands come from your COROS account; percentages are of time with zone data.</p>
+  </figure>
+
+  <div class="wgrid">
+    {% set zl = [] %}{% for z in legend %}{% set _ = zl.append((z.text, z.cls)) %}{% endfor %}
+    {{ figure("Zone time over time (per " ~ q.bucket ~ ")", charts.zones, none, none, zl,
+              note="Stacked, so total volume shows too. Y axis in " ~ ("hours" if unit_hours else "minutes") ~ ".") }}
+    {{ figure("Zone share over time (per " ~ q.bucket ~ ")", charts.share, none, none, zl,
+              note="Each bar sums to 100%, so the intensity mix stays visible when volume drops." ~ (" Dashed stubs: no zone data for " ~ no_zone_buckets ~ " " ~ q.bucket ~ (" bucket" if no_zone_buckets == 1 else " buckets") ~ "." if no_zone_buckets else "")) }}
+  </div>
+
+  <h2 class="wsection">Recent activities</h2>
+  <section class="card" aria-label="Recent activities">
+    {% if activities %}
+    <div class="tr-table-wrap"><table class="tr-table">
+      <thead><tr><th>Date</th><th>Name</th><th class="num">Miles</th><th class="num">Time</th><th class="num">Pace /mi</th><th class="num">Avg HR</th><th class="num">Load</th></tr></thead>
+      <tbody>
+      {% for a in activities %}
+      <tr><td>{{ a.day|fmt_date }}</td><td class="name">{{ a.name or a.sport_name }}{% if a.is_indoor %} <small class="wnote">indoor</small>{% endif %}</td>
+        <td class="num">{{ f.mi(a.distance_mi) }}</td><td class="num">{{ f.dur(a.moving_s) }}</td><td class="num">{{ f.pace(a.pace_s_per_mi) }}</td>
+        <td class="num">{{ a.avg_hr or '-' }}</td><td class="num">{{ a.training_load if a.training_load is not none else '-' }}</td></tr>
+      {% endfor %}
+      </tbody></table></div>
+    {% else %}<p class="wnote">No activities in this window for the selected sports.</p>{% endif %}
+  </section>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/wellness.js?v={{ asset_version() }}" defer></script>{% endblock %}
